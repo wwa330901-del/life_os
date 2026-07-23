@@ -1,0 +1,13 @@
+node_modules
+/dist
+
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+
+# Generic AI-assistant skill bundles dropped in by `prisma init`, not project content
+/.claude/skills
+/.agents/skills
+/.windsurf/skills
+

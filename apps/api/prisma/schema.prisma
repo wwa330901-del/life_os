@@ -1,0 +1,61 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SpaceType {
+  PERSONAL
+  COMPANY
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  personalSpace Space?              @relation("PersonalSpaceOwner")
+  memberships   CompanyMembership[]
+}
+
+model Space {
+  id        String    @id @default(uuid())
+  type      SpaceType
+  name      String
+  createdAt DateTime  @default(now())
+
+  // Only set when type = PERSONAL. Each user has exactly one personal space.
+  ownerUserId String? @unique
+  owner       User?   @relation("PersonalSpaceOwner", fields: [ownerUserId], references: [id])
+
+  memberships CompanyMembership[]
+}
+
+model CompanyMembership {
+  id        String         @id @default(uuid())
+  role      MembershipRole
+  createdAt DateTime       @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id])
+
+  @@unique([userId, spaceId])
+}

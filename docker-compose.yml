@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: life_os_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: life_os
+      POSTGRES_PASSWORD: life_os_dev_password
+      POSTGRES_DB: life_os
+    ports:
+      - "5432:5432"
+    volumes:
+      - life_os_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  life_os_postgres_data:
