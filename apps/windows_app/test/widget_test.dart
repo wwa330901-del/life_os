@@ -30,6 +30,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('登入你的帳號'), findsOneWidget);
+    expect(find.text('沐晞而醒'), findsOneWidget);
   });
 }

@@ -30,11 +30,23 @@ class SpacePickerScreen extends ConsumerWidget {
             return const Center(child: Text('目前沒有可以使用的空間'));
           }
           return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: spaces.length,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            itemCount: spaces.length + 1,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
-              final space = spaces[index];
+              if (index == 0) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '等待而休',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.secondary,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                );
+              }
+              final space = spaces[index - 1];
               return Card(
                 child: ListTile(
                   leading: Icon(

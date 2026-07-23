@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/theme/app_theme.dart';
 import 'state/auth_provider.dart';
 import 'state/space_provider.dart';
 import 'state/update_provider.dart';
@@ -16,7 +17,9 @@ class LifeOsApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       title: 'life_os',
-      theme: ThemeData(colorSchemeSeed: const Color(0xFF3B82F6), useMaterial3: true),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.system,
       home: const _AppShell(),
     );
   }
