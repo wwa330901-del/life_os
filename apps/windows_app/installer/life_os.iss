@@ -11,7 +11,7 @@
 ; Build with: ISCC.exe installer\life_os.iss
 
 #define MyAppName "life_os"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 #define MyAppPublisher "life_os"
 #define MyAppExeName "life_os_app.exe"
 
