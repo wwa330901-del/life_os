@@ -13,7 +13,48 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
-  create(data: { email: string; passwordHash: string; name: string }) {
+  findByGoogleId(googleId: string) {
+    return this.prisma.user.findUnique({ where: { googleId } });
+  }
+
+  createWithPassword(data: {
+    email: string;
+    passwordHash: string;
+    name: string;
+    verificationCode: string;
+    verificationCodeExpiresAt: Date;
+  }) {
     return this.prisma.user.create({ data });
+  }
+
+  createFromGoogle(data: { email: string; name: string; googleId: string }) {
+    return this.prisma.user.create({
+      data: { ...data, emailVerifiedAt: new Date() },
+    });
+  }
+
+  linkGoogleId(userId: string, googleId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { googleId },
+    });
+  }
+
+  setVerificationCode(userId: string, code: string, expiresAt: Date) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { verificationCode: code, verificationCodeExpiresAt: expiresAt },
+    });
+  }
+
+  markEmailVerified(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerifiedAt: new Date(),
+        verificationCode: null,
+        verificationCodeExpiresAt: null,
+      },
+    });
   }
 }

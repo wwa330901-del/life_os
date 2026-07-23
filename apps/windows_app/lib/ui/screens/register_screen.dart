@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api_client.dart';
 import '../../state/auth_provider.dart';
+import 'verify_email_screen.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -16,6 +18,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  bool _isSubmitting = false;
+  String? _errorMessage;
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -26,23 +31,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    await ref
-        .read(authControllerProvider.notifier)
-        .register(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          name: _nameController.text.trim(),
-        );
-    if (mounted && ref.read(authControllerProvider).value != null) {
-      Navigator.of(context).pop();
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+    try {
+      final email = await ref
+          .read(authControllerProvider.notifier)
+          .register(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+            name: _nameController.text.trim(),
+          );
+      if (mounted) {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => VerifyEmailScreen(email: email)));
+      }
+    } on ApiException catch (e) {
+      setState(() => _errorMessage = e.message);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authControllerProvider);
-    final isLoading = authState.isLoading;
-
     return Scaffold(
       appBar: AppBar(title: const Text('註冊')),
       body: Center(
@@ -80,17 +94,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         (value == null || value.length < 6) ? '密碼至少需要 6 碼' : null,
                   ),
                   const SizedBox(height: 24),
-                  if (authState.hasError)
+                  if (_errorMessage != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Text(
-                        authState.error.toString(),
+                        _errorMessage!,
                         style: TextStyle(color: Theme.of(context).colorScheme.error),
                       ),
                     ),
                   FilledButton(
-                    onPressed: isLoading ? null : _submit,
-                    child: isLoading
+                    onPressed: _isSubmitting ? null : _submit,
+                    child: _isSubmitting
                         ? const SizedBox(
                             height: 18,
                             width: 18,

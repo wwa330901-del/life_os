@@ -36,7 +36,10 @@ class ApiClient {
     if (_token != null) 'Authorization': 'Bearer $_token',
   };
 
-  Future<AuthResult> register({
+  /// Returns the email that should be entered on the verification screen —
+  /// registering never returns a token, since the account isn't usable until
+  /// the emailed code is confirmed.
+  Future<String> register({
     required String email,
     required String password,
     required String name,
@@ -46,7 +49,16 @@ class ApiClient {
       'password': password,
       'name': name,
     });
+    return body['email'] as String;
+  }
+
+  Future<AuthResult> verifyEmail({required String email, required String code}) async {
+    final body = await _post('/auth/verify-email', {'email': email, 'code': code});
     return _authResultFrom(body);
+  }
+
+  Future<void> resendVerification(String email) async {
+    await _post('/auth/resend-verification', {'email': email});
   }
 
   Future<AuthResult> login({
@@ -57,6 +69,11 @@ class ApiClient {
       'email': email,
       'password': password,
     });
+    return _authResultFrom(body);
+  }
+
+  Future<AuthResult> googleLogin({required String code, required String redirectUri}) async {
+    final body = await _post('/auth/google', {'code': code, 'redirectUri': redirectUri});
     return _authResultFrom(body);
   }
 

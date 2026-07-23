@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api_client.dart';
 import '../core/models/app_user.dart';
 import '../core/token_storage.dart';
+import '../services/auth/google_oauth_service.dart';
 import 'space_provider.dart';
 
 class AuthSession {
@@ -43,28 +44,42 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     state = await AsyncValue.guard(() async {
       final api = ref.read(apiClientProvider);
       final result = await api.login(email: email, password: password);
-      api.setToken(result.accessToken);
-      await ref.read(tokenStorageProvider).write(result.accessToken);
-      return AuthSession(token: result.accessToken, user: result.user);
+      return _persist(result);
     });
   }
 
-  Future<void> register({
+  /// Registering never logs in directly — the account needs its email
+  /// verified first. Kept off the shared auth state entirely; the register
+  /// screen manages its own loading/error UI and navigates to the
+  /// verification screen on success.
+  Future<String> register({
     required String email,
     required String password,
     required String name,
-  }) async {
+  }) {
+    return ref.read(apiClientProvider).register(email: email, password: password, name: name);
+  }
+
+  Future<void> verifyEmail({required String email, required String code}) async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() async {
       final api = ref.read(apiClientProvider);
-      final result = await api.register(
-        email: email,
-        password: password,
-        name: name,
-      );
-      api.setToken(result.accessToken);
-      await ref.read(tokenStorageProvider).write(result.accessToken);
-      return AuthSession(token: result.accessToken, user: result.user);
+      final result = await api.verifyEmail(email: email, code: code);
+      return _persist(result);
+    });
+  }
+
+  Future<void> resendVerification(String email) {
+    return ref.read(apiClientProvider).resendVerification(email);
+  }
+
+  Future<void> loginWithGoogle() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      final oauth = await GoogleOAuthService().signIn();
+      final api = ref.read(apiClientProvider);
+      final result = await api.googleLogin(code: oauth.code, redirectUri: oauth.redirectUri);
+      return _persist(result);
     });
   }
 
@@ -73,6 +88,12 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     await ref.read(tokenStorageProvider).clear();
     ref.read(selectedSpaceProvider.notifier).clear();
     state = const AsyncValue.data(null);
+  }
+
+  Future<AuthSession> _persist(AuthResult result) async {
+    ref.read(apiClientProvider).setToken(result.accessToken);
+    await ref.read(tokenStorageProvider).write(result.accessToken);
+    return AuthSession(token: result.accessToken, user: result.user);
   }
 }
 

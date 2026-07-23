@@ -23,12 +23,23 @@ enum MembershipRole {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Null for accounts created via Google sign-in that never set a password.
+  passwordHash String?
+
+  // Null until the registration email's code is confirmed. Google sign-in
+  // sets this immediately (Google already verified the address).
+  emailVerifiedAt           DateTime?
+  verificationCode          String?
+  verificationCodeExpiresAt DateTime?
+
+  // Null unless the account is linked to (or was created via) Google sign-in.
+  googleId String? @unique
 
   personalSpace Space?              @relation("PersonalSpaceOwner")
   memberships   CompanyMembership[]

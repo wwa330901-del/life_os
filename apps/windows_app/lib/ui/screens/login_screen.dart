@@ -108,6 +108,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                         child: const Text('還沒有帳號？註冊'),
                       ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: scheme.outline)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text('或', style: Theme.of(context).textTheme.bodySmall),
+                          ),
+                          Expanded(child: Divider(color: scheme.outline)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: isLoading
+                            ? null
+                            : () => ref.read(authControllerProvider.notifier).loginWithGoogle(),
+                        icon: const Icon(Icons.g_mobiledata, size: 24),
+                        label: const Text('使用 Google 登入'),
+                      ),
                     ],
                   ),
                 ),
