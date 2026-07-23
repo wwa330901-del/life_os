@@ -73,11 +73,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _passwordController,
-                    decoration: const InputDecoration(labelText: '密碼（至少 8 碼）'),
+                    decoration: const InputDecoration(labelText: '密碼（至少 6 碼）'),
                     obscureText: true,
                     onFieldSubmitted: (_) => _submit(),
                     validator: (value) =>
-                        (value == null || value.length < 8) ? '密碼至少需要 8 碼' : null,
+                        (value == null || value.length < 6) ? '密碼至少需要 6 碼' : null,
                   ),
                   const SizedBox(height: 24),
                   if (authState.hasError)

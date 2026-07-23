@@ -1,0 +1,4 @@
+# Raw design reference drops — not meant to be committed; processed assets
+# that actually ship in the app live under apps/windows_app/assets/.
+/design_assets/*
+!/design_assets/README.md

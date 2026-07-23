@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'state/auth_provider.dart';
 import 'state/space_provider.dart';
+import 'state/update_provider.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/screens/login_screen.dart';
 import 'ui/screens/space_picker_screen.dart';
+import 'ui/widgets/update_dialog.dart';
 
 class LifeOsApp extends ConsumerWidget {
   const LifeOsApp({super.key});
@@ -15,9 +17,36 @@ class LifeOsApp extends ConsumerWidget {
     return MaterialApp(
       title: 'life_os',
       theme: ThemeData(colorSchemeSeed: const Color(0xFF3B82F6), useMaterial3: true),
-      home: const _RootRouter(),
+      home: const _AppShell(),
     );
   }
+}
+
+/// Runs once-per-launch startup checks (currently: update check) ahead of
+/// whatever screen `_RootRouter` picks, independent of auth state.
+class _AppShell extends ConsumerStatefulWidget {
+  const _AppShell();
+
+  @override
+  ConsumerState<_AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<_AppShell> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+  }
+
+  Future<void> _checkForUpdate() async {
+    final info = await ref.read(updateServiceProvider).checkForUpdate();
+    if (info != null && mounted) {
+      showUpdateAvailableDialog(context, info);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => const _RootRouter();
 }
 
 /// Decides which top-level screen to show based on auth + selected space.
