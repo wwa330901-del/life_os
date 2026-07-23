@@ -21,10 +21,11 @@ class AuthResult {
   final AppUser user;
 }
 
-/// Talks to the life_os NestJS API. Phase 1 target is always the local
-/// dev backend — see docker-compose.yml at the repo root.
+/// Talks to the life_os NestJS API, deployed on Render (free tier — the
+/// first request after a period of inactivity can take 30-60s to wake up).
+/// Backed by Supabase PostgreSQL.
 class ApiClient {
-  ApiClient({this.baseUrl = 'http://localhost:3000'});
+  ApiClient({this.baseUrl = 'https://life-os-api-yhh2.onrender.com'});
 
   final String baseUrl;
   String? _token;
