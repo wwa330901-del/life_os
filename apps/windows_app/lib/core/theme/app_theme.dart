@@ -1,30 +1,28 @@
 import 'package:flutter/material.dart';
 
-/// Visual language for life_os, drawn from a single day's arc:
-/// 沐晞而醒（晨光喚醒）— 等待而休（靜候安穩）— 歸來而安（歸途溫暖）— 映曛而行（暮色前行）。
-///
-/// This is one consistent palette, not four switchable themes — each
-/// gradient below just leans on a different facet of the same warm,
-/// natural light the whole app is built around.
+/// Visual language for 元序 (formerly life_os) — one warm, natural-light
+/// palette rather than four switchable themes. Named after the day's arc
+/// each gradient originally drew from (dawn / homecoming / dusk); the
+/// wording is no longer surfaced as text in the UI, just the color mood.
 abstract final class AppGradients {
-  /// 沐晞而醒 — soft dawn light breaking. Used behind the login screen,
-  /// the entry point of the whole app.
+  /// Soft dawn light breaking. Used behind the login screen, the entry
+  /// point of the whole app.
   static const dawn = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [Color(0xFFFCE6C6), Color(0xFFFBF5EC)],
   );
 
-  /// 歸來而安 — warm homecoming glow. Used behind the home screen header,
-  /// the "arrival" moment after choosing a space.
+  /// Warm homecoming glow. Used behind the home screen header, the
+  /// "arrival" moment after choosing a space.
   static const homecoming = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [Color(0xFFF0C29C), Color(0xFFFBF5EC)],
   );
 
-  /// 映曛而行 — dusk glow, reserved for moments of moving deeper into the
-  /// app (module navigation, primary calls to action further down the line).
+  /// Dusk glow, reserved for moments of moving deeper into the app (module
+  /// navigation, primary calls to action further down the line).
   static const dusk = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,

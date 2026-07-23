@@ -24,6 +24,7 @@ enum MembershipRole {
 
 model User {
   id        String   @id @default(uuid())
+  username  String   @unique
   email     String   @unique
   name      String
   createdAt DateTime @default(now())

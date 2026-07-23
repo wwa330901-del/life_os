@@ -30,6 +30,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('沐晞而醒'), findsOneWidget);
+    expect(find.text('秩序，不是束縛，而是讓萬物自由運行'), findsOneWidget);
   });
 }

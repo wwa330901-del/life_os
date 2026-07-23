@@ -14,12 +14,12 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -28,7 +28,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     await ref
         .read(authControllerProvider.notifier)
-        .login(email: _emailController.text.trim(), password: _passwordController.text);
+        .login(username: _usernameController.text.trim(), password: _passwordController.text);
   }
 
   @override
@@ -53,23 +53,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('life_os', style: Theme.of(context).textTheme.headlineMedium),
+                      Text('元序', style: Theme.of(context).textTheme.headlineMedium),
                       const SizedBox(height: 4),
                       Text(
-                        '沐晞而醒',
+                        '秩序，不是束縛，而是讓萬物自由運行',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: scheme.secondary,
-                          letterSpacing: 2,
+                          letterSpacing: 1,
                         ),
                       ),
                       const SizedBox(height: 28),
                       TextFormField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(labelText: 'Email'),
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (value) => (value == null || !value.contains('@'))
-                            ? '請輸入有效的 Email'
-                            : null,
+                        controller: _usernameController,
+                        decoration: const InputDecoration(labelText: '帳號'),
+                        onFieldSubmitted: (_) => _submit(),
+                        validator: (value) =>
+                            (value == null || value.trim().isEmpty) ? '請輸入帳號' : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(

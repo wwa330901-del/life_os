@@ -40,11 +40,13 @@ class ApiClient {
   /// registering never returns a token, since the account isn't usable until
   /// the emailed code is confirmed.
   Future<String> register({
+    required String username,
     required String email,
     required String password,
     required String name,
   }) async {
     final body = await _post('/auth/register', {
+      'username': username,
       'email': email,
       'password': password,
       'name': name,
@@ -62,11 +64,11 @@ class ApiClient {
   }
 
   Future<AuthResult> login({
-    required String email,
+    required String username,
     required String password,
   }) async {
     final body = await _post('/auth/login', {
-      'email': email,
+      'username': username,
       'password': password,
     });
     return _authResultFrom(body);

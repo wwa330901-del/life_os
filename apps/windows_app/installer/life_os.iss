@@ -1,4 +1,5 @@
-; Inno Setup script for life_os.
+#pragma code page 65001
+; Inno Setup script for life_os (product name: 元序).
 ;
 ; Builds a single distributable Setup.exe from the already-built Release
 ; output (run `flutter build windows --release` first). Installs per-user
@@ -10,9 +11,9 @@
 ;
 ; Build with: ISCC.exe installer\life_os.iss
 
-#define MyAppName "life_os"
-#define MyAppVersion "0.2.0"
-#define MyAppPublisher "life_os"
+#define MyAppName "元序"
+#define MyAppVersion "0.3.0"
+#define MyAppPublisher "元序"
 #define MyAppExeName "life_os_app.exe"
 
 [Setup]

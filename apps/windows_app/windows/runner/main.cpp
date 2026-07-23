@@ -27,7 +27,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"life_os_app", origin, size)) {
+  // Window title is "元序", written as \u escapes so it compiles correctly
+  // regardless of this source file's saved encoding.
+  if (!window.Create(L"元序", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

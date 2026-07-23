@@ -21,6 +21,13 @@ import { GoogleLoginDto } from './dto/google-login.dto';
 const SALT_ROUNDS = 10;
 const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000;
 
+interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  name: string;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -32,21 +39,24 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const existing = await this.usersService.findByEmail(dto.email);
-    if (existing) {
+    const existingEmail = await this.usersService.findByEmail(dto.email);
+    if (existingEmail) {
       throw new ConflictException('Email already registered');
+    }
+    const existingUsername = await this.usersService.findByUsername(dto.username);
+    if (existingUsername) {
+      throw new ConflictException('Username already taken');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
     const code = this.generateVerificationCode();
     const user = await this.usersService.createWithPassword({
+      username: dto.username,
       email: dto.email,
       passwordHash,
       name: dto.name,
       verificationCode: code,
-      verificationCodeExpiresAt: new Date(
-        Date.now() + VERIFICATION_CODE_TTL_MS,
-      ),
+      verificationCodeExpiresAt: new Date(Date.now() + VERIFICATION_CODE_TTL_MS),
     });
 
     await this.spacesService.createPersonalSpace(user.id, user.name);
@@ -66,8 +76,8 @@ export class AuthService {
       throw new BadRequestException('驗證碼錯誤或已過期');
     }
 
-    await this.usersService.markEmailVerified(user.id);
-    return this.buildAuthResponse(user.id, user.email, user.name);
+    const verified = await this.usersService.markEmailVerified(user.id);
+    return this.buildAuthResponse(verified);
   }
 
   async resendVerification(dto: ResendVerificationDto) {
@@ -90,51 +100,40 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.usersService.findByEmail(dto.email);
+    const user = await this.usersService.findByUsername(dto.username);
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid username or password');
     }
     if (!user.passwordHash) {
-      throw new UnauthorizedException(
-        '此帳號使用 Google 登入，請用 Google 登入',
-      );
+      throw new UnauthorizedException('此帳號使用 Google 登入，請用 Google 登入');
     }
 
-    const passwordMatches = await bcrypt.compare(
-      dto.password,
-      user.passwordHash,
-    );
+    const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatches) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid username or password');
     }
     if (!user.emailVerifiedAt) {
       throw new ForbiddenException('請先完成信箱驗證');
     }
 
-    return this.buildAuthResponse(user.id, user.email, user.name);
+    return this.buildAuthResponse(user);
   }
 
   async googleLogin(dto: GoogleLoginDto) {
-    const profile = await this.googleAuthService.exchangeCodeForProfile(
-      dto.code,
-      dto.redirectUri,
-    );
+    const profile = await this.googleAuthService.exchangeCodeForProfile(dto.code, dto.redirectUri);
 
     let user = await this.usersService.findByGoogleId(profile.googleId);
     if (!user) {
-      const existingByEmail = await this.usersService.findByEmail(
-        profile.email,
-      );
+      const existingByEmail = await this.usersService.findByEmail(profile.email);
       if (existingByEmail) {
-        user = await this.usersService.linkGoogleId(
-          existingByEmail.id,
-          profile.googleId,
-        );
+        user = await this.usersService.linkGoogleId(existingByEmail.id, profile.googleId);
         if (!existingByEmail.emailVerifiedAt) {
           user = await this.usersService.markEmailVerified(user.id);
         }
       } else {
+        const username = await this.usersService.generateUniqueUsernameFromEmail(profile.email);
         user = await this.usersService.createFromGoogle({
+          username,
           email: profile.email,
           name: profile.name,
           googleId: profile.googleId,
@@ -143,18 +142,18 @@ export class AuthService {
       }
     }
 
-    return this.buildAuthResponse(user.id, user.email, user.name);
+    return this.buildAuthResponse(user);
   }
 
   private generateVerificationCode(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  private buildAuthResponse(id: string, email: string, name: string) {
-    const accessToken = this.jwtService.sign({ sub: id, email });
+  private buildAuthResponse(user: AuthUser) {
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {
       accessToken,
-      user: { id, email, name },
+      user: { id: user.id, username: user.username, email: user.email, name: user.name },
     };
   }
 }

@@ -15,6 +15,7 @@ class RegisterScreen extends ConsumerStatefulWidget {
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -24,6 +25,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -39,6 +41,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       final email = await ref
           .read(authControllerProvider.notifier)
           .register(
+            username: _usernameController.text.trim(),
             email: _emailController.text.trim(),
             password: _passwordController.text,
             name: _nameController.text.trim(),
@@ -75,6 +78,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     decoration: const InputDecoration(labelText: '姓名'),
                     validator: (value) =>
                         (value == null || value.trim().isEmpty) ? '請輸入姓名' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: const InputDecoration(labelText: '帳號（英數與底線，3-20 碼）'),
+                    validator: (value) {
+                      if (value == null || !RegExp(r'^[a-zA-Z0-9_]{3,20}$').hasMatch(value)) {
+                        return '帳號只能包含英文字母、數字與底線，長度 3-20';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

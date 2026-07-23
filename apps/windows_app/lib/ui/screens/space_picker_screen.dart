@@ -31,22 +31,10 @@ class SpacePickerScreen extends ConsumerWidget {
           }
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            itemCount: spaces.length + 1,
+            itemCount: spaces.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
-              if (index == 0) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    '等待而休',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.secondary,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                );
-              }
-              final space = spaces[index - 1];
+              final space = spaces[index];
               return Card(
                 child: ListTile(
                   leading: Icon(

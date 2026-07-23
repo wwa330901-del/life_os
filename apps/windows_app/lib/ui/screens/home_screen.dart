@@ -43,15 +43,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '歸來而安',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: scheme.secondary,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      space?.name ?? 'life_os',
+                      space?.name ?? '元序',
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                     const SizedBox(height: 4),

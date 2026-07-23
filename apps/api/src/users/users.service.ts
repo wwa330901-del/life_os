@@ -9,6 +9,10 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
+  findByUsername(username: string) {
+    return this.prisma.user.findUnique({ where: { username } });
+  }
+
   findById(id: string) {
     return this.prisma.user.findUnique({ where: { id } });
   }
@@ -18,6 +22,7 @@ export class UsersService {
   }
 
   createWithPassword(data: {
+    username: string;
     email: string;
     passwordHash: string;
     name: string;
@@ -27,7 +32,7 @@ export class UsersService {
     return this.prisma.user.create({ data });
   }
 
-  createFromGoogle(data: { email: string; name: string; googleId: string }) {
+  createFromGoogle(data: { username: string; email: string; name: string; googleId: string }) {
     return this.prisma.user.create({
       data: { ...data, emailVerifiedAt: new Date() },
     });
@@ -56,5 +61,19 @@ export class UsersService {
         verificationCodeExpiresAt: null,
       },
     });
+  }
+
+  /// Google sign-in doesn't provide a username, so derive one from the
+  /// email's local part and disambiguate against existing accounts.
+  async generateUniqueUsernameFromEmail(email: string): Promise<string> {
+    const base = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').slice(0, 15) || 'user';
+
+    let candidate = base;
+    let suffix = 0;
+    while (await this.findByUsername(candidate)) {
+      suffix += 1;
+      candidate = `${base}${suffix}`;
+    }
+    return candidate;
   }
 }

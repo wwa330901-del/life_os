@@ -39,11 +39,11 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     }
   }
 
-  Future<void> login({required String email, required String password}) async {
+  Future<void> login({required String username, required String password}) async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() async {
       final api = ref.read(apiClientProvider);
-      final result = await api.login(email: email, password: password);
+      final result = await api.login(username: username, password: password);
       return _persist(result);
     });
   }
@@ -53,11 +53,14 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// screen manages its own loading/error UI and navigates to the
   /// verification screen on success.
   Future<String> register({
+    required String username,
     required String email,
     required String password,
     required String name,
   }) {
-    return ref.read(apiClientProvider).register(email: email, password: password, name: name);
+    return ref
+        .read(apiClientProvider)
+        .register(username: username, email: email, password: password, name: name);
   }
 
   Future<void> verifyEmail({required String email, required String code}) async {
