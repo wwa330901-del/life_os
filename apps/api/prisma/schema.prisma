@@ -42,6 +42,11 @@ model User {
   // Null unless the account is linked to (or was created via) Google sign-in.
   googleId String? @unique
 
+  // Platform-wide admin: can manage all accounts and all spaces' membership.
+  // Distinct from CompanyMembership roles, which only grant access within
+  // one company space.
+  isPlatformAdmin Boolean @default(false)
+
   personalSpace Space?              @relation("PersonalSpaceOwner")
   memberships   CompanyMembership[]
 }

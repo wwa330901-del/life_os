@@ -4,18 +4,21 @@ class AppUser {
     required this.username,
     required this.email,
     required this.name,
+    required this.isPlatformAdmin,
   });
 
   final String id;
   final String username;
   final String email;
   final String name;
+  final bool isPlatformAdmin;
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
     id: json['id'] as String,
     username: json['username'] as String,
     email: json['email'] as String,
     name: json['name'] as String,
+    isPlatformAdmin: json['isPlatformAdmin'] as bool? ?? false,
   );
 }
 

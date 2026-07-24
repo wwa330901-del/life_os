@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/app_user.dart';
 import '../../state/auth_provider.dart';
 import '../../state/space_provider.dart';
+import 'admin/admin_home_screen.dart';
 
 class SpacePickerScreen extends ConsumerWidget {
   const SpacePickerScreen({super.key});
@@ -17,6 +18,14 @@ class SpacePickerScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(session != null ? '你好，${session.user.name}' : '選擇空間'),
         actions: [
+          if (session?.user.isPlatformAdmin ?? false)
+            IconButton(
+              tooltip: '平台管理後台',
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AdminHomeScreen())),
+            ),
           IconButton(
             tooltip: '登出',
             icon: const Icon(Icons.logout),

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'models/admin_models.dart';
 import 'models/app_user.dart';
 
 class ApiException implements Exception {
@@ -92,6 +93,52 @@ class ApiClient {
         .toList();
   }
 
+  Future<List<AdminUserSummary>> adminListUsers() async {
+    final body = await _getList('/admin/users');
+    return body
+        .map((e) => AdminUserSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<AdminSpaceSummary>> adminListSpaces() async {
+    final body = await _getList('/admin/spaces');
+    return body
+        .map((e) => AdminSpaceSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<AdminSpaceDetail> adminGetSpace(String spaceId) async {
+    final body = await _get('/admin/spaces/$spaceId');
+    return AdminSpaceDetail.fromJson(body);
+  }
+
+  Future<void> adminCreateSpace(String name) async {
+    await _post('/admin/spaces', {'name': name});
+  }
+
+  Future<void> adminAddMember({
+    required String spaceId,
+    required String username,
+    required MembershipRole role,
+  }) async {
+    await _post('/admin/spaces/$spaceId/members', {
+      'username': username,
+      'role': role.toJson(),
+    });
+  }
+
+  Future<void> adminUpdateMemberRole({
+    required String spaceId,
+    required String userId,
+    required MembershipRole role,
+  }) async {
+    await _patch('/admin/spaces/$spaceId/members/$userId', {'role': role.toJson()});
+  }
+
+  Future<void> adminRemoveMember({required String spaceId, required String userId}) async {
+    await _delete('/admin/spaces/$spaceId/members/$userId');
+  }
+
   AuthResult _authResultFrom(Map<String, dynamic> body) => AuthResult(
     accessToken: body['accessToken'] as String,
     user: AppUser.fromJson(body['user'] as Map<String, dynamic>),
@@ -117,6 +164,23 @@ class ApiClient {
       body: jsonEncode(body),
     );
     return _decodeObject(res);
+  }
+
+  Future<Map<String, dynamic>> _patch(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl$path'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    return _decodeObject(res);
+  }
+
+  Future<void> _delete(String path) async {
+    final res = await http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
+    _checkStatus(res);
   }
 
   Map<String, dynamic> _decodeObject(http.Response res) {

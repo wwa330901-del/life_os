@@ -26,6 +26,7 @@ interface AuthUser {
   username: string;
   email: string;
   name: string;
+  isPlatformAdmin: boolean;
 }
 
 @Injectable()
@@ -43,7 +44,9 @@ export class AuthService {
     if (existingEmail) {
       throw new ConflictException('Email already registered');
     }
-    const existingUsername = await this.usersService.findByUsername(dto.username);
+    const existingUsername = await this.usersService.findByUsername(
+      dto.username,
+    );
     if (existingUsername) {
       throw new ConflictException('Username already taken');
     }
@@ -56,7 +59,9 @@ export class AuthService {
       passwordHash,
       name: dto.name,
       verificationCode: code,
-      verificationCodeExpiresAt: new Date(Date.now() + VERIFICATION_CODE_TTL_MS),
+      verificationCodeExpiresAt: new Date(
+        Date.now() + VERIFICATION_CODE_TTL_MS,
+      ),
     });
 
     await this.spacesService.createPersonalSpace(user.id, user.name);
@@ -105,10 +110,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid username or password');
     }
     if (!user.passwordHash) {
-      throw new UnauthorizedException('此帳號使用 Google 登入，請用 Google 登入');
+      throw new UnauthorizedException(
+        '此帳號使用 Google 登入，請用 Google 登入',
+      );
     }
 
-    const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
+    const passwordMatches = await bcrypt.compare(
+      dto.password,
+      user.passwordHash,
+    );
     if (!passwordMatches) {
       throw new UnauthorizedException('Invalid username or password');
     }
@@ -120,18 +130,29 @@ export class AuthService {
   }
 
   async googleLogin(dto: GoogleLoginDto) {
-    const profile = await this.googleAuthService.exchangeCodeForProfile(dto.code, dto.redirectUri);
+    const profile = await this.googleAuthService.exchangeCodeForProfile(
+      dto.code,
+      dto.redirectUri,
+    );
 
     let user = await this.usersService.findByGoogleId(profile.googleId);
     if (!user) {
-      const existingByEmail = await this.usersService.findByEmail(profile.email);
+      const existingByEmail = await this.usersService.findByEmail(
+        profile.email,
+      );
       if (existingByEmail) {
-        user = await this.usersService.linkGoogleId(existingByEmail.id, profile.googleId);
+        user = await this.usersService.linkGoogleId(
+          existingByEmail.id,
+          profile.googleId,
+        );
         if (!existingByEmail.emailVerifiedAt) {
           user = await this.usersService.markEmailVerified(user.id);
         }
       } else {
-        const username = await this.usersService.generateUniqueUsernameFromEmail(profile.email);
+        const username =
+          await this.usersService.generateUniqueUsernameFromEmail(
+            profile.email,
+          );
         user = await this.usersService.createFromGoogle({
           username,
           email: profile.email,
@@ -150,10 +171,19 @@ export class AuthService {
   }
 
   private buildAuthResponse(user: AuthUser) {
-    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
+    const accessToken = this.jwtService.sign({
+      sub: user.id,
+      email: user.email,
+    });
     return {
       accessToken,
-      user: { id: user.id, username: user.username, email: user.email, name: user.name },
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        name: user.name,
+        isPlatformAdmin: user.isPlatformAdmin,
+      },
     };
   }
 }
