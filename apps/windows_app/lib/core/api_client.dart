@@ -182,6 +182,86 @@ class ApiClient {
     return body.map((e) => WorkItem.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Future<WorkItem> createWorkItem({
+    required String projectId,
+    required String name,
+    required int durationDays,
+    String? parentId,
+    List<String>? predecessorIds,
+  }) async {
+    final body = await _post('/projects/$projectId/work-items', {
+      'name': name,
+      'durationDays': durationDays,
+      if (parentId != null) 'parentId': parentId,
+      if (predecessorIds != null) 'predecessorIds': predecessorIds,
+    });
+    return WorkItem.fromJson(body);
+  }
+
+  /// Every field is "not sent" when omitted (unchanged) vs. explicitly
+  /// `null` (cleared) — see UpdateWorkItemDto on the backend. Passing
+  /// `clearManualStartDate: true` sends manualStartDate as null.
+  Future<WorkItem> updateWorkItem({
+    required String projectId,
+    required String workItemId,
+    String? name,
+    int? durationDays,
+    List<String>? predecessorIds,
+    DateTime? manualStartDate,
+    bool clearManualStartDate = false,
+    bool? isManuallyPinned,
+    String? parentId,
+    bool clearParentId = false,
+  }) async {
+    final body = await _patch('/projects/$projectId/work-items/$workItemId', {
+      if (name != null) 'name': name,
+      if (durationDays != null) 'durationDays': durationDays,
+      if (predecessorIds != null) 'predecessorIds': predecessorIds,
+      if (clearManualStartDate)
+        'manualStartDate': null
+      else if (manualStartDate != null)
+        'manualStartDate': _dateOnly(manualStartDate),
+      if (isManuallyPinned != null) 'isManuallyPinned': isManuallyPinned,
+      if (clearParentId)
+        'parentId': null
+      else if (parentId != null)
+        'parentId': parentId,
+    });
+    return WorkItem.fromJson(body);
+  }
+
+  Future<void> deleteWorkItem({required String projectId, required String workItemId}) async {
+    await _delete('/projects/$projectId/work-items/$workItemId');
+  }
+
+  Future<void> reorderWorkItem({
+    required String projectId,
+    required String workItemId,
+    required String targetId,
+    required bool insertAfter,
+  }) async {
+    await _patchIgnoreBody('/projects/$projectId/work-items/$workItemId/reorder', {
+      'targetId': targetId,
+      'insertAfter': insertAfter,
+    });
+  }
+
+  Future<Project> updateCalendar({
+    required String projectId,
+    required List<int> weeklyOffDays,
+    required bool useTaiwanGovernmentCalendar,
+    required Set<DateTime> adHocHolidays,
+    required Set<DateTime> adHocWorkdays,
+  }) async {
+    final body = await _patch('/projects/$projectId/calendar', {
+      'weeklyOffDays': weeklyOffDays,
+      'useTaiwanGovernmentCalendar': useTaiwanGovernmentCalendar,
+      'adHocHolidays': adHocHolidays.map(_dateOnly).toList(),
+      'adHocWorkdays': adHocWorkdays.map(_dateOnly).toList(),
+    });
+    return Project.fromJson(body);
+  }
+
   /// Date-only string (no time-of-day, no timezone) — the backend column is
   /// `@db.Date`; sending a full ISO timestamp here would risk the calendar
   /// date shifting by a day depending on local vs. UTC offsets.
@@ -231,6 +311,18 @@ class ApiClient {
 
   Future<void> _delete(String path) async {
     final res = await http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
+    _checkStatus(res);
+  }
+
+  /// For endpoints whose response body isn't needed by the caller (e.g.
+  /// reorder returns the touched siblings, which we discard and refetch
+  /// the authoritative list instead).
+  Future<void> _patchIgnoreBody(String path, Map<String, dynamic> body) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl$path'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
     _checkStatus(res);
   }
 

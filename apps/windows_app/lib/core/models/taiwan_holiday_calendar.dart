@@ -95,6 +95,11 @@ final Set<DateTime> _taiwanMakeupWorkdayDates = {
     for (final d in dates) _normalize(d),
 };
 
+/// Years actually covered by [taiwanHolidaysByYear] — used to describe
+/// coverage in the UI without hardcoding the range separately.
+List<int> get taiwanHolidayCoveredYears =>
+    taiwanHolidaysByYear.keys.toList()..sort();
+
 /// Whether [date] is one of the named Taiwan government holidays.
 bool isTaiwanHoliday(DateTime date) =>
     _taiwanHolidayDates.contains(_normalize(date));
