@@ -4,6 +4,9 @@ import 'package:http/http.dart' as http;
 
 import 'models/admin_models.dart';
 import 'models/app_user.dart';
+import 'models/project.dart';
+import 'models/schedule_result.dart';
+import 'models/work_item.dart';
 
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
@@ -138,6 +141,54 @@ class ApiClient {
   Future<void> adminRemoveMember({required String spaceId, required String userId}) async {
     await _delete('/admin/spaces/$spaceId/members/$userId');
   }
+
+  Future<List<Project>> listProjects(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/projects');
+    return body.map((e) => Project.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<Project> createProject({
+    required String spaceId,
+    required String name,
+    String? clientName,
+    String? siteAddress,
+    required DateTime projectStartDate,
+  }) async {
+    final body = await _post('/spaces/$spaceId/projects', {
+      'name': name,
+      if (clientName != null) 'clientName': clientName,
+      if (siteAddress != null) 'siteAddress': siteAddress,
+      'projectStartDate': _dateOnly(projectStartDate),
+    });
+    return Project.fromJson(body);
+  }
+
+  Future<Project> getProject(String projectId) async {
+    final body = await _get('/projects/$projectId');
+    return Project.fromJson(body);
+  }
+
+  Future<void> deleteProject(String projectId) async {
+    await _delete('/projects/$projectId');
+  }
+
+  Future<ScheduleResult> getSchedule(String projectId) async {
+    final body = await _get('/projects/$projectId/schedule');
+    return ScheduleResult.fromJson(body);
+  }
+
+  Future<List<WorkItem>> listWorkItems(String projectId) async {
+    final body = await _getList('/projects/$projectId/work-items');
+    return body.map((e) => WorkItem.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// Date-only string (no time-of-day, no timezone) — the backend column is
+  /// `@db.Date`; sending a full ISO timestamp here would risk the calendar
+  /// date shifting by a day depending on local vs. UTC offsets.
+  String _dateOnly(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 
   AuthResult _authResultFrom(Map<String, dynamic> body) => AuthResult(
     accessToken: body['accessToken'] as String,
