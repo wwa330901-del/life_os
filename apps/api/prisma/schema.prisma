@@ -62,6 +62,7 @@ model Space {
   owner       User?   @relation("PersonalSpaceOwner", fields: [ownerUserId], references: [id])
 
   memberships CompanyMembership[]
+  projects    Project[]
 }
 
 model CompanyMembership {
@@ -76,4 +77,72 @@ model CompanyMembership {
   space   Space  @relation(fields: [spaceId], references: [id])
 
   @@unique([userId, spaceId])
+}
+
+model Project {
+  id          String  @id @default(uuid())
+  name        String
+  clientName  String?
+  siteAddress String?
+
+  // Baseline anchor date: items with no predecessors start here. Date-only —
+  // no time-of-day, no timezone (see WorkItem's date fields for the same rule).
+  projectStartDate DateTime @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id])
+
+  // Holiday calendar, flattened onto Project rather than a separate model or a
+  // Json column: it's always 1:1 with a Project, never queried independently,
+  // and flattened scalar columns let PATCH /projects/:id/calendar validate
+  // each sub-field individually with ordinary class-validator decorators.
+  weeklyOffDays               Int[]      @default([7]) // Dart DateTime.monday..sunday (1..7); default {Sunday=7}
+  useTaiwanGovernmentCalendar Boolean    @default(true)
+  adHocHolidays                DateTime[] @db.Date @default([])
+  adHocWorkdays                 DateTime[] @db.Date @default([])
+
+  items WorkItem[]
+}
+
+model WorkItem {
+  id             String @id @default(uuid())
+  name           String
+  durationDays   Int
+
+  // IDs of work items that must finish before this one can start. A plain
+  // array column (not a join table / FK) on purpose: the scheduler already
+  // tolerates dangling references as a non-fatal SchedulingIssue rather than
+  // erroring, which a real FK constraint would fight against for no benefit
+  // at this scale (tens to low hundreds of items per project).
+  predecessorIds String[] @default([])
+
+  tradeCategory   String?
+  colorValue      Int?
+  progressPercent Float   @default(0)
+  notes           String?
+
+  // If set (with isManuallyPinned), the scheduler anchors this item's start
+  // date here instead of computing it from predecessors.
+  manualStartDate  DateTime? @db.Date
+  isManuallyPinned Boolean   @default(false)
+
+  sortOrder Int @default(0)
+
+  // Parent work item, or null for a top-level item. Whether an item is a
+  // summary/parent row is derived dynamically (something else points at it
+  // via parentId) — not a stored flag. No DB-level cascade on this
+  // self-relation (Postgres rejects multiple cascade paths into the same
+  // table) — descendant cleanup on delete is handled in application code.
+  parentId String?
+  parent   WorkItem?  @relation("WorkItemChildren", fields: [parentId], references: [id])
+  children WorkItem[] @relation("WorkItemChildren")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
