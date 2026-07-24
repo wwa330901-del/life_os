@@ -9,7 +9,7 @@ import {
 import { HolidayCalendarInput } from './scheduling-types';
 
 function d(year: number, month: number, day: number): Date {
-  return new Date(year, month - 1, day);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 // 2024-01-01 is a Monday.

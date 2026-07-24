@@ -6,7 +6,7 @@ import { scheduleProject } from './gantt-scheduler';
 import { SchedulingProject, SchedulingWorkItem } from './scheduling-types';
 
 function d(year: number, month: number, day: number): Date {
-  return new Date(year, month - 1, day);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 const cal = {

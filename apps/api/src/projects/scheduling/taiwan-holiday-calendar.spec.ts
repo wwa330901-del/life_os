@@ -6,7 +6,7 @@ describe('taiwanHolidaysByYear', () => {
   it('every entry actually falls within its own map key year', () => {
     for (const [year, entries] of Object.entries(taiwanHolidaysByYear)) {
       for (const holiday of entries) {
-        expect(holiday.date.getFullYear()).toBe(Number(year));
+        expect(holiday.date.getUTCFullYear()).toBe(Number(year));
       }
     }
   });
@@ -30,9 +30,9 @@ describe('taiwanHolidaysByYear', () => {
     const entries2026 = taiwanHolidaysByYear[2026];
     const byDate = new Map(entries2026.map((e) => [e.date.getTime(), e.description]));
 
-    expect(byDate.get(new Date(2026, 0, 1).getTime())).toBe('開國紀念日');
-    expect(byDate.get(new Date(2026, 4, 1).getTime())).toBe('勞動節');
-    expect(byDate.get(new Date(2026, 9, 10).getTime())).toBe('國慶日');
+    expect(byDate.get(Date.UTC(2026, 0, 1))).toBe('開國紀念日');
+    expect(byDate.get(Date.UTC(2026, 4, 1))).toBe('勞動節');
+    expect(byDate.get(Date.UTC(2026, 9, 10))).toBe('國慶日');
   });
 });
 
@@ -40,7 +40,7 @@ describe('taiwanMakeupWorkdaysByYear', () => {
   it('every entry actually falls within its own map key year', () => {
     for (const [year, dates] of Object.entries(taiwanMakeupWorkdaysByYear)) {
       for (const date of dates) {
-        expect(date.getFullYear()).toBe(Number(year));
+        expect(date.getUTCFullYear()).toBe(Number(year));
       }
     }
   });

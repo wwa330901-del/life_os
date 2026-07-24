@@ -4,7 +4,7 @@ import { isWorkingDay } from './holiday-calendar';
 import { HolidayCalendarInput } from './scheduling-types';
 
 function d(year: number, month: number, day: number): Date {
-  return new Date(year, month - 1, day);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 function cal(overrides: Partial<HolidayCalendarInput> = {}): HolidayCalendarInput {
@@ -49,7 +49,7 @@ describe('isWorkingDay with Taiwan government calendar (default on)', () => {
     // behavior should be exactly the plain Sunday-off pattern, whichever
     // weekday this particular date happens to land on.
     const farFuture = d(2099, 6, 15);
-    const dartWeekday = farFuture.getDay() === 0 ? 7 : farFuture.getDay();
+    const dartWeekday = farFuture.getUTCDay() === 0 ? 7 : farFuture.getUTCDay();
     const expectedWorkingDay = dartWeekday !== 7;
     expect(isWorkingDay(farFuture, cal())).toBe(expectedWorkingDay);
   });

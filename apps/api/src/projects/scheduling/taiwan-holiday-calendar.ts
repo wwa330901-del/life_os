@@ -20,8 +20,10 @@ export interface TaiwanHolidayEntry {
   description: string;
 }
 
+// UTC midnight — see holiday-calendar.ts's normalizeDate for why (must match
+// how Postgres DATE columns round-trip through Prisma).
 function d(year: number, month: number, day: number): Date {
-  return new Date(year, month - 1, day);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 export const taiwanHolidaysByYear: Record<number, TaiwanHolidayEntry[]> = {
@@ -89,12 +91,12 @@ export const taiwanMakeupWorkdaysByYear: Record<number, Date[]> = {
 };
 
 function normalize(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
 function dateKey(date: Date): string {
   const n = normalize(date);
-  return `${n.getFullYear()}-${n.getMonth()}-${n.getDate()}`;
+  return `${n.getUTCFullYear()}-${n.getUTCMonth()}-${n.getUTCDate()}`;
 }
 
 const taiwanHolidayDates = new Set<string>();

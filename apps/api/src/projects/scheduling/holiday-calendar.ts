@@ -8,14 +8,19 @@
 import { isTaiwanHoliday, isTaiwanMakeupWorkday } from './taiwan-holiday-calendar';
 import { HolidayCalendarInput } from './scheduling-types';
 
+// Date-only values are represented as UTC midnight throughout this module
+// (matching how Postgres's timezone-free DATE column round-trips through
+// Prisma/node-postgres) rather than local midnight — local-timezone
+// construction here would silently shift the calendar date by the server's
+// UTC offset whenever it serializes to an ISO string for a client.
 export function normalizeDate(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
-/** Dart's `DateTime.weekday`: Monday=1 .. Sunday=7 (JS's Date.getDay() is Sunday=0..Saturday=6). */
+/** Dart's `DateTime.weekday`: Monday=1 .. Sunday=7 (JS's Date.getUTCDay() is Sunday=0..Saturday=6). */
 function dartWeekday(date: Date): number {
-  const jsDay = date.getDay();
-  return jsDay === 0 ? 7 : jsDay;
+  const utcDay = date.getUTCDay();
+  return utcDay === 0 ? 7 : utcDay;
 }
 
 function containsDate(dates: Date[], target: Date): boolean {
