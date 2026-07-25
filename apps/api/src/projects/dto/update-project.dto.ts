@@ -15,6 +15,18 @@ export class UpdateProjectDto {
   siteAddress?: string;
 
   @IsOptional()
+  @IsString()
+  caseNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  typeId?: string;
+
+  @IsOptional()
+  @IsString()
+  statusId?: string;
+
+  @IsOptional()
   @IsDateString()
   projectStartDate?: string;
 }

@@ -85,11 +85,38 @@ model CompanyMembership {
   @@unique([userId, spaceId])
 }
 
+model ProjectTypeOption {
+  id        String   @id @default(uuid())
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  projects Project[]
+}
+
+model ProjectStatusOption {
+  id        String   @id @default(uuid())
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  projects Project[]
+}
+
 model Project {
-  id          String  @id @default(uuid())
+  id          String @id @default(uuid())
   name        String
-  clientName  String?
-  siteAddress String?
+  clientName  String
+  siteAddress String
+
+  /// 案號 — optional, unlike everything else required at creation.
+  caseNumber String?
+
+  typeId String
+  type   ProjectTypeOption @relation(fields: [typeId], references: [id])
+
+  statusId String
+  status   ProjectStatusOption @relation(fields: [statusId], references: [id])
 
   // Baseline anchor date: items with no predecessors start here. Date-only —
   // no time-of-day, no timezone (see WorkItem's date fields for the same rule).

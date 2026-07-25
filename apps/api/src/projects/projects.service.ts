@@ -26,6 +26,7 @@ export class ProjectsService {
       space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN;
     return this.prisma.project.findMany({
       where: canSeeEverything ? { spaceId } : { spaceId, members: { some: { userId } } },
+      include: { type: true, status: true },
       orderBy: { createdAt: 'asc' },
     });
   }
@@ -37,9 +38,13 @@ export class ProjectsService {
         name: dto.name,
         clientName: dto.clientName,
         siteAddress: dto.siteAddress,
+        caseNumber: dto.caseNumber,
+        typeId: dto.typeId,
+        statusId: dto.statusId,
         projectStartDate: new Date(dto.projectStartDate),
         spaceId,
       },
+      include: { type: true, status: true },
     });
     // Whoever creates a project is its PM (project lead) by default.
     await this.prisma.projectMember.create({
@@ -63,10 +68,14 @@ export class ProjectsService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.clientName !== undefined && { clientName: dto.clientName }),
         ...(dto.siteAddress !== undefined && { siteAddress: dto.siteAddress }),
+        ...(dto.caseNumber !== undefined && { caseNumber: dto.caseNumber }),
+        ...(dto.typeId !== undefined && { typeId: dto.typeId }),
+        ...(dto.statusId !== undefined && { statusId: dto.statusId }),
         ...(dto.projectStartDate !== undefined && {
           projectStartDate: new Date(dto.projectStartDate),
         }),
       },
+      include: { type: true, status: true },
     });
   }
 
@@ -100,9 +109,14 @@ export class ProjectsService {
     });
   }
 
-  async getProjectOrThrow(projectId: string): Promise<Project> {
+  /** Every caller gets `type`/`status` included — it's a cheap join on a
+   * single-row lookup, and centralizing it here means every screen that
+   * loads a project (detail, schedule, work items, calendar) sees the same
+   * shape without each one remembering to ask for it separately. */
+  async getProjectOrThrow(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
+      include: { type: true, status: true },
     });
     if (!project) {
       throw new NotFoundException('Project not found');
