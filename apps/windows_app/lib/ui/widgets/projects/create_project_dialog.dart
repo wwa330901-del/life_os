@@ -3,15 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_client.dart';
-import '../../../core/models/project.dart';
+import '../../../core/models/project_property.dart';
 import '../../../state/auth_provider.dart';
-import '../../../state/project_options_provider.dart';
+import '../../../state/project_properties_provider.dart';
 import '../../../state/projects_provider.dart';
 
-/// 業主名稱/專案地點/類型/狀態 are required; 案號 is the only optional field.
-/// 專案名稱 auto-fills as 業主名稱+專案地點+類型 while the user hasn't typed
-/// their own value into it — a convenience, not a lock, so it stays a plain
-/// editable field the whole time.
+/// Renders one input per this space's own property definitions — a space
+/// with none defined yet just gets a plain name + start date form, same as
+/// a brand new Notion database with no properties. 專案名稱 auto-fills as
+/// 業主名稱+專案地點+類型 only if this space happens to have TEXT properties
+/// named 業主名稱/專案地點 and a SELECT property named 類型 (this space's own
+/// port of the old fixed-field behavior); any other property set just skips
+/// the auto-fill and leaves 專案名稱 to be typed by hand.
 class CreateProjectDialog extends ConsumerStatefulWidget {
   const CreateProjectDialog({super.key, required this.spaceId});
 
@@ -31,34 +34,55 @@ class CreateProjectDialog extends ConsumerStatefulWidget {
 
 class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
   final _nameController = TextEditingController();
-  final _clientController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _caseNumberController = TextEditingController();
+  final Map<String, TextEditingController> _textControllers = {};
+  final Map<String, DateTime?> _dateValues = {};
+  final Map<String, String?> _selectValues = {};
+  List<PropertyDefinition> _definitions = const [];
+  bool _fieldsInitialized = false;
   String _lastAutoName = '';
-  String? _typeId;
-  String? _statusId;
   var _startDate = DateTime.now();
   bool _submitting = false;
 
   @override
-  void initState() {
-    super.initState();
-    _clientController.addListener(_recomputeName);
-    _addressController.addListener(_recomputeName);
-  }
-
-  @override
   void dispose() {
     _nameController.dispose();
-    _clientController.dispose();
-    _addressController.dispose();
-    _caseNumberController.dispose();
+    for (final controller in _textControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
-  void _recomputeName([List<ProjectOption>? typeOptions]) {
-    final typeLabel = typeOptions?.firstWhereOrNull((o) => o.id == _typeId)?.label ?? '';
-    final auto = '${_clientController.text}${_addressController.text}$typeLabel';
+  void _ensureFieldsFor(List<PropertyDefinition> definitions) {
+    if (_fieldsInitialized) return;
+    _fieldsInitialized = true;
+    _definitions = definitions;
+    for (final definition in definitions) {
+      switch (definition.type) {
+        case PropertyType.text:
+        case PropertyType.number:
+          final controller = TextEditingController();
+          controller.addListener(_recomputeName);
+          _textControllers[definition.id] = controller;
+        case PropertyType.date:
+          _dateValues[definition.id] = null;
+        case PropertyType.select:
+          _selectValues[definition.id] = null;
+      }
+    }
+  }
+
+  PropertyDefinition? _findByName(String name, PropertyType type) =>
+      _definitions.firstWhereOrNull((d) => d.name == name && d.type == type);
+
+  void _recomputeName() {
+    final client = _findByName('業主名稱', PropertyType.text);
+    final site = _findByName('專案地點', PropertyType.text);
+    final type = _findByName('類型', PropertyType.select);
+    if (client == null || site == null || type == null) return;
+    final typeLabel =
+        type.options.firstWhereOrNull((o) => o.id == _selectValues[type.id])?.label ?? '';
+    final auto =
+        '${_textControllers[client.id]?.text ?? ''}${_textControllers[site.id]?.text ?? ''}$typeLabel';
     // Only overwrite the name field if it still holds the last auto-generated
     // value — once the user types their own text in, it stops following.
     if (_nameController.text == _lastAutoName) {
@@ -67,12 +91,36 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
     _lastAutoName = auto;
   }
 
-  Future<void> _submit(List<ProjectOption> typeOptions, List<ProjectOption> statusOptions) async {
+  Future<void> _submit() async {
     final name = _nameController.text.trim();
-    final clientName = _clientController.text.trim();
-    final siteAddress = _addressController.text.trim();
-    if (name.isEmpty || clientName.isEmpty || siteAddress.isEmpty || _typeId == null || _statusId == null) {
-      return;
+    if (name.isEmpty) return;
+
+    final propertyValues = <PropertyValueInput>[];
+    for (final definition in _definitions) {
+      switch (definition.type) {
+        case PropertyType.text:
+          final text = _textControllers[definition.id]?.text.trim() ?? '';
+          if (text.isNotEmpty) {
+            propertyValues.add(PropertyValueInput(definitionId: definition.id, value: text));
+          }
+        case PropertyType.number:
+          final number = double.tryParse(_textControllers[definition.id]?.text.trim() ?? '');
+          if (number != null) {
+            propertyValues.add(PropertyValueInput(definitionId: definition.id, value: number));
+          }
+        case PropertyType.date:
+          final date = _dateValues[definition.id];
+          if (date != null) {
+            propertyValues.add(
+              PropertyValueInput(definitionId: definition.id, value: _dateOnly(date)),
+            );
+          }
+        case PropertyType.select:
+          final optionId = _selectValues[definition.id];
+          if (optionId != null) {
+            propertyValues.add(PropertyValueInput(definitionId: definition.id, value: optionId));
+          }
+      }
     }
 
     setState(() => _submitting = true);
@@ -82,14 +130,8 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
           .createProject(
             spaceId: widget.spaceId,
             name: name,
-            clientName: clientName,
-            siteAddress: siteAddress,
-            caseNumber: _caseNumberController.text.trim().isEmpty
-                ? null
-                : _caseNumberController.text.trim(),
-            typeId: _typeId!,
-            statusId: _statusId!,
             projectStartDate: _startDate,
+            propertyValues: propertyValues,
           );
       ref.invalidate(spaceProjectsProvider(widget.spaceId));
       if (mounted) Navigator.of(context).pop(true);
@@ -103,21 +145,19 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final typesAsync = ref.watch(projectTypeOptionsProvider);
-    final statusesAsync = ref.watch(projectStatusOptionsProvider);
+    final propertiesAsync = ref.watch(spacePropertiesProvider(widget.spaceId));
 
     return AlertDialog(
       title: const Text('新增專案'),
       content: SizedBox(
         width: 360,
-        child: typesAsync.when(
-          data: (types) => statusesAsync.when(
-            data: (statuses) => _buildForm(types, statuses),
-            loading: () => const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
-            error: (error, _) => Text('讀取狀態選項失敗：$error'),
-          ),
+        child: propertiesAsync.when(
+          data: (definitions) {
+            _ensureFieldsFor(definitions);
+            return _buildForm(definitions);
+          },
           loading: () => const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
-          error: (error, _) => Text('讀取類型選項失敗：$error'),
+          error: (error, _) => Text('讀取屬性設定失敗：$error'),
         ),
       ),
       actions: [
@@ -126,9 +166,7 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: _submitting
-              ? null
-              : () => _submit(typesAsync.value ?? const [], statusesAsync.value ?? const []),
+          onPressed: _submitting ? null : _submit,
           child: _submitting
               ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
               : const Text('建立'),
@@ -137,61 +175,20 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
     );
   }
 
-  Widget _buildForm(List<ProjectOption> types, List<ProjectOption> statuses) {
+  Widget _buildForm(List<PropertyDefinition> definitions) {
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _typeId,
-                  decoration: const InputDecoration(labelText: '類型 *'),
-                  items: [
-                    for (final type in types) DropdownMenuItem(value: type.id, child: Text(type.label)),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _typeId = value;
-                    _recomputeName(types);
-                  }),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _statusId,
-                  decoration: const InputDecoration(labelText: '狀態 *'),
-                  items: [
-                    for (final status in statuses)
-                      DropdownMenuItem(value: status.id, child: Text(status.label)),
-                  ],
-                  onChanged: (value) => setState(() => _statusId = value),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _clientController,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: '業主名稱 *'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _addressController,
-            decoration: const InputDecoration(labelText: '專案地點 *'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _caseNumberController,
-            decoration: const InputDecoration(labelText: '案號（選填）'),
-          ),
-          const SizedBox(height: 12),
+          for (final definition in definitions) ...[
+            _buildField(definition),
+            const SizedBox(height: 12),
+          ],
           TextField(
             controller: _nameController,
-            decoration: const InputDecoration(labelText: '專案名稱', helperText: '預設由業主名稱+專案地點+類型組成，可自行修改'),
+            autofocus: definitions.isEmpty,
+            decoration: const InputDecoration(labelText: '專案名稱'),
           ),
           const SizedBox(height: 12),
           Row(
@@ -217,4 +214,63 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
       ),
     );
   }
+
+  Widget _buildField(PropertyDefinition definition) {
+    switch (definition.type) {
+      case PropertyType.text:
+        return TextField(
+          controller: _textControllers[definition.id],
+          decoration: InputDecoration(labelText: definition.name),
+        );
+      case PropertyType.number:
+        return TextField(
+          controller: _textControllers[definition.id],
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(labelText: definition.name),
+        );
+      case PropertyType.date:
+        final value = _dateValues[definition.id];
+        return Row(
+          children: [
+            Expanded(
+              child: Text(
+                value == null
+                    ? definition.name
+                    : '${definition.name}：${value.year}/${value.month}/${value.day}',
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: value ?? DateTime.now(),
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2100),
+                );
+                if (picked != null) setState(() => _dateValues[definition.id] = picked);
+              },
+              child: const Text('選擇日期'),
+            ),
+          ],
+        );
+      case PropertyType.select:
+        return DropdownButtonFormField<String>(
+          initialValue: _selectValues[definition.id],
+          decoration: InputDecoration(labelText: definition.name),
+          items: [
+            for (final option in definition.options)
+              DropdownMenuItem(value: option.id, child: Text(option.label)),
+          ],
+          onChanged: (value) => setState(() {
+            _selectValues[definition.id] = value;
+            _recomputeName();
+          }),
+        );
+    }
+  }
+
+  String _dateOnly(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 }

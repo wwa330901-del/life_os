@@ -6,6 +6,7 @@ import 'models/admin_models.dart';
 import 'models/app_user.dart';
 import 'models/project.dart';
 import 'models/project_member.dart';
+import 'models/project_property.dart';
 import 'models/schedule_result.dart';
 import 'models/work_item.dart';
 
@@ -156,23 +157,72 @@ class ApiClient {
   Future<Project> createProject({
     required String spaceId,
     required String name,
-    required String clientName,
-    required String siteAddress,
-    String? caseNumber,
-    required String typeId,
-    required String statusId,
     required DateTime projectStartDate,
+    List<PropertyValueInput> propertyValues = const [],
   }) async {
     final body = await _post('/spaces/$spaceId/projects', {
       'name': name,
-      'clientName': clientName,
-      'siteAddress': siteAddress,
-      if (caseNumber != null && caseNumber.isNotEmpty) 'caseNumber': caseNumber,
-      'typeId': typeId,
-      'statusId': statusId,
       'projectStartDate': _dateOnly(projectStartDate),
+      if (propertyValues.isNotEmpty)
+        'propertyValues': propertyValues.map((v) => v.toJson()).toList(),
     });
     return Project.fromJson(body);
+  }
+
+  Future<List<PropertyDefinition>> listPropertyDefinitions(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/properties');
+    return body.map((e) => PropertyDefinition.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createPropertyDefinition({
+    required String spaceId,
+    required String name,
+    required PropertyType type,
+  }) async {
+    await _post('/spaces/$spaceId/properties', {
+      'name': name,
+      'type': propertyTypeToJson(type),
+    });
+  }
+
+  Future<void> renamePropertyDefinition({
+    required String spaceId,
+    required String definitionId,
+    required String name,
+  }) async {
+    await _patchIgnoreBody('/spaces/$spaceId/properties/$definitionId', {'name': name});
+  }
+
+  Future<void> deletePropertyDefinition({required String spaceId, required String definitionId}) async {
+    await _delete('/spaces/$spaceId/properties/$definitionId');
+  }
+
+  Future<void> addPropertyOption({
+    required String spaceId,
+    required String definitionId,
+    required String label,
+  }) async {
+    await _post('/spaces/$spaceId/properties/$definitionId/options', {'label': label});
+  }
+
+  Future<void> renamePropertyOption({
+    required String spaceId,
+    required String definitionId,
+    required String optionId,
+    required String label,
+  }) async {
+    await _patchIgnoreBody(
+      '/spaces/$spaceId/properties/$definitionId/options/$optionId',
+      {'label': label},
+    );
+  }
+
+  Future<void> deletePropertyOption({
+    required String spaceId,
+    required String definitionId,
+    required String optionId,
+  }) async {
+    await _delete('/spaces/$spaceId/properties/$definitionId/options/$optionId');
   }
 
   Future<List<ProjectOption>> listProjectTypeOptions() async {
@@ -215,30 +265,18 @@ class ApiClient {
   }
 
   /// Every field is "not sent" when omitted (unchanged) — same convention
-  /// as [updateWorkItem]. `clearCaseNumber: true` clears an optional 案號
-  /// back to null.
+  /// as [updateWorkItem].
   Future<Project> updateProject({
     required String projectId,
     String? name,
-    String? clientName,
-    String? siteAddress,
-    String? caseNumber,
-    bool clearCaseNumber = false,
-    String? typeId,
-    String? statusId,
     DateTime? projectStartDate,
+    List<PropertyValueInput> propertyValues = const [],
   }) async {
     final body = await _patch('/projects/$projectId', {
       if (name != null) 'name': name,
-      if (clientName != null) 'clientName': clientName,
-      if (siteAddress != null) 'siteAddress': siteAddress,
-      if (clearCaseNumber)
-        'caseNumber': null
-      else if (caseNumber != null)
-        'caseNumber': caseNumber,
-      if (typeId != null) 'typeId': typeId,
-      if (statusId != null) 'statusId': statusId,
       if (projectStartDate != null) 'projectStartDate': _dateOnly(projectStartDate),
+      if (propertyValues.isNotEmpty)
+        'propertyValues': propertyValues.map((v) => v.toJson()).toList(),
     });
     return Project.fromJson(body);
   }

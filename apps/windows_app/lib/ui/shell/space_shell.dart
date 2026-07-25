@@ -5,6 +5,7 @@ import '../../core/models/app_user.dart';
 import '../../state/space_provider.dart';
 import '../screens/projects/project_detail_screen.dart';
 import '../screens/projects/project_list_screen.dart';
+import '../screens/space/space_properties_screen.dart';
 import 'app_sidebar.dart';
 import 'dashboard_view.dart';
 
@@ -27,8 +28,17 @@ class SpaceShell extends ConsumerStatefulWidget {
 
 class _SpaceShellState extends ConsumerState<SpaceShell> {
   String? _openProjectId;
+  bool _showPropertiesSettings = false;
 
-  void _backToList() => setState(() => _openProjectId = null);
+  void _backToList() => setState(() {
+    _openProjectId = null;
+    _showPropertiesSettings = false;
+  });
+
+  void _openPropertiesSettings() => setState(() {
+    _openProjectId = null;
+    _showPropertiesSettings = true;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +48,8 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
 
     final content = space.type != SpaceType.company
         ? DashboardView(space: space)
+        : _showPropertiesSettings
+        ? SpacePropertiesScreen(spaceId: space.id, onBack: _backToList)
         : _openProjectId == null
         ? ProjectListScreen(
             spaceId: space.id,
@@ -53,7 +65,12 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     return Scaffold(
       body: Row(
         children: [
-          AppSidebar(space: space, onGoToProjects: _backToList),
+          AppSidebar(
+            space: space,
+            onGoToProjects: _backToList,
+            onOpenPropertiesSettings: _openPropertiesSettings,
+            propertiesSettingsSelected: _showPropertiesSettings,
+          ),
           Expanded(child: content),
         ],
       ),

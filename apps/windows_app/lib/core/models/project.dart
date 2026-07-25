@@ -1,7 +1,11 @@
 import 'holiday_calendar.dart';
+import 'project_property.dart';
 
-/// One 類型/狀態 dropdown option — platform-admin-managed, shared by every
-/// space (see `apps/api/src/projects/project-options.service.ts`).
+/// One 類型/狀態 dropdown option from the old platform-wide admin system
+/// (`apps/api/src/projects/project-options.service.ts`) — superseded by the
+/// per-space [PropertyDefinition]/[PropertyOption] system, but the old
+/// tables/endpoints/admin screen are still around (stage-2 cleanup, not yet
+/// done), so this stays until that's removed.
 class ProjectOption {
   const ProjectOption({required this.id, required this.label});
 
@@ -16,17 +20,20 @@ class ProjectOption {
 /// the holiday calendar fields flattened onto it (see schema.prisma) — this
 /// client model embeds them as a [HolidayCalendar] for convenience, same
 /// shape reno_pm's Gantt widgets expect.
+///
+/// Project-info fields (類型/狀態/業主名稱/... or whatever else a space has
+/// defined) are no longer fixed columns — each space defines its own set of
+/// properties (see `project_properties_provider.dart`), and a project just
+/// carries a value per definition in [propertyValues]. The backend still
+/// returns the old fixed `type`/`status` fields too (a stage-1 safety net),
+/// but nothing on the client reads them anymore.
 class Project {
   final String id;
   final String name;
-  final String clientName;
-  final String siteAddress;
-  final String? caseNumber;
-  final ProjectOption type;
-  final ProjectOption status;
   final DateTime projectStartDate;
   final HolidayCalendar calendar;
   final String spaceId;
+  final List<ProjectPropertyValue> propertyValues;
 
   /// Only populated by `GET /spaces/:id/projects` (the project list card
   /// needs "who's responsible"); null on every other endpoint that returns
@@ -36,28 +43,42 @@ class Project {
   const Project({
     required this.id,
     required this.name,
-    required this.clientName,
-    required this.siteAddress,
-    this.caseNumber,
-    required this.type,
-    required this.status,
     required this.projectStartDate,
     required this.calendar,
     required this.spaceId,
+    required this.propertyValues,
     this.pmName,
   });
+
+  /// Looks up this project's value for the property named [name] within
+  /// its space's own definitions (e.g. "類型", "狀態") — gracefully returns
+  /// null if this space never defined a property by that name.
+  ProjectPropertyValue? propertyByName(String name) {
+    for (final value in propertyValues) {
+      if (value.definitionName == name) return value;
+    }
+    return null;
+  }
+
+  /// Looks up this project's value for a specific property definition by
+  /// id — null if this project has never had a value set for it (e.g. a
+  /// property added to the space after this project was created).
+  ProjectPropertyValue? propertyValue(String definitionId) {
+    for (final value in propertyValues) {
+      if (value.definitionId == definitionId) return value;
+    }
+    return null;
+  }
 
   factory Project.fromJson(Map<String, dynamic> json) => Project(
     id: json['id'] as String,
     name: json['name'] as String,
-    clientName: json['clientName'] as String,
-    siteAddress: json['siteAddress'] as String,
-    caseNumber: json['caseNumber'] as String?,
-    type: ProjectOption.fromJson(json['type'] as Map<String, dynamic>),
-    status: ProjectOption.fromJson(json['status'] as Map<String, dynamic>),
     projectStartDate: DateTime.parse(json['projectStartDate'] as String),
     calendar: HolidayCalendar.fromProjectJson(json),
     spaceId: json['spaceId'] as String,
+    propertyValues: (json['propertyValues'] as List<dynamic>? ?? const [])
+        .map((e) => ProjectPropertyValue.fromJson(e as Map<String, dynamic>))
+        .toList(),
     pmName: json['pmName'] as String?,
   );
 }

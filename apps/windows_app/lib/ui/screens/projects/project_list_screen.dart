@@ -87,8 +87,12 @@ class ProjectListScreen extends ConsumerWidget {
                               Wrap(
                                 spacing: 6,
                                 children: [
-                                  _Badge(label: project.type.label, color: scheme.primary),
-                                  _Badge(label: project.status.label, color: scheme.secondary),
+                                  for (final badge in [
+                                    (project.propertyByName('類型')?.displayValue, scheme.primary),
+                                    (project.propertyByName('狀態')?.displayValue, scheme.secondary),
+                                  ])
+                                    if (badge.$1 != null && badge.$1!.isNotEmpty)
+                                      _Badge(label: badge.$1!, color: badge.$2),
                                 ],
                               ),
                             ],
