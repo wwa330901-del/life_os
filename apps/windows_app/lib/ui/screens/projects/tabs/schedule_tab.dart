@@ -6,9 +6,11 @@ import '../../../../core/api_client.dart';
 import '../../../../core/models/schedule_result.dart';
 import '../../../../core/models/work_item_hierarchy.dart';
 import '../../../../core/scheduling/working_day_calculator.dart';
+import '../../../../state/export_controller.dart';
 import '../../../../state/project_editor_provider.dart';
 import '../../../../state/ui_prefs_provider.dart';
 import '../../../widgets/projects/calendar_editor/holiday_calendar_dialog.dart';
+import '../../../widgets/projects/export/export_options_dialog.dart';
 import '../../../widgets/projects/gantt/gantt_timeline.dart';
 import '../../../widgets/projects/gantt/linked_scroll_controllers.dart';
 import '../../../widgets/projects/task_table/task_table.dart';
@@ -93,6 +95,50 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
       _run(() => _notifier.changeDuration(id, duration < 1 ? 1 : duration));
     }
 
+    Future<void> handleExport(String format) async {
+      final exportController = ref.read(exportControllerProvider);
+      bool exported;
+      if (format == 'pdf') {
+        final options = await PdfExportOptionsDialog.show(context);
+        if (options == null || !context.mounted) return;
+        exported = await exportController.exportPdf(
+          project: editor.project,
+          orderedItems: orderedItems,
+          scheduleResult: editor.schedule,
+          pageFormat: options.pageFormat,
+          fillPercent: options.fillPercent,
+          columns: options.columns,
+        );
+      } else if (format == 'compact_png') {
+        final options = await CompactPngExportOptionsDialog.show(context);
+        if (options == null || !context.mounted) return;
+        exported = await exportController.exportCompactPng(
+          project: editor.project,
+          orderedItems: orderedItems,
+          scheduleResult: editor.schedule,
+          pixelRatio: options.pixelRatio,
+          columns: options.columns,
+        );
+      } else {
+        final options = await PngExportOptionsDialog.show(context);
+        if (options == null || !context.mounted) return;
+        exported = await exportController.exportPng(
+          project: editor.project,
+          orderedItems: orderedItems,
+          scheduleResult: editor.schedule,
+          pixelRatio: options.pixelRatio,
+          columns: options.columns,
+        );
+      }
+      if (!context.mounted || !exported) return;
+      final formatLabel = switch (format) {
+        'pdf' => 'PDF',
+        'compact_png' => '小檔案 PNG',
+        _ => 'PNG',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已匯出 $formatLabel')));
+    }
+
     return CallbackShortcuts(
       bindings: {
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ): () =>
@@ -119,6 +165,7 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
           canRedo: _notifier.canRedo,
           onUndo: () => _run(_notifier.undo),
           onRedo: () => _run(_notifier.redo),
+          onExport: handleExport,
         ),
         Expanded(
           child: orderedItems.isEmpty
@@ -212,6 +259,7 @@ class _Toolbar extends StatelessWidget {
     required this.canRedo,
     required this.onUndo,
     required this.onRedo,
+    required this.onExport,
   });
 
   final bool hasIssues;
@@ -223,6 +271,7 @@ class _Toolbar extends StatelessWidget {
   final bool canRedo;
   final VoidCallback onUndo;
   final VoidCallback onRedo;
+  final ValueChanged<String> onExport;
 
   @override
   Widget build(BuildContext context) {
@@ -258,6 +307,16 @@ class _Toolbar extends StatelessWidget {
             icon: const Icon(Icons.zoom_in, size: 20),
             tooltip: '放大甘特圖',
             onPressed: onZoomIn,
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.ios_share, size: 20),
+            tooltip: '匯出',
+            onSelected: onExport,
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'pdf', child: Text('匯出為 PDF')),
+              PopupMenuItem(value: 'png', child: Text('匯出為圖片 (PNG)')),
+              PopupMenuItem(value: 'compact_png', child: Text('匯出為圖片 (小檔案,適合傳送)')),
+            ],
           ),
           if (hasIssues) ...[
             const SizedBox(width: 8),
