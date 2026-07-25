@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api_client.dart';
@@ -14,11 +15,12 @@ import '../../../widgets/projects/task_table/task_table.dart';
 
 /// 工期 tab: an editable task list (left) next to the ported Gantt chart
 /// (right), sharing vertical scroll so rows stay aligned — same split-pane
-/// shape as reno_pm's project_editor_screen.dart, minus undo/redo, export,
-/// and drag-on-Gantt date editing (all out of scope for this module).
-/// Dates shown always come from the server's computed schedule — every
-/// edit here is a network write followed by a refetch, never local
-/// arithmetic.
+/// shape as reno_pm's project_editor_screen.dart. Dates shown always come
+/// from the server's computed schedule — every edit here is a network
+/// write followed by a refetch, never local arithmetic. Undo/redo
+/// (Ctrl+Z/Ctrl+Y, scoped to this tab) replays inverse mutations through
+/// the same API rather than reno_pm's whole-state snapshot stack — see
+/// `state/edit_history.dart` for why.
 class ScheduleTab extends ConsumerStatefulWidget {
   const ScheduleTab({super.key, required this.projectId});
 
@@ -91,7 +93,16 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
       _run(() => _notifier.changeDuration(id, duration < 1 ? 1 : duration));
     }
 
-    return Column(
+    return CallbackShortcuts(
+      bindings: {
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ): () =>
+            _run(_notifier.undo),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyY): () =>
+            _run(_notifier.redo),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Column(
       children: [
         _Toolbar(
           hasIssues: editor.schedule.hasIssues,
@@ -104,6 +115,10 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
           },
           onZoomIn: () => ref.read(zoomDayWidthProvider.notifier).zoomIn(),
           onZoomOut: () => ref.read(zoomDayWidthProvider.notifier).zoomOut(),
+          canUndo: _notifier.canUndo,
+          canRedo: _notifier.canRedo,
+          onUndo: () => _run(_notifier.undo),
+          onRedo: () => _run(_notifier.redo),
         ),
         Expanded(
           child: orderedItems.isEmpty
@@ -180,6 +195,8 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
                 ),
         ),
       ],
+        ),
+      ),
     );
   }
 }
@@ -191,6 +208,10 @@ class _Toolbar extends StatelessWidget {
     required this.onCalendarSettings,
     required this.onZoomIn,
     required this.onZoomOut,
+    required this.canUndo,
+    required this.canRedo,
+    required this.onUndo,
+    required this.onRedo,
   });
 
   final bool hasIssues;
@@ -198,6 +219,10 @@ class _Toolbar extends StatelessWidget {
   final VoidCallback onCalendarSettings;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
+  final bool canUndo;
+  final bool canRedo;
+  final VoidCallback onUndo;
+  final VoidCallback onRedo;
 
   @override
   Widget build(BuildContext context) {
@@ -209,6 +234,16 @@ class _Toolbar extends StatelessWidget {
       ),
       child: Row(
         children: [
+          IconButton(
+            icon: const Icon(Icons.undo, size: 20),
+            tooltip: '復原 (Ctrl+Z)',
+            onPressed: canUndo ? onUndo : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.redo, size: 20),
+            tooltip: '重做 (Ctrl+Y)',
+            onPressed: canRedo ? onRedo : null,
+          ),
           IconButton(
             icon: const Icon(Icons.event_busy, size: 20),
             tooltip: '公休日曆設定',

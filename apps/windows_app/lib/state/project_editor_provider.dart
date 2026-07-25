@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/holiday_calendar.dart';
@@ -5,6 +6,7 @@ import '../core/models/project.dart';
 import '../core/models/schedule_result.dart';
 import '../core/models/work_item.dart';
 import 'auth_provider.dart';
+import 'edit_history.dart';
 
 /// Everything one open project screen needs: the project itself, its flat
 /// work-item list, and the server-computed schedule. The Flutter app never
@@ -26,6 +28,41 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
   ProjectEditorNotifier(this.projectId);
 
   final String projectId;
+
+  static const _maxHistory = 100;
+  final List<EditAction> _undoStack = [];
+  final List<EditAction> _redoStack = [];
+
+  bool get canUndo => _undoStack.isNotEmpty;
+  bool get canRedo => _redoStack.isNotEmpty;
+
+  void _record(EditAction action) {
+    _undoStack.add(action);
+    if (_undoStack.length > _maxHistory) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
+  /// Undoes the most recent edit made through this notifier (rename,
+  /// duration, dates, predecessors, calendar, add/delete/reorder). Replays
+  /// the specific inverse mutation via the normal API-backed methods below
+  /// — never a snapshot revert — so it can't clobber a change someone else
+  /// just made to a different field. If the replay throws (e.g. the item
+  /// no longer exists), the action is simply dropped rather than corrupting
+  /// the rest of the stack; the caller's existing error handling surfaces
+  /// the failure.
+  Future<void> undo() async {
+    if (_undoStack.isEmpty) return;
+    final action = _undoStack.removeLast();
+    await action.undo(this);
+    _redoStack.add(action);
+  }
+
+  Future<void> redo() async {
+    if (_redoStack.isEmpty) return;
+    final action = _redoStack.removeLast();
+    await action.redo(this);
+    _undoStack.add(action);
+  }
 
   @override
   Future<ProjectEditorState> build() => _fetch();
@@ -61,11 +98,14 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
     }
   }
 
+  WorkItem? _find(String id) => state.value?.items.firstWhereOrNull((i) => i.id == id);
+
   /// Adds a new work item and returns its id (for auto-select).
   Future<String> addWorkItem({
     String name = '新工項',
     int durationDays = 1,
     String? parentId,
+    bool recordHistory = true,
   }) async {
     final api = ref.read(apiClientProvider);
     final created = await api.createWorkItem(
@@ -75,25 +115,62 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
       parentId: parentId,
     );
     await refresh();
+    if (recordHistory) _record(AddAction(created.id, parentId));
     return created.id;
   }
 
-  Future<void> renameWorkItem(String id, String name) async {
+  /// Recreates a deleted work item from its pre-delete snapshot (used by
+  /// [DeleteAction.undo]) — the recreated item gets a new server-assigned
+  /// id and lands at the end of its sibling group, not its original sort
+  /// position; restoring the exact position would need a further reorder
+  /// call, which isn't worth the complexity for an undo path.
+  Future<WorkItem> recreateWorkItem(WorkItem snapshot, {bool recordHistory = true}) async {
+    final api = ref.read(apiClientProvider);
+    var created = await api.createWorkItem(
+      projectId: projectId,
+      name: snapshot.name,
+      durationDays: snapshot.durationDays,
+      parentId: snapshot.parentId,
+      predecessorIds: snapshot.predecessorIds.isEmpty ? null : snapshot.predecessorIds,
+    );
+    if (snapshot.isManuallyPinned && snapshot.manualStartDate != null) {
+      created = await api.updateWorkItem(
+        projectId: projectId,
+        workItemId: created.id,
+        manualStartDate: snapshot.manualStartDate,
+        isManuallyPinned: true,
+      );
+    }
+    await refresh();
+    if (recordHistory) _record(AddAction(created.id, snapshot.parentId));
+    return created;
+  }
+
+  Future<void> renameWorkItem(String id, String name, {bool recordHistory = true}) async {
+    final oldName = _find(id)?.name;
     await ref
         .read(apiClientProvider)
         .updateWorkItem(projectId: projectId, workItemId: id, name: name);
     await refresh();
+    if (recordHistory && oldName != null && oldName != name) {
+      _record(RenameAction(id, oldName, name));
+    }
   }
 
-  Future<void> changeDuration(String id, int durationDays) async {
+  Future<void> changeDuration(String id, int durationDays, {bool recordHistory = true}) async {
+    final oldDuration = _find(id)?.durationDays;
     await ref
         .read(apiClientProvider)
         .updateWorkItem(projectId: projectId, workItemId: id, durationDays: durationDays);
     await refresh();
+    if (recordHistory && oldDuration != null && oldDuration != durationDays) {
+      _record(DurationAction(id, oldDuration, durationDays));
+    }
   }
 
   /// `date` null clears a manual pin and reverts to the auto-computed date.
-  Future<void> changeStartDate(String id, DateTime? date) async {
+  Future<void> changeStartDate(String id, DateTime? date, {bool recordHistory = true}) async {
+    final old = recordHistory ? _find(id) : null;
     final api = ref.read(apiClientProvider);
     if (date == null) {
       await api.updateWorkItem(
@@ -111,9 +188,18 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
       );
     }
     await refresh();
+    if (recordHistory && old != null) {
+      final oldDate = old.isManuallyPinned ? old.manualStartDate : null;
+      _record(StartDateAction(id, oldDate, date));
+    }
   }
 
-  Future<void> changePredecessors(String id, List<String> predecessorIds) async {
+  Future<void> changePredecessors(
+    String id,
+    List<String> predecessorIds, {
+    bool recordHistory = true,
+  }) async {
+    final oldIds = _find(id)?.predecessorIds;
     // Assigning a predecessor hands scheduling back to the auto-computed
     // date (predecessor's end + 1 working day) even if this item previously
     // had a manually pinned start date.
@@ -125,18 +211,53 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
       clearManualStartDate: true,
     );
     await refresh();
+    if (recordHistory && oldIds != null) {
+      _record(PredecessorsAction(id, oldIds, predecessorIds));
+    }
   }
 
-  Future<void> removeWorkItem(String id) async {
+  Future<void> removeWorkItem(String id, {bool recordHistory = true}) async {
+    final snapshot = recordHistory ? _find(id) : null;
     await ref.read(apiClientProvider).deleteWorkItem(projectId: projectId, workItemId: id);
     await refresh();
+    if (recordHistory && snapshot != null) {
+      _record(DeleteAction(snapshot));
+    }
   }
 
   Future<void> reorderWorkItem(
     String draggedId,
     String targetId, {
     bool insertAfter = false,
+    bool recordHistory = true,
   }) async {
+    EditAction? action;
+    if (recordHistory) {
+      final items = state.value?.items;
+      final dragged = items == null ? null : _find(draggedId);
+      if (items != null && dragged != null) {
+        final siblings = items.where((i) => i.parentId == dragged.parentId).toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        final index = siblings.indexWhere((i) => i.id == draggedId);
+        if (index > 0) {
+          action = ReorderAction(
+            draggedId: draggedId,
+            oldNeighborId: siblings[index - 1].id,
+            oldInsertAfter: true,
+            newTargetId: targetId,
+            newInsertAfter: insertAfter,
+          );
+        } else if (index >= 0 && index < siblings.length - 1) {
+          action = ReorderAction(
+            draggedId: draggedId,
+            oldNeighborId: siblings[index + 1].id,
+            oldInsertAfter: false,
+            newTargetId: targetId,
+            newInsertAfter: insertAfter,
+          );
+        }
+      }
+    }
     await ref.read(apiClientProvider).reorderWorkItem(
       projectId: projectId,
       workItemId: draggedId,
@@ -144,9 +265,11 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
       insertAfter: insertAfter,
     );
     await refresh();
+    if (action != null) _record(action);
   }
 
-  Future<void> updateCalendar(HolidayCalendar calendar) async {
+  Future<void> updateCalendar(HolidayCalendar calendar, {bool recordHistory = true}) async {
+    final oldCalendar = state.value?.project.calendar;
     await ref.read(apiClientProvider).updateCalendar(
       projectId: projectId,
       weeklyOffDays: calendar.weeklyOffDays.toList(),
@@ -155,6 +278,9 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
       adHocWorkdays: calendar.adHocWorkdays,
     );
     await refresh();
+    if (recordHistory && oldCalendar != null) {
+      _record(CalendarAction(oldCalendar, calendar));
+    }
   }
 }
 
