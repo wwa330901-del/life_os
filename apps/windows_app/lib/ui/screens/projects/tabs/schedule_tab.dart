@@ -32,10 +32,13 @@ class ScheduleTab extends ConsumerStatefulWidget {
   ConsumerState<ScheduleTab> createState() => _ScheduleTabState();
 }
 
+const _minPaneWidth = 320.0;
+
 class _ScheduleTabState extends ConsumerState<ScheduleTab> {
   final LinkedScrollControllers _vertical = LinkedScrollControllers();
   String? _selectedItemId;
   final Set<String> _collapsedIds = {};
+  double _taskTableWidth = 580;
 
   @override
   void dispose() {
@@ -179,10 +182,17 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
                     label: const Text('新增第一個工項'),
                   ),
                 )
-              : Row(
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final maxTableWidth = constraints.maxWidth - _minPaneWidth;
+                    final tableWidth = _taskTableWidth.clamp(
+                      _minPaneWidth,
+                      maxTableWidth < _minPaneWidth ? _minPaneWidth : maxTableWidth,
+                    );
+                    return Row(
                   children: [
                     SizedBox(
-                      width: 580,
+                      width: tableWidth,
                       child: TaskTable(
                         flatTree: flatTree,
                         verticalController: _vertical.first,
@@ -223,7 +233,24 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
                         ),
                       ),
                     ),
-                    const VerticalDivider(width: 1),
+                    MouseRegion(
+                      cursor: SystemMouseCursors.resizeLeftRight,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragUpdate: (details) => setState(() {
+                          _taskTableWidth += details.delta.dx;
+                        }),
+                        child: SizedBox(
+                          width: 9,
+                          child: Center(
+                            child: Container(
+                              width: 1,
+                              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                     Expanded(
                       child: GanttTimeline(
                         orderedItems: orderedItems,
@@ -239,6 +266,8 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
                       ),
                     ),
                   ],
+                    );
+                  },
                 ),
         ),
       ],
