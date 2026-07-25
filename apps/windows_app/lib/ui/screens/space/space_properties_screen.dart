@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_client.dart';
+import '../../../core/models/document_template.dart';
 import '../../../core/models/project_property.dart';
 import '../../../state/auth_provider.dart';
+import '../../../state/document_templates_provider.dart';
 import '../../../state/project_properties_provider.dart';
 
 String _typeLabel(PropertyType type) => switch (type) {
@@ -83,10 +85,209 @@ class SpacePropertiesScreen extends ConsumerWidget {
               icon: const Icon(Icons.add, size: 18),
               label: const Text('新增屬性'),
             ),
+            _DocumentTemplatesSection(
+              spaceId: spaceId,
+              typeOptions: definitions
+                  .where((d) => d.name == '類型' && d.type == PropertyType.select)
+                  .expand((d) => d.options)
+                  .toList(),
+            ),
           ],
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(child: Text('讀取失敗：$error')),
+      ),
+    );
+  }
+}
+
+/// 文件選用 — which of this space's document templates (see 大系統 doc: these
+/// are ingested by hand, not uploaded here) each "類型" option may generate.
+/// Read/adjust-only: no upload UI, matching how new templates are meant to
+/// arrive.
+class _DocumentTemplatesSection extends ConsumerWidget {
+  const _DocumentTemplatesSection({required this.spaceId, required this.typeOptions});
+
+  final String spaceId;
+  final List<PropertyOption> typeOptions;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final templatesAsync = ref.watch(spaceDocumentTemplatesProvider(spaceId));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 32),
+        Divider(color: scheme.outline.withValues(alpha: 0.25)),
+        const SizedBox(height: 16),
+        Text('文件選用', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text(
+          '設定每份文件範本可以用在哪些「類型」的專案',
+          style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 12),
+        if (typeOptions.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('這個空間還沒有「類型」單選屬性，無法設定文件選用'),
+          )
+        else
+          templatesAsync.when(
+            data: (templates) {
+              if (templates.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('目前沒有任何文件範本'),
+                );
+              }
+              return Column(
+                children: [
+                  for (final template in templates)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _DocumentTemplateCard(
+                        spaceId: spaceId,
+                        template: template,
+                        typeOptions: typeOptions,
+                        onChanged: () => ref.invalidate(spaceDocumentTemplatesProvider(spaceId)),
+                      ),
+                    ),
+                ],
+              );
+            },
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (error, _) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('讀取文件範本失敗：$error'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _DocumentTemplateCard extends ConsumerWidget {
+  const _DocumentTemplateCard({
+    required this.spaceId,
+    required this.template,
+    required this.typeOptions,
+    required this.onChanged,
+  });
+
+  final String spaceId;
+  final DocumentTemplate template;
+  final List<PropertyOption> typeOptions;
+  final VoidCallback onChanged;
+
+  Future<void> _run(BuildContext context, Future<void> Function() action) async {
+    try {
+      await action();
+      onChanged();
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  template.code,
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: scheme.primary),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(template.name, style: Theme.of(context).textTheme.titleMedium)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: scheme.secondary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    template.category,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.secondary),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  tooltip: '刪除',
+                  onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('刪除文件範本？'),
+                        content: Text('刪除「${template.name}」後，專案將無法再產生這份文件。'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(false),
+                            child: const Text('取消'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.of(context).pop(true),
+                            child: const Text('刪除'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !context.mounted) return;
+                    await _run(
+                      context,
+                      () => ref
+                          .read(apiClientProvider)
+                          .deleteDocumentTemplate(spaceId: spaceId, templateId: template.id),
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final option in typeOptions)
+                  FilterChip(
+                    label: Text(option.label),
+                    selected: template.allowedTypeOptionIds.contains(option.id),
+                    onSelected: (selected) {
+                      final updated = [...template.allowedTypeOptionIds];
+                      if (selected) {
+                        updated.add(option.id);
+                      } else {
+                        updated.remove(option.id);
+                      }
+                      _run(
+                        context,
+                        () => ref
+                            .read(apiClientProvider)
+                            .updateDocumentTemplate(
+                              spaceId: spaceId,
+                              templateId: template.id,
+                              allowedTypeOptionIds: updated,
+                            ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

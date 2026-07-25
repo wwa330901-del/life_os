@@ -4,15 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../state/project_editor_provider.dart';
 import '../../shell/breadcrumb_bar.dart';
 import 'tabs/members_tab.dart';
+import 'tabs/project_documents_tab.dart';
 import 'tabs/project_info_tab.dart';
 import 'tabs/schedule_tab.dart';
 
 /// Project detail content — lives inside `SpaceShell`'s content pane.
-/// Three tabs, all with real functionality: 工期 (schedule), 專案資料
-/// (type/status/client/site/case number), 專案成員. The four business
-/// modules planned for later (金額/合約條件/發包狀態/成本控制) don't have a
-/// placeholder here anymore — an empty "coming soon" tab wasn't earning its
-/// spot in the tab bar; they'll get added back once each has real content.
+/// Four tabs, all with real functionality: 工期 (schedule), 專案資料
+/// (per-space custom properties), 專案成員, 相關文件 (document templates the
+/// project's 類型 allows).
 class ProjectDetailScreen extends ConsumerWidget {
   const ProjectDetailScreen({
     super.key,
@@ -25,7 +24,7 @@ class ProjectDetailScreen extends ConsumerWidget {
   final String spaceName;
   final VoidCallback onBackToList;
 
-  static const _tabs = [Tab(text: '工期'), Tab(text: '專案資料'), Tab(text: '專案成員')];
+  static const _tabs = [Tab(text: '工期'), Tab(text: '專案資料'), Tab(text: '專案成員'), Tab(text: '相關文件')];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -61,6 +60,7 @@ class ProjectDetailScreen extends ConsumerWidget {
                   ScheduleTab(projectId: projectId),
                   ProjectInfoTab(projectId: projectId),
                   MembersTab(projectId: projectId),
+                  ProjectDocumentsTab(projectId: projectId),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),

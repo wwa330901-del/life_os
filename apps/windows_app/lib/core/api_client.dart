@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
 import 'models/admin_models.dart';
 import 'models/app_user.dart';
+import 'models/document_template.dart';
 import 'models/project.dart';
 import 'models/project_member.dart';
 import 'models/project_property.dart';
@@ -223,6 +225,55 @@ class ApiClient {
     required String optionId,
   }) async {
     await _delete('/spaces/$spaceId/properties/$definitionId/options/$optionId');
+  }
+
+  /// Every document template this space has defined — ingesting a *new*
+  /// template isn't done through this client (see 大系統 doc: new templates
+  /// are tagged and uploaded by hand), only viewing/managing existing ones.
+  Future<List<DocumentTemplate>> listDocumentTemplates(String spaceId) async {
+    final body = await _getList('/admin/spaces/$spaceId/document-templates');
+    return body.map((e) => DocumentTemplate.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> updateDocumentTemplate({
+    required String spaceId,
+    required String templateId,
+    List<String>? allowedTypeOptionIds,
+  }) async {
+    await _patchIgnoreBody('/admin/spaces/$spaceId/document-templates/$templateId', {
+      if (allowedTypeOptionIds != null) 'allowedTypeOptionIds': allowedTypeOptionIds,
+    });
+  }
+
+  Future<void> deleteDocumentTemplate({required String spaceId, required String templateId}) async {
+    await _delete('/admin/spaces/$spaceId/document-templates/$templateId');
+  }
+
+  Future<List<DocumentTemplate>> listProjectDocumentTemplates(String projectId) async {
+    final body = await _getList('/projects/$projectId/document-templates');
+    return body.map((e) => DocumentTemplate.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// Returns the filled `.docx` bytes — byte-identical to the template's
+  /// original layout apart from the substituted `values`.
+  Future<Uint8List> fillDocumentTemplate({
+    required String projectId,
+    required String templateId,
+    required Map<String, String> values,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/projects/$projectId/document-templates/$templateId/fill'),
+      headers: _headers,
+      body: jsonEncode({'values': values}),
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      final decoded = res.body.isEmpty ? null : jsonDecode(res.body);
+      final message = (decoded is Map && decoded['message'] != null)
+          ? decoded['message'].toString()
+          : 'Request failed (${res.statusCode})';
+      throw ApiException(res.statusCode, message);
+    }
+    return res.bodyBytes;
   }
 
   Future<List<ProjectOption>> listProjectTypeOptions() async {
