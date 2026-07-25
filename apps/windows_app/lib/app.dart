@@ -5,9 +5,9 @@ import 'core/theme/app_theme.dart';
 import 'state/auth_provider.dart';
 import 'state/space_provider.dart';
 import 'state/update_provider.dart';
-import 'ui/screens/home_screen.dart';
 import 'ui/screens/login_screen.dart';
 import 'ui/screens/space_picker_screen.dart';
+import 'ui/shell/space_shell.dart';
 import 'ui/widgets/update_dialog.dart';
 
 class LifeOsApp extends ConsumerWidget {
@@ -76,6 +76,6 @@ class _RootRouter extends ConsumerWidget {
       return const SpacePickerScreen();
     }
 
-    return const HomeScreen();
+    return const SpaceShell();
   }
 }

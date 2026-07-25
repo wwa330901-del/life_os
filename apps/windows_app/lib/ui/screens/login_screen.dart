@@ -39,7 +39,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return Scaffold(
       body: DecoratedBox(
-        decoration: const BoxDecoration(gradient: AppGradients.dawn),
+        decoration: BoxDecoration(gradient: AppGradients.dawn(scheme.brightness)),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),

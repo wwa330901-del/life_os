@@ -4,15 +4,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api_client.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/projects_provider.dart';
-import 'project_detail_screen.dart';
+import '../../shell/breadcrumb_bar.dart';
 
-/// Project list for one company space — the entry point of the projects
-/// management module, reached from the "專案管理" card on the home screen.
+/// Project list content for one company space — lives inside `SpaceShell`'s
+/// content pane (sidebar stays put), reached via the "專案管理" module.
 class ProjectListScreen extends ConsumerWidget {
-  const ProjectListScreen({super.key, required this.spaceId, required this.spaceName});
+  const ProjectListScreen({
+    super.key,
+    required this.spaceId,
+    required this.spaceName,
+    required this.onBack,
+    required this.onOpenProject,
+  });
 
   final String spaceId;
   final String spaceName;
+  final VoidCallback onBack;
+  final ValueChanged<String> onOpenProject;
 
   Future<void> _createProject(BuildContext context, WidgetRef ref) async {
     final nameController = TextEditingController();
@@ -94,46 +102,83 @@ class ProjectListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projectsAsync = ref.watch(spaceProjectsProvider(spaceId));
+    final scheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: AppBar(title: Text('$spaceName · 專案管理')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _createProject(context, ref),
-        icon: const Icon(Icons.add),
-        label: const Text('新增專案'),
-      ),
-      body: projectsAsync.when(
-        data: (projects) {
-          if (projects.isEmpty) {
-            return const Center(child: Text('目前沒有任何專案'));
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-            itemCount: projects.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final project = projects[index];
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: Text(project.name),
-                  subtitle: Text(
-                    project.clientName != null ? '業主：${project.clientName}' : '尚未填寫業主',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ProjectDetailScreen(projectId: project.id),
-                    ),
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        BreadcrumbBar(
+          segments: [
+            BreadcrumbSegment(spaceName, onTap: onBack),
+            const BreadcrumbSegment('專案管理'),
+          ],
+          actions: [
+            FilledButton.icon(
+              onPressed: () => _createProject(context, ref),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('新增專案'),
+            ),
+          ],
+        ),
+        Expanded(
+          child: projectsAsync.when(
+            data: (projects) {
+              if (projects.isEmpty) {
+                return const Center(child: Text('目前沒有任何專案'));
+              }
+              return GridView(
+                padding: const EdgeInsets.all(24),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 280,
+                  mainAxisExtent: 108,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
                 ),
+                children: [
+                  for (final project in projects)
+                    Card(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => onOpenProject(project.id),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.folder_outlined, size: 18, color: scheme.primary),
+                                  const Spacer(),
+                                  Icon(Icons.chevron_right, size: 18, color: scheme.onSurface.withValues(alpha: 0.4)),
+                                ],
+                              ),
+                              const Spacer(),
+                              Text(
+                                project.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                project.clientName != null ? '業主：${project.clientName}' : '尚未填寫業主',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               );
             },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('讀取專案失敗：$error')),
-      ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Center(child: Text('讀取專案失敗：$error')),
+          ),
+        ),
+      ],
     );
   }
 }

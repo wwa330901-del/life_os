@@ -5,21 +5,39 @@ import 'package:flutter/material.dart';
 /// each gradient originally drew from (dawn / homecoming / dusk); the
 /// wording is no longer surfaced as text in the UI, just the color mood.
 abstract final class AppGradients {
-  /// Soft dawn light breaking. Used behind the login screen, the entry
-  /// point of the whole app.
-  static const dawn = LinearGradient(
+  static const _dawnLight = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [Color(0xFFFCE6C6), Color(0xFFFBF5EC)],
   );
 
-  /// Warm homecoming glow. Used behind the home screen header, the
-  /// "arrival" moment after choosing a space.
-  static const homecoming = LinearGradient(
+  static const _dawnDark = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFF3A2A18), Color(0xFF201C17)],
+  );
+
+  /// Soft dawn light breaking. Used behind the login screen, the entry
+  /// point of the whole app.
+  static LinearGradient dawn(Brightness brightness) =>
+      brightness == Brightness.dark ? _dawnDark : _dawnLight;
+
+  static const _homecomingLight = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [Color(0xFFF0C29C), Color(0xFFFBF5EC)],
   );
+
+  static const _homecomingDark = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF4A3420), Color(0xFF201C17)],
+  );
+
+  /// Warm homecoming glow. Used behind the home screen header, the
+  /// "arrival" moment after choosing a space.
+  static LinearGradient homecoming(Brightness brightness) =>
+      brightness == Brightness.dark ? _homecomingDark : _homecomingLight;
 
   /// Dusk glow, reserved for moments of moving deeper into the app (module
   /// navigation, primary calls to action further down the line).
@@ -76,10 +94,12 @@ abstract final class AppTheme {
       ),
       cardTheme: CardThemeData(
         color: scheme.surfaceContainerHighest,
-        elevation: 0,
+        elevation: 2,
+        shadowColor: scheme.primary.withValues(alpha: 0.18),
+        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: scheme.outline.withValues(alpha: 0.4)),
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: scheme.outline.withValues(alpha: 0.25)),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -111,10 +131,13 @@ abstract final class AppTheme {
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: scheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 3,
+        shadowColor: scheme.primary.withValues(alpha: 0.18),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       listTileTheme: ListTileThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
