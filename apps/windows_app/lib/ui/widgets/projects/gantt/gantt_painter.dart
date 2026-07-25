@@ -50,6 +50,12 @@ class GanttPainter extends CustomPainter {
   final String? fontFamily;
   final GanttColors colors;
 
+  /// A bar currently being dragged, and by how many whole days (negative =
+  /// earlier/shorter). Null when nothing is being dragged. Drawn as a ghost
+  /// outline alongside the bar's real (still-committed) position, so the
+  /// user sees both where it is and where it would land.
+  final ({String itemId, int dayOffset, bool isResize})? dragPreview;
+
   GanttPainter({
     required this.orderedItems,
     required this.scheduleResult,
@@ -61,6 +67,7 @@ class GanttPainter extends CustomPainter {
     this.selectedItemId,
     this.dayWidth = GanttLayout.dayWidth,
     this.fontFamily,
+    this.dragPreview,
   });
 
   double _xForDate(DateTime date) {
@@ -226,7 +233,37 @@ class GanttPainter extends CustomPainter {
       }
 
       _paintBarLabel(canvas, item.name, rect);
+
+      if (dragPreview != null && dragPreview!.itemId == item.id && dragPreview!.dayOffset != 0) {
+        _paintDragPreview(canvas, dragPreview!, left, right, top, bottom);
+      }
     }
+  }
+
+  /// A ghost outline showing where a dragged bar would land, drawn beside
+  /// its real (still-committed) bar so the drag reads as a live preview
+  /// rather than the actual state having already changed.
+  void _paintDragPreview(
+    Canvas canvas,
+    ({String itemId, int dayOffset, bool isResize}) preview,
+    double left,
+    double right,
+    double top,
+    double bottom,
+  ) {
+    final offsetPx = preview.dayOffset * dayWidth;
+    final ghost = preview.isResize
+        ? Rect.fromLTRB(left, top, (right + offsetPx).clamp(left + dayWidth, double.infinity), bottom)
+        : Rect.fromLTRB(left + offsetPx, top, right + offsetPx, bottom);
+    final rrect = RRect.fromRectAndRadius(ghost, const Radius.circular(4));
+    canvas.drawRRect(rrect, Paint()..color = colors.selectionOutline.withValues(alpha: 0.25));
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = colors.selectionOutline,
+    );
   }
 
   /// Labels a leaf bar with its work-item name drawn just to the right of
@@ -314,6 +351,7 @@ class GanttPainter extends CustomPainter {
         oldDelegate.selectedItemId != selectedItemId ||
         oldDelegate.dayWidth != dayWidth ||
         oldDelegate.fontFamily != fontFamily ||
-        oldDelegate.colors != colors;
+        oldDelegate.colors != colors ||
+        oldDelegate.dragPreview != dragPreview;
   }
 }

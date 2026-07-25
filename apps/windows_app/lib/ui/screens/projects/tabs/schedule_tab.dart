@@ -6,6 +6,7 @@ import '../../../../core/models/schedule_result.dart';
 import '../../../../core/models/work_item_hierarchy.dart';
 import '../../../../core/scheduling/working_day_calculator.dart';
 import '../../../../state/project_editor_provider.dart';
+import '../../../../state/ui_prefs_provider.dart';
 import '../../../widgets/projects/calendar_editor/holiday_calendar_dialog.dart';
 import '../../../widgets/projects/gantt/gantt_timeline.dart';
 import '../../../widgets/projects/gantt/linked_scroll_controllers.dart';
@@ -64,6 +65,7 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
     }
 
     final editor = editorAsync.value!;
+    final dayWidth = ref.watch(zoomDayWidthProvider);
     final flatTree = flattenTree(editor.items, collapsedIds: _collapsedIds);
     final orderedItems = flatTree.map((f) => f.item).toList();
     final issueItemIds = <String>{
@@ -76,6 +78,19 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
       for (final entry in editor.schedule.byId.entries) entry.key: entry.value.end,
     };
 
+    void handleStartDateChanged(String id, DateTime? date) =>
+        _run(() => _notifier.changeStartDate(id, date));
+
+    void handleEndDateChanged(String id, DateTime endDate) {
+      final start = computedStartDates[id] ?? editor.project.projectStartDate;
+      final duration = WorkingDayCalculator.countWorkingDaysInclusive(
+        start,
+        endDate,
+        editor.project.calendar,
+      );
+      _run(() => _notifier.changeDuration(id, duration < 1 ? 1 : duration));
+    }
+
     return Column(
       children: [
         _Toolbar(
@@ -87,6 +102,8 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
               await _run(() => _notifier.updateCalendar(updated));
             }
           },
+          onZoomIn: () => ref.read(zoomDayWidthProvider.notifier).zoomIn(),
+          onZoomOut: () => ref.read(zoomDayWidthProvider.notifier).zoomOut(),
         ),
         Expanded(
           child: orderedItems.isEmpty
@@ -114,19 +131,10 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
                         collapsedIds: _collapsedIds,
                         onSelectItem: (id) => setState(() => _selectedItemId = id),
                         onNameChanged: (id, name) => _run(() => _notifier.renameWorkItem(id, name)),
-                        onStartDateChanged: (id, date) =>
-                            _run(() => _notifier.changeStartDate(id, date)),
+                        onStartDateChanged: handleStartDateChanged,
                         onDurationChanged: (id, duration) =>
                             _run(() => _notifier.changeDuration(id, duration)),
-                        onEndDateChanged: (id, endDate) {
-                          final start = computedStartDates[id] ?? editor.project.projectStartDate;
-                          final duration = WorkingDayCalculator.countWorkingDaysInclusive(
-                            start,
-                            endDate,
-                            editor.project.calendar,
-                          );
-                          _run(() => _notifier.changeDuration(id, duration < 1 ? 1 : duration));
-                        },
+                        onEndDateChanged: handleEndDateChanged,
                         onPredecessorsChanged: (id, predecessorIds) =>
                             _run(() => _notifier.changePredecessors(id, predecessorIds)),
                         onDelete: (id) {
@@ -163,6 +171,9 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
                         verticalController: _vertical.second,
                         selectedItemId: _selectedItemId,
                         onSelectItem: (id) => setState(() => _selectedItemId = id),
+                        dayWidth: dayWidth,
+                        onItemStartDateChanged: handleStartDateChanged,
+                        onItemEndDateChanged: handleEndDateChanged,
                       ),
                     ),
                   ],
@@ -174,11 +185,19 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
 }
 
 class _Toolbar extends StatelessWidget {
-  const _Toolbar({required this.hasIssues, required this.issues, required this.onCalendarSettings});
+  const _Toolbar({
+    required this.hasIssues,
+    required this.issues,
+    required this.onCalendarSettings,
+    required this.onZoomIn,
+    required this.onZoomOut,
+  });
 
   final bool hasIssues;
   final List<SchedulingIssue> issues;
   final VoidCallback onCalendarSettings;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
 
   @override
   Widget build(BuildContext context) {
@@ -194,6 +213,16 @@ class _Toolbar extends StatelessWidget {
             icon: const Icon(Icons.event_busy, size: 20),
             tooltip: '公休日曆設定',
             onPressed: onCalendarSettings,
+          ),
+          IconButton(
+            icon: const Icon(Icons.zoom_out, size: 20),
+            tooltip: '縮小甘特圖',
+            onPressed: onZoomOut,
+          ),
+          IconButton(
+            icon: const Icon(Icons.zoom_in, size: 20),
+            tooltip: '放大甘特圖',
+            onPressed: onZoomIn,
           ),
           if (hasIssues) ...[
             const SizedBox(width: 8),
