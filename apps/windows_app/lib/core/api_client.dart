@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'models/admin_models.dart';
 import 'models/app_user.dart';
 import 'models/project.dart';
+import 'models/project_member.dart';
 import 'models/schedule_result.dart';
 import 'models/work_item.dart';
 
@@ -94,6 +95,11 @@ class ApiClient {
     return body
         .map((e) => SpaceSummary.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<List<SpaceMember>> listSpaceMembers(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/members');
+    return body.map((e) => SpaceMember.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<List<AdminUserSummary>> adminListUsers() async {
@@ -279,6 +285,36 @@ class ApiClient {
       'adHocWorkdays': adHocWorkdays.map(_dateOnly).toList(),
     });
     return Project.fromJson(body);
+  }
+
+  Future<List<ProjectMember>> listProjectMembers(String projectId) async {
+    final body = await _getList('/projects/$projectId/members');
+    return body.map((e) => ProjectMember.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> addProjectMember({
+    required String projectId,
+    required String userId,
+    required ProjectRole role,
+  }) async {
+    await _post('/projects/$projectId/members', {
+      'userId': userId,
+      'role': projectRoleToJson(role),
+    });
+  }
+
+  Future<void> updateProjectMemberRole({
+    required String projectId,
+    required String userId,
+    required ProjectRole role,
+  }) async {
+    await _patchIgnoreBody('/projects/$projectId/members/$userId', {
+      'role': projectRoleToJson(role),
+    });
+  }
+
+  Future<void> removeProjectMember({required String projectId, required String userId}) async {
+    await _delete('/projects/$projectId/members/$userId');
   }
 
   /// Date-only string (no time-of-day, no timezone) — the backend column is

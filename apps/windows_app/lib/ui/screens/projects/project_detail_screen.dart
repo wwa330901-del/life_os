@@ -4,13 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../state/project_editor_provider.dart';
 import '../../shell/breadcrumb_bar.dart';
 import 'tabs/coming_soon_tab.dart';
+import 'tabs/members_tab.dart';
 import 'tabs/schedule_tab.dart';
 
-/// Project detail content — lives inside `SpaceShell`'s content pane. Only
-/// the 工期 tab has real functionality this version — the other five
-/// (金額/合約條件/發包狀態/成本控制/專案成員) are navigation placeholders so the
-/// shape is already in place for each to be filled in as its own slice
-/// later, without redesigning this screen.
+/// Project detail content — lives inside `SpaceShell`'s content pane. 工期
+/// and 專案成員 have real functionality; the other four
+/// (金額/合約條件/發包狀態/成本控制) are navigation placeholders so the shape is
+/// already in place for each to be filled in as its own slice later,
+/// without redesigning this screen.
 class ProjectDetailScreen extends ConsumerWidget {
   const ProjectDetailScreen({
     super.key,
@@ -68,7 +69,7 @@ class ProjectDetailScreen extends ConsumerWidget {
                   const ComingSoonTab(label: '合約條件'),
                   const ComingSoonTab(label: '發包狀態'),
                   const ComingSoonTab(label: '成本控制'),
-                  const ComingSoonTab(label: '專案成員'),
+                  MembersTab(projectId: projectId),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
