@@ -177,6 +177,25 @@ class ApiClient {
     return ScheduleResult.fromJson(body);
   }
 
+  /// Project + work items + computed schedule in one request — what the
+  /// schedule tab actually needs after every edit. One HTTP round trip
+  /// instead of three separately (even fired concurrently, each of those
+  /// three re-checked project/space/membership access from scratch, which
+  /// is most of why editing still felt slow after parallelizing them
+  /// client-side didn't fully fix it).
+  Future<({Project project, List<WorkItem> items, ScheduleResult schedule})> getProjectEditorState(
+    String projectId,
+  ) async {
+    final body = await _get('/projects/$projectId/editor-state');
+    return (
+      project: Project.fromJson(body['project'] as Map<String, dynamic>),
+      items: (body['items'] as List<dynamic>)
+          .map((e) => WorkItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      schedule: ScheduleResult.fromJson(body['schedule'] as Map<String, dynamic>),
+    );
+  }
+
   Future<List<WorkItem>> listWorkItems(String projectId) async {
     final body = await _getList('/projects/$projectId/work-items');
     return body.map((e) => WorkItem.fromJson(e as Map<String, dynamic>)).toList();

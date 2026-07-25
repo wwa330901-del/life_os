@@ -47,4 +47,14 @@ export class ProjectsController {
   getSchedule(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.scheduleService.getSchedule(user.id, id);
   }
+
+  /**
+   * Project + work items + computed schedule together — what the schedule
+   * tab actually needs after every edit. See `ScheduleService.getEditorState`
+   * for why this exists instead of three separate GETs.
+   */
+  @Get(':id/editor-state')
+  getEditorState(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.scheduleService.getEditorState(user.id, id);
+  }
 }

@@ -69,19 +69,15 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
 
   Future<ProjectEditorState> _fetch() async {
     final api = ref.read(apiClientProvider);
-    // Run all three GETs concurrently instead of one after another — every
-    // edit in the schedule tab awaits a full refresh, so this round-trip
-    // sits directly in the critical path of how responsive editing feels.
-    final results = await Future.wait([
-      api.getProject(projectId),
-      api.listWorkItems(projectId),
-      api.getSchedule(projectId),
-    ]);
-    return ProjectEditorState(
-      project: results[0] as Project,
-      items: results[1] as List<WorkItem>,
-      schedule: results[2] as ScheduleResult,
-    );
+    // One combined request instead of three separate ones — every edit in
+    // the schedule tab awaits a full refresh, so this sits directly in the
+    // critical path of how responsive editing feels. Running the three GETs
+    // merely *concurrently* (an earlier pass at this) still left each one
+    // re-doing the same project/space/membership access check from scratch
+    // over its own round trip to the database; one request that checks
+    // access once and fetches everything after cuts that out entirely.
+    final result = await api.getProjectEditorState(projectId);
+    return ProjectEditorState(project: result.project, items: result.items, schedule: result.schedule);
   }
 
   /// Re-fetches project + items + schedule from the server. Every mutation
