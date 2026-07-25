@@ -27,6 +27,13 @@ enum ProjectRole {
   MEMBER
 }
 
+enum PropertyType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+}
+
 model User {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -67,8 +74,64 @@ model Space {
   ownerUserId String? @unique
   owner       User?   @relation("PersonalSpaceOwner", fields: [ownerUserId], references: [id])
 
-  memberships CompanyMembership[]
-  projects    Project[]
+  memberships         CompanyMembership[]
+  projects            Project[]
+  propertyDefinitions ProjectPropertyDefinition[]
+}
+
+/// One property a space has defined for its projects — the "columns" of
+/// that space's own project-info shape, each space customizes this itself
+/// (not platform-wide, unlike the ProjectTypeOption/ProjectStatusOption
+/// this is replacing — see schema.prisma history / 大系統 doc for why).
+model ProjectPropertyDefinition {
+  id        String       @id @default(uuid())
+  name      String
+  type      PropertyType
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  options ProjectPropertyOption[]
+  values  ProjectPropertyValue[]
+}
+
+/// The choices for one SELECT-type property definition.
+model ProjectPropertyOption {
+  id        String   @id @default(uuid())
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  definitionId String
+  definition   ProjectPropertyDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  values ProjectPropertyValue[]
+}
+
+/// One project's value for one property definition. Exactly one of
+/// textValue/numberValue/dateValue/optionId is populated, chosen by
+/// `definition.type` — a single table with a nullable column per type
+/// rather than a true polymorphic split, the practical default for a
+/// small fixed set of value shapes.
+model ProjectPropertyValue {
+  id String @id @default(uuid())
+
+  textValue   String?
+  numberValue Float?
+  dateValue   DateTime?
+
+  optionId String?
+  option   ProjectPropertyOption? @relation(fields: [optionId], references: [id], onDelete: SetNull)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  definitionId String
+  definition   ProjectPropertyDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, definitionId])
 }
 
 model CompanyMembership {
@@ -137,8 +200,9 @@ model Project {
   adHocHolidays                DateTime[] @db.Date @default([])
   adHocWorkdays                 DateTime[] @db.Date @default([])
 
-  items   WorkItem[]
-  members ProjectMember[]
+  items          WorkItem[]
+  members        ProjectMember[]
+  propertyValues ProjectPropertyValue[]
 }
 
 model ProjectMember {
