@@ -28,6 +28,11 @@ class Project {
   final HolidayCalendar calendar;
   final String spaceId;
 
+  /// Only populated by `GET /spaces/:id/projects` (the project list card
+  /// needs "who's responsible"); null on every other endpoint that returns
+  /// a Project.
+  final String? pmName;
+
   const Project({
     required this.id,
     required this.name,
@@ -39,6 +44,7 @@ class Project {
     required this.projectStartDate,
     required this.calendar,
     required this.spaceId,
+    this.pmName,
   });
 
   factory Project.fromJson(Map<String, dynamic> json) => Project(
@@ -52,5 +58,6 @@ class Project {
     projectStartDate: DateTime.parse(json['projectStartDate'] as String),
     calendar: HolidayCalendar.fromProjectJson(json),
     spaceId: json['spaceId'] as String,
+    pmName: json['pmName'] as String?,
   );
 }

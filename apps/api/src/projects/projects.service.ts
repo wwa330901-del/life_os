@@ -24,11 +24,25 @@ export class ProjectsService {
     const space = await this.spacesService.getForUserOrThrow(userId, spaceId);
     const canSeeEverything =
       space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN;
-    return this.prisma.project.findMany({
+    const projects = await this.prisma.project.findMany({
       where: canSeeEverything ? { spaceId } : { spaceId, members: { some: { userId } } },
-      include: { type: true, status: true },
+      include: {
+        type: true,
+        status: true,
+        // Only the PM(s) — the project list card just needs "who's
+        // responsible", not the full member list (see
+        // ProjectMembersController for that).
+        members: {
+          where: { role: ProjectRole.PM },
+          include: { user: { select: { name: true } } },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
+    return projects.map(({ members, ...project }) => ({
+      ...project,
+      pmName: members[0]?.user.name ?? null,
+    }));
   }
 
   async create(userId: string, spaceId: string, dto: CreateProjectDto) {

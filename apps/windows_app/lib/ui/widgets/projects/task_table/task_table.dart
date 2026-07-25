@@ -6,17 +6,64 @@ import '../../../../core/models/work_item_hierarchy.dart';
 import '../gantt/gantt_colors.dart';
 import '../gantt/gantt_layout.dart';
 import '../gantt/gantt_painter.dart';
+import '../gantt/linked_scroll_controllers.dart';
 import 'dependency_picker_dialog.dart';
 
 const _indentWidth = 18.0;
+const _minColumnWidth = 40.0;
+const _minNameWidth = 100.0;
+
+/// Column widths for the five data columns — plain mutable fields (not a
+/// provider/state object) since this is purely this table's own render
+/// state, mutated via `setState` in `_TaskTableState` and read by every
+/// `_TaskRow` so header and data rows always stay pixel-aligned.
+class _ColumnWidths {
+  double name = 200;
+  double startDate = 88;
+  double endDate = 80;
+  double duration = 56;
+  double predecessor = 60;
+}
+
+/// A thin draggable seam between two header columns. Dragging only grows/
+/// shrinks the column to its left — this is a plain horizontally-scrollable
+/// row of fixed-width cells, not a constrained flex layout, so there's
+/// nothing on the right that needs to shrink to compensate.
+class _ColumnResizeHandle extends StatelessWidget {
+  const _ColumnResizeHandle({required this.onDrag});
+
+  final ValueChanged<double> onDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
+        child: SizedBox(
+          height: GanttLayout.headerHeight,
+          width: 9,
+          child: Center(
+            child: Container(width: 1, color: scheme.outline.withValues(alpha: 0.4)),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Left-hand pane of the 工期 tab: an editable, tree-indented task list kept
 /// row-aligned with the Gantt canvas beside it. Ported from reno_pm's
 /// task_table.dart — restyled to read colors from the theme (not a fixed
-/// light-mode palette) and to commit text edits on submit/blur rather than
-/// every keystroke, since each edit here is a network write instead of a
-/// synchronous local state update.
-class TaskTable extends StatelessWidget {
+/// light-mode palette), to commit text edits on submit/blur rather than
+/// every keystroke (each edit here is a network write, not a synchronous
+/// local state update), and each column's width is independently
+/// draggable — the whole header+body scrolls horizontally together
+/// (`LinkedScrollControllers`, same pattern `GanttTimeline` uses for its
+/// own header/body split) once the columns are wider than the pane.
+class TaskTable extends StatefulWidget {
   /// Depth-first flattened tree, respecting the caller's collapse state —
   /// row `i` here must line up with row `i` of the Gantt canvas.
   final List<FlatTreeItem> flatTree;
@@ -68,9 +115,23 @@ class TaskTable extends StatelessWidget {
   });
 
   @override
+  State<TaskTable> createState() => _TaskTableState();
+}
+
+class _TaskTableState extends State<TaskTable> {
+  final _ColumnWidths _widths = _ColumnWidths();
+  final LinkedScrollControllers _horizontal = LinkedScrollControllers();
+
+  @override
+  void dispose() {
+    _horizontal.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final allItems = flatTree.map((f) => f.item).toList();
+    final allItems = widget.flatTree.map((f) => f.item).toList();
     final palette = GanttColors.fromScheme(scheme).palette;
     final headerStyle = TextStyle(
       fontWeight: FontWeight.w600,
@@ -82,62 +143,100 @@ class TaskTable extends StatelessWidget {
       children: [
         Container(
           height: GanttLayout.headerHeight,
-          alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
             color: scheme.surface,
             border: Border(bottom: BorderSide(color: scheme.outline.withValues(alpha: 0.3))),
           ),
-          child: Row(
-            children: [
-              const SizedBox(width: 12),
-              Expanded(flex: 3, child: Text('工項名稱', style: headerStyle)),
-              SizedBox(width: 88, child: Text('起始日', style: headerStyle)),
-              SizedBox(width: 80, child: Text('結束日', style: headerStyle)),
-              SizedBox(width: 56, child: Text('工期(天)', style: headerStyle)),
-              SizedBox(width: 60, child: Text('相依', style: headerStyle)),
-              const SizedBox(width: 32),
-              const SizedBox(width: 40),
-            ],
+          child: SingleChildScrollView(
+            controller: _horizontal.first,
+            scrollDirection: Axis.horizontal,
+            physics: const ClampingScrollPhysics(),
+            child: Row(
+              children: [
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: _widths.name,
+                  child: Text('工項名稱', style: headerStyle),
+                ),
+                _ColumnResizeHandle(
+                  onDrag: (dx) => setState(
+                    () => _widths.name = (_widths.name + dx).clamp(_minNameWidth, double.infinity),
+                  ),
+                ),
+                SizedBox(width: _widths.startDate, child: Text('起始日', style: headerStyle)),
+                _ColumnResizeHandle(
+                  onDrag: (dx) => setState(
+                    () => _widths.startDate = (_widths.startDate + dx).clamp(_minColumnWidth, double.infinity),
+                  ),
+                ),
+                SizedBox(width: _widths.endDate, child: Text('結束日', style: headerStyle)),
+                _ColumnResizeHandle(
+                  onDrag: (dx) => setState(
+                    () => _widths.endDate = (_widths.endDate + dx).clamp(_minColumnWidth, double.infinity),
+                  ),
+                ),
+                SizedBox(width: _widths.duration, child: Text('工期(天)', style: headerStyle)),
+                _ColumnResizeHandle(
+                  onDrag: (dx) => setState(
+                    () => _widths.duration = (_widths.duration + dx).clamp(_minColumnWidth, double.infinity),
+                  ),
+                ),
+                SizedBox(width: _widths.predecessor, child: Text('相依', style: headerStyle)),
+                _ColumnResizeHandle(
+                  onDrag: (dx) => setState(
+                    () => _widths.predecessor = (_widths.predecessor + dx).clamp(_minColumnWidth, double.infinity),
+                  ),
+                ),
+                const SizedBox(width: 32),
+                const SizedBox(width: 40),
+              ],
+            ),
           ),
         ),
         Expanded(
           child: SingleChildScrollView(
-            controller: verticalController,
-            child: Column(
-              children: [
-                for (final node in flatTree)
-                  _TaskRow(
-                    key: ValueKey(node.item.id),
-                    item: node.item,
-                    allItems: allItems,
-                    palette: palette,
-                    depth: node.depth,
-                    hasChildren: node.hasChildren,
-                    isCollapsed: collapsedIds.contains(node.item.id),
-                    selected: node.item.id == selectedItemId,
-                    hasIssue: issueItemIds.contains(node.item.id),
-                    computedStartDate: computedStartDates[node.item.id],
-                    computedEndDate: computedEndDates[node.item.id],
-                    onTap: () => onSelectItem?.call(node.item.id),
-                    onNameChanged: (name) => onNameChanged(node.item.id, name),
-                    onStartDateChanged: (date) => onStartDateChanged(node.item.id, date),
-                    onDurationChanged: (d) => onDurationChanged(node.item.id, d),
-                    onEndDateChanged: (date) => onEndDateChanged(node.item.id, date),
-                    onPredecessorsChanged: (ids) => onPredecessorsChanged(node.item.id, ids),
-                    onDelete: () => onDelete(node.item.id),
-                    onToggleCollapse: () => onToggleCollapse(node.item.id),
-                    onAddChild: () => onAddChild(node.item.id),
-                    onReorder: onReorder,
+            controller: widget.verticalController,
+            child: SingleChildScrollView(
+              controller: _horizontal.second,
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: Column(
+                children: [
+                  for (final node in widget.flatTree)
+                    _TaskRow(
+                      key: ValueKey(node.item.id),
+                      item: node.item,
+                      allItems: allItems,
+                      palette: palette,
+                      widths: _widths,
+                      depth: node.depth,
+                      hasChildren: node.hasChildren,
+                      isCollapsed: widget.collapsedIds.contains(node.item.id),
+                      selected: node.item.id == widget.selectedItemId,
+                      hasIssue: widget.issueItemIds.contains(node.item.id),
+                      computedStartDate: widget.computedStartDates[node.item.id],
+                      computedEndDate: widget.computedEndDates[node.item.id],
+                      onTap: () => widget.onSelectItem?.call(node.item.id),
+                      onNameChanged: (name) => widget.onNameChanged(node.item.id, name),
+                      onStartDateChanged: (date) => widget.onStartDateChanged(node.item.id, date),
+                      onDurationChanged: (d) => widget.onDurationChanged(node.item.id, d),
+                      onEndDateChanged: (date) => widget.onEndDateChanged(node.item.id, date),
+                      onPredecessorsChanged: (ids) => widget.onPredecessorsChanged(node.item.id, ids),
+                      onDelete: () => widget.onDelete(node.item.id),
+                      onToggleCollapse: () => widget.onToggleCollapse(node.item.id),
+                      onAddChild: () => widget.onAddChild(node.item.id),
+                      onReorder: widget.onReorder,
+                    ),
+                  SizedBox(
+                    height: GanttLayout.rowHeight,
+                    child: TextButton.icon(
+                      onPressed: widget.onAdd,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('新增工項'),
+                    ),
                   ),
-                SizedBox(
-                  height: GanttLayout.rowHeight,
-                  child: TextButton.icon(
-                    onPressed: onAdd,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('新增工項'),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -150,6 +249,7 @@ class _TaskRow extends StatefulWidget {
   final WorkItem item;
   final List<WorkItem> allItems;
   final List<Color> palette;
+  final _ColumnWidths widths;
   final int depth;
   final bool hasChildren;
   final bool isCollapsed;
@@ -173,6 +273,7 @@ class _TaskRow extends StatefulWidget {
     required this.item,
     required this.allItems,
     required this.palette,
+    required this.widths,
     required this.depth,
     required this.hasChildren,
     required this.isCollapsed,
@@ -299,6 +400,7 @@ class _TaskRowState extends State<_TaskRow> {
     final scheme = Theme.of(context).colorScheme;
     final mutedText = scheme.onSurface.withValues(alpha: 0.55);
     final faintText = scheme.onSurface.withValues(alpha: 0.35);
+    final widths = widget.widths;
 
     final isParentRow = widget.hasChildren;
     final color = colorForItem(widget.item, widget.allItems, widget.palette);
@@ -362,8 +464,8 @@ class _TaskRowState extends State<_TaskRow> {
             ),
             Container(width: 4, height: 20, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
             const SizedBox(width: 8),
-            Expanded(
-              flex: 3,
+            SizedBox(
+              width: widths.name,
               child: TextField(
                 controller: _nameController,
                 focusNode: _nameFocusNode,
@@ -375,8 +477,9 @@ class _TaskRowState extends State<_TaskRow> {
                 onSubmitted: (_) => _nameFocusNode.unfocus(),
               ),
             ),
+            const SizedBox(width: 9),
             SizedBox(
-              width: 88,
+              width: widths.startDate,
               child: isParentRow
                   ? Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -408,8 +511,9 @@ class _TaskRowState extends State<_TaskRow> {
                       ),
                     ),
             ),
+            const SizedBox(width: 9),
             SizedBox(
-              width: 80,
+              width: widths.endDate,
               child: isParentRow
                   ? Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -433,8 +537,9 @@ class _TaskRowState extends State<_TaskRow> {
                       ),
                     ),
             ),
+            const SizedBox(width: 9),
             SizedBox(
-              width: 56,
+              width: widths.duration,
               child: isParentRow
                   ? Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -449,8 +554,9 @@ class _TaskRowState extends State<_TaskRow> {
                       onSubmitted: (_) => _durationFocusNode.unfocus(),
                     ),
             ),
+            const SizedBox(width: 9),
             SizedBox(
-              width: 60,
+              width: widths.predecessor,
               child: isParentRow
                   ? Text('—', style: TextStyle(fontSize: 13, color: faintText))
                   : Tooltip(
@@ -471,6 +577,7 @@ class _TaskRowState extends State<_TaskRow> {
                       ),
                     ),
             ),
+            const SizedBox(width: 9),
             SizedBox(
               width: 32,
               child: IconButton(

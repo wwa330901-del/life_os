@@ -78,7 +78,7 @@ class ProjectListScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '業主：${project.clientName}',
+                                project.pmName != null ? 'PM：${project.pmName}' : '尚未指定 PM',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
