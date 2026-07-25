@@ -77,6 +77,40 @@ model Space {
   memberships         CompanyMembership[]
   projects            Project[]
   propertyDefinitions ProjectPropertyDefinition[]
+  documentTemplates   DocumentTemplate[]
+}
+
+/// One document template a space can generate for its projects — a
+/// pre-tagged `.docx` (`{{fieldKey}}` placeholders in place of the original
+/// blanks) that gets filled with a project's data via docxtemplater and
+/// handed back byte-identical to the source layout. Ingested by hand (see
+/// 大系統 doc) rather than through a self-service upload UI — the tagging
+/// step needs a human (well, an AI) to actually read the document and
+/// figure out where the blanks are.
+model DocumentTemplate {
+  id       String @id @default(uuid())
+  spaceId  String
+  space    Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  code     String // e.g. "JWD-3-1" — this space's own code, per its own numbering scheme
+  name     String // e.g. "裝修工程承攬合約書"
+  category String // human label for the code's category digit, e.g. "合約" — display only
+
+  docxData Bytes // the tagged .docx, ready for docxtemplater
+
+  /// [{ key, label, source }] — `source` is one of `null` (always manual),
+  /// `"project.name"` / `"project.startDate"` (the project's own fixed
+  /// fields), or `"property:<name>"` (look up by name in the project's own
+  /// propertyValues) — see ProjectPropertyDefinition/Value.
+  fields Json
+
+  /// ProjectPropertyOption ids under this space's "類型" property — which
+  /// project types this template is offered for.
+  allowedTypeOptionIds String[] @default([])
+
+  createdAt DateTime @default(now())
+
+  @@unique([spaceId, code])
 }
 
 /// One property a space has defined for its projects — the "columns" of

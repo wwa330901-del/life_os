@@ -7,6 +7,7 @@ import { SpacesModule } from './spaces/spaces.module';
 import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { ProjectsModule } from './projects/projects.module';
+import { DocumentsModule } from './documents/documents.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { ProjectsModule } from './projects/projects.module';
     AuthModule,
     AdminModule,
     ProjectsModule,
+    DocumentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
