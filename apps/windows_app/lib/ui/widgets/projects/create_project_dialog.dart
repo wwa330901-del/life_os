@@ -191,24 +191,18 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
             decoration: const InputDecoration(labelText: '專案名稱'),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text('開工日：${_startDate.year}/${_startDate.month}/${_startDate.day}'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _startDate,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null) setState(() => _startDate = picked);
-                },
-                child: const Text('選擇日期'),
-              ),
-            ],
+          _buildDateField(
+            label: '簽約日期',
+            value: _startDate,
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: _startDate,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+              );
+              if (picked != null) setState(() => _startDate = picked);
+            },
           ),
         ],
       ),
@@ -230,28 +224,18 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
         );
       case PropertyType.date:
         final value = _dateValues[definition.id];
-        return Row(
-          children: [
-            Expanded(
-              child: Text(
-                value == null
-                    ? definition.name
-                    : '${definition.name}：${value.year}/${value.month}/${value.day}',
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: value ?? DateTime.now(),
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime(2100),
-                );
-                if (picked != null) setState(() => _dateValues[definition.id] = picked);
-              },
-              child: const Text('選擇日期'),
-            ),
-          ],
+        return _buildDateField(
+          label: definition.name,
+          value: value,
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: value ?? DateTime.now(),
+              firstDate: DateTime(2020),
+              lastDate: DateTime(2100),
+            );
+            if (picked != null) setState(() => _dateValues[definition.id] = picked);
+          },
         );
       case PropertyType.select:
         return DropdownButtonFormField<String>(
@@ -267,6 +251,25 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
           }),
         );
     }
+  }
+
+  /// Same boxed/labeled look as the `TextField`/`DropdownButtonFormField`
+  /// property widgets above — a date picker isn't directly typable, but it
+  /// should still read as "one more field in this list", not a visually
+  /// distinct row.
+  Widget _buildDateField({required String label, required DateTime? value, required VoidCallback onTap}) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+        ),
+        isEmpty: value == null,
+        child: value == null ? null : Text('${value.year}/${value.month}/${value.day}'),
+      ),
+    );
   }
 
   String _dateOnly(DateTime date) =>

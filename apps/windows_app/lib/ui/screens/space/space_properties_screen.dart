@@ -13,10 +13,11 @@ String _typeLabel(PropertyType type) => switch (type) {
   PropertyType.select => '單選（下拉）',
 };
 
-/// Space-level "屬性設定" screen — each company space defines its own set
-/// of project properties here (Notion-database-style), gated to that
-/// space's own OWNER/ADMIN (see `AppSidebar`'s entry point), not the
-/// platform admin console.
+/// Space-level "專案設定" screen — each company space defines its own set
+/// of project properties here (Notion-database-style). Gated to platform
+/// admins only (see `AppSidebar`'s entry point) — this configures the
+/// shape every project in the space takes, so it stays a platform-admin
+/// concern rather than something any space OWNER/ADMIN can change.
 class SpacePropertiesScreen extends ConsumerWidget {
   const SpacePropertiesScreen({super.key, required this.spaceId, required this.onBack});
 
@@ -56,7 +57,7 @@ class SpacePropertiesScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: onBack),
-        title: const Text('專案屬性設定'),
+        title: const Text('專案設定'),
       ),
       body: definitionsAsync.when(
         data: (definitions) => ListView(

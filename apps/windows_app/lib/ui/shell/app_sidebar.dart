@@ -91,11 +91,10 @@ class AppSidebar extends ConsumerWidget {
                 selected: !propertiesSettingsSelected,
                 onTap: onGoToProjects,
               ),
-            if (space.type == SpaceType.company &&
-                (space.role == 'OWNER' || space.role == 'ADMIN'))
+            if (space.type == SpaceType.company && (session?.user.isPlatformAdmin ?? false))
               _NavItem(
                 icon: Icons.tune,
-                label: '屬性設定',
+                label: '專案設定',
                 selected: propertiesSettingsSelected,
                 onTap: onOpenPropertiesSettings,
               ),

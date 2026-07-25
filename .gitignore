@@ -4,3 +4,8 @@
 # Design reference images you drop in — not project content. Processed
 # assets that actually ship in the app live under apps/windows_app/assets/.
 /Visual Design/
+
+# Source Word/Excel/PDF files you drop in for the document-management
+# system to convert — not project content, the converted/stored results
+# live in the database instead.
+/document/

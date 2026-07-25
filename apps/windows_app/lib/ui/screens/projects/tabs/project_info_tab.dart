@@ -9,9 +9,9 @@ import '../../../../state/project_editor_provider.dart';
 import '../../../../state/project_properties_provider.dart';
 
 /// 專案資料 tab: loops over this space's own property definitions (Notion-
-/// database-style, set up via the space's 屬性設定 screen) and renders one
+/// database-style, set up via the space's 專案設定 screen) and renders one
 /// editable field per definition — a space with no properties defined just
-/// shows 開工日 and nothing else. Replaces what used to be a hardcoded
+/// shows 簽約日期 and nothing else. Replaces what used to be a hardcoded
 /// 類型/狀態/業主名稱/專案地點/案號 form.
 class ProjectInfoTab extends ConsumerStatefulWidget {
   const ProjectInfoTab({super.key, required this.projectId});
@@ -144,31 +144,27 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
               _buildField(project, definition),
               const SizedBox(height: 16),
             ],
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '開工日：${project.projectStartDate.year}/${project.projectStartDate.month}/${project.projectStartDate.day}',
-                  ),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: project.projectStartDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked == null) return;
-                    await _run(
-                      () => ref
-                          .read(apiClientProvider)
-                          .updateProject(projectId: widget.projectId, projectStartDate: picked),
-                    );
-                  },
-                  child: const Text('修改日期'),
-                ),
-              ],
+            // 簽約日期 is still backed by the fixed `projectStartDate` column
+            // (the schedule/Gantt engine anchors off it) rather than a
+            // generic property — this just renders it in the same visual
+            // language as the properties above it, at the end of the list.
+            _buildDateField(
+              label: '簽約日期',
+              value: project.projectStartDate,
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: project.projectStartDate,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                );
+                if (picked == null) return;
+                await _run(
+                  () => ref
+                      .read(apiClientProvider)
+                      .updateProject(projectId: widget.projectId, projectStartDate: picked),
+                );
+              },
             ),
           ],
         ),
@@ -195,32 +191,24 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
         );
       case PropertyType.date:
         final value = project.propertyValue(definition.id)?.dateValue;
-        return Row(
-          children: [
-            Expanded(
-              child: Text(
-                '${definition.name}：${value == null ? '未設定' : '${value.year}/${value.month}/${value.day}'}',
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: value ?? DateTime.now(),
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                );
-                if (picked == null) return;
-                _savePropertyValue(
-                  definition.id,
-                  '${picked.year.toString().padLeft(4, '0')}-'
-                  '${picked.month.toString().padLeft(2, '0')}-'
-                  '${picked.day.toString().padLeft(2, '0')}',
-                );
-              },
-              child: const Text('選擇日期'),
-            ),
-          ],
+        return _buildDateField(
+          label: definition.name,
+          value: value,
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: value ?? DateTime.now(),
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2100),
+            );
+            if (picked == null) return;
+            _savePropertyValue(
+              definition.id,
+              '${picked.year.toString().padLeft(4, '0')}-'
+              '${picked.month.toString().padLeft(2, '0')}-'
+              '${picked.day.toString().padLeft(2, '0')}',
+            );
+          },
         );
       case PropertyType.select:
         final currentOptionId = project.propertyValue(definition.id)?.optionId;
@@ -237,5 +225,24 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
           },
         );
     }
+  }
+
+  /// Same boxed/labeled look as the `TextField`/`DropdownButtonFormField`
+  /// property widgets above — a date picker isn't directly typable, but it
+  /// should still read as "one more field in this list", not a visually
+  /// distinct row.
+  Widget _buildDateField({required String label, required DateTime? value, required VoidCallback onTap}) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+        ),
+        isEmpty: value == null,
+        child: value == null ? null : Text('${value.year}/${value.month}/${value.day}'),
+      ),
+    );
   }
 }
