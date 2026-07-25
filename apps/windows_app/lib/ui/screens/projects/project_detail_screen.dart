@@ -16,13 +16,11 @@ class ProjectDetailScreen extends ConsumerWidget {
     super.key,
     required this.projectId,
     required this.spaceName,
-    required this.onBackToDashboard,
     required this.onBackToList,
   });
 
   final String projectId;
   final String spaceName;
-  final VoidCallback onBackToDashboard;
   final VoidCallback onBackToList;
 
   static const _tabs = [
@@ -46,8 +44,7 @@ class ProjectDetailScreen extends ConsumerWidget {
         children: [
           BreadcrumbBar(
             segments: [
-              BreadcrumbSegment(spaceName, onTap: onBackToDashboard),
-              BreadcrumbSegment('專案管理', onTap: onBackToList),
+              BreadcrumbSegment(spaceName, onTap: onBackToList),
               BreadcrumbSegment(editorAsync.value?.project.name ?? '專案'),
             ],
           ),

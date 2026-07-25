@@ -6,20 +6,18 @@ import '../../../state/auth_provider.dart';
 import '../../../state/projects_provider.dart';
 import '../../shell/breadcrumb_bar.dart';
 
-/// Project list content for one company space — lives inside `SpaceShell`'s
-/// content pane (sidebar stays put), reached via the "專案管理" module.
+/// Project list content for one company space — the default view of
+/// `SpaceShell`'s content pane for a company space (sidebar stays put).
 class ProjectListScreen extends ConsumerWidget {
   const ProjectListScreen({
     super.key,
     required this.spaceId,
     required this.spaceName,
-    required this.onBack,
     required this.onOpenProject,
   });
 
   final String spaceId;
   final String spaceName;
-  final VoidCallback onBack;
   final ValueChanged<String> onOpenProject;
 
   Future<void> _createProject(BuildContext context, WidgetRef ref) async {
@@ -108,10 +106,7 @@ class ProjectListScreen extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         BreadcrumbBar(
-          segments: [
-            BreadcrumbSegment(spaceName, onTap: onBack),
-            const BreadcrumbSegment('專案管理'),
-          ],
+          segments: [BreadcrumbSegment(spaceName)],
           actions: [
             FilledButton.icon(
               onPressed: () => _createProject(context, ref),

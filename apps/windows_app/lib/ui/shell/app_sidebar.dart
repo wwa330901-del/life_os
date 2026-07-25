@@ -11,18 +11,10 @@ import '../../state/space_provider.dart';
 /// visible rail, so switching space or module doesn't require backing out
 /// of whatever screen you're on.
 class AppSidebar extends ConsumerWidget {
-  const AppSidebar({
-    super.key,
-    required this.space,
-    required this.activeModule,
-    required this.onSelectModule,
-  });
+  const AppSidebar({super.key, required this.space, required this.onGoToProjects});
 
   final SpaceSummary space;
-
-  /// Null when the dashboard (no module) is active.
-  final String? activeModule;
-  final ValueChanged<String> onSelectModule;
+  final VoidCallback onGoToProjects;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -88,8 +80,8 @@ class AppSidebar extends ConsumerWidget {
               _NavItem(
                 icon: Icons.view_timeline_outlined,
                 label: '專案管理',
-                selected: activeModule == 'projects',
-                onTap: () => onSelectModule('projects'),
+                selected: true,
+                onTap: onGoToProjects,
               ),
             const Spacer(),
             Divider(height: 1, color: scheme.outline.withValues(alpha: 0.25)),
