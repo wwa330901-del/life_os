@@ -1,11 +1,16 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpacesService } from '../spaces/spaces.service';
-import { MembershipRole, ProjectRole, SpaceType } from '../../generated/prisma/client.js';
+import { MembershipRole, Prisma, ProjectRole, PropertyType, SpaceType } from '../../generated/prisma/client.js';
 import type { Project } from '../../generated/prisma/client.js';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateCalendarDto } from './dto/update-calendar.dto';
+import { PropertyValueInputDto } from './dto/property-value-input.dto';
+
+const propertyValuesInclude = {
+  propertyValues: { include: { definition: true, option: true } },
+} as const;
 
 @Injectable()
 export class ProjectsService {
@@ -27,8 +32,7 @@ export class ProjectsService {
     const projects = await this.prisma.project.findMany({
       where: canSeeEverything ? { spaceId } : { spaceId, members: { some: { userId } } },
       include: {
-        type: true,
-        status: true,
+        ...propertyValuesInclude,
         // Only the PM(s) — the project list card just needs "who's
         // responsible", not the full member list (see
         // ProjectMembersController for that).
@@ -47,24 +51,27 @@ export class ProjectsService {
 
   async create(userId: string, spaceId: string, dto: CreateProjectDto) {
     await this.spacesService.getForUserOrThrow(userId, spaceId);
-    const project = await this.prisma.project.create({
-      data: {
-        name: dto.name,
-        clientName: dto.clientName,
-        siteAddress: dto.siteAddress,
-        caseNumber: dto.caseNumber,
-        typeId: dto.typeId,
-        statusId: dto.statusId,
-        projectStartDate: new Date(dto.projectStartDate),
-        spaceId,
-      },
-      include: { type: true, status: true },
+    // One transaction: a bad property value (e.g. an unparseable number)
+    // must not leave behind a half-created project with no PM and no
+    // values — either all of this lands, or none of it does.
+    const projectId = await this.prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
+        data: {
+          name: dto.name,
+          projectStartDate: new Date(dto.projectStartDate),
+          spaceId,
+        },
+      });
+      if (dto.propertyValues?.length) {
+        await this.upsertPropertyValues(tx, project.id, spaceId, dto.propertyValues);
+      }
+      // Whoever creates a project is its PM (project lead) by default.
+      await tx.projectMember.create({
+        data: { userId, projectId: project.id, role: ProjectRole.PM },
+      });
+      return project.id;
     });
-    // Whoever creates a project is its PM (project lead) by default.
-    await this.prisma.projectMember.create({
-      data: { userId, projectId: project.id, role: ProjectRole.PM },
-    });
-    return project;
+    return this.getProjectOrThrow(projectId);
   }
 
   async getOne(userId: string, projectId: string) {
@@ -76,21 +83,21 @@ export class ProjectsService {
   async update(userId: string, projectId: string, dto: UpdateProjectDto) {
     const project = await this.getProjectOrThrow(projectId);
     await this.assertAccess(userId, project);
-    return this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.clientName !== undefined && { clientName: dto.clientName }),
-        ...(dto.siteAddress !== undefined && { siteAddress: dto.siteAddress }),
-        ...(dto.caseNumber !== undefined && { caseNumber: dto.caseNumber }),
-        ...(dto.typeId !== undefined && { typeId: dto.typeId }),
-        ...(dto.statusId !== undefined && { statusId: dto.statusId }),
-        ...(dto.projectStartDate !== undefined && {
-          projectStartDate: new Date(dto.projectStartDate),
-        }),
-      },
-      include: { type: true, status: true },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.project.update({
+        where: { id: projectId },
+        data: {
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.projectStartDate !== undefined && {
+            projectStartDate: new Date(dto.projectStartDate),
+          }),
+        },
+      });
+      if (dto.propertyValues?.length) {
+        await this.upsertPropertyValues(tx, projectId, project.spaceId, dto.propertyValues);
+      }
     });
+    return this.getProjectOrThrow(projectId);
   }
 
   async remove(userId: string, projectId: string) {
@@ -123,19 +130,90 @@ export class ProjectsService {
     });
   }
 
-  /** Every caller gets `type`/`status` included — it's a cheap join on a
-   * single-row lookup, and centralizing it here means every screen that
-   * loads a project (detail, schedule, work items, calendar) sees the same
-   * shape without each one remembering to ask for it separately. */
+  /** Every caller gets `propertyValues` (with each value's own definition
+   * + chosen option) included — it's a cheap join on a single-row lookup,
+   * and centralizing it here means every screen that loads a project
+   * (detail, schedule, work items, calendar) sees the same shape without
+   * each one remembering to ask for it separately. `type`/`status` (the
+   * old fixed fields) are still included too — stage-1 safety net, not
+   * used by the frontend anymore. */
   async getProjectOrThrow(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { type: true, status: true },
+      include: { type: true, status: true, ...propertyValuesInclude },
     });
     if (!project) {
       throw new NotFoundException('Project not found');
     }
     return project;
+  }
+
+  /**
+   * Writes/overwrites this project's value for each given property
+   * definition — dispatches to the right column (textValue/numberValue/
+   * dateValue/optionId) based on the definition's own stored `type`,
+   * rejecting anything that doesn't parse as that type or (for SELECT) a
+   * valid option belonging to the same definition.
+   */
+  private async upsertPropertyValues(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+    spaceId: string,
+    inputs: PropertyValueInputDto[],
+  ): Promise<void> {
+    for (const input of inputs) {
+      const definition = await tx.projectPropertyDefinition.findUnique({
+        where: { id: input.definitionId },
+      });
+      if (!definition || definition.spaceId !== spaceId) {
+        throw new BadRequestException(`屬性不存在:${input.definitionId}`);
+      }
+
+      const data: {
+        textValue: string | null;
+        numberValue: number | null;
+        dateValue: Date | null;
+        optionId: string | null;
+      } = { textValue: null, numberValue: null, dateValue: null, optionId: null };
+
+      switch (definition.type) {
+        case PropertyType.TEXT:
+          data.textValue = String(input.value);
+          break;
+        case PropertyType.NUMBER: {
+          const num = Number(input.value);
+          if (Number.isNaN(num)) {
+            throw new BadRequestException(`「${definition.name}」需要數字`);
+          }
+          data.numberValue = num;
+          break;
+        }
+        case PropertyType.DATE: {
+          const date = new Date(String(input.value));
+          if (Number.isNaN(date.getTime())) {
+            throw new BadRequestException(`「${definition.name}」日期格式錯誤`);
+          }
+          data.dateValue = date;
+          break;
+        }
+        case PropertyType.SELECT: {
+          const option = await tx.projectPropertyOption.findUnique({
+            where: { id: String(input.value) },
+          });
+          if (!option || option.definitionId !== definition.id) {
+            throw new BadRequestException(`「${definition.name}」的選項不存在`);
+          }
+          data.optionId = option.id;
+          break;
+        }
+      }
+
+      await tx.projectPropertyValue.upsert({
+        where: { projectId_definitionId: { projectId, definitionId: definition.id } },
+        create: { projectId, definitionId: definition.id, ...data },
+        update: data,
+      });
+    }
   }
 
   /**

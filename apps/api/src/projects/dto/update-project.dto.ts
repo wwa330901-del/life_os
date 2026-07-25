@@ -1,4 +1,6 @@
-import { IsDateString, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsArray, IsDateString, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { PropertyValueInputDto } from './property-value-input.dto';
 
 export class UpdateProjectDto {
   @IsOptional()
@@ -7,26 +9,12 @@ export class UpdateProjectDto {
   name?: string;
 
   @IsOptional()
-  @IsString()
-  clientName?: string;
-
-  @IsOptional()
-  @IsString()
-  siteAddress?: string;
-
-  @IsOptional()
-  @IsString()
-  caseNumber?: string;
-
-  @IsOptional()
-  @IsString()
-  typeId?: string;
-
-  @IsOptional()
-  @IsString()
-  statusId?: string;
-
-  @IsOptional()
   @IsDateString()
   projectStartDate?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PropertyValueInputDto)
+  propertyValues?: PropertyValueInputDto[];
 }

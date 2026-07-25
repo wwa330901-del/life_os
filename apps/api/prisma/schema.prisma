@@ -167,19 +167,24 @@ model ProjectStatusOption {
 }
 
 model Project {
-  id          String @id @default(uuid())
-  name        String
-  clientName  String
-  siteAddress String
+  id   String @id @default(uuid())
+  name String
 
-  /// 案號 — optional, unlike everything else required at creation.
-  caseNumber String?
+  /// clientName/siteAddress/caseNumber/type/status below are the old
+  /// fixed fields, now superseded by the per-space ProjectPropertyValue
+  /// system — loosened to nullable (not removed) since new projects go
+  /// through the new system and never populate these. Left in place as a
+  /// stage-1 safety net; stage 2 (once the new system is verified) drops
+  /// them for real.
+  clientName  String?
+  siteAddress String?
+  caseNumber  String?
 
-  typeId String
-  type   ProjectTypeOption @relation(fields: [typeId], references: [id])
+  typeId String?
+  type   ProjectTypeOption? @relation(fields: [typeId], references: [id])
 
-  statusId String
-  status   ProjectStatusOption @relation(fields: [statusId], references: [id])
+  statusId String?
+  status   ProjectStatusOption? @relation(fields: [statusId], references: [id])
 
   // Baseline anchor date: items with no predecessors start here. Date-only —
   // no time-of-day, no timezone (see WorkItem's date fields for the same rule).
