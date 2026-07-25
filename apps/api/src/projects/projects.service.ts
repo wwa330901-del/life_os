@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpacesService } from '../spaces/spaces.service';
+import { MembershipRole, ProjectRole, SpaceType } from '../../generated/prisma/client.js';
 import type { Project } from '../../generated/prisma/client.js';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -13,17 +14,25 @@ export class ProjectsService {
     private readonly spacesService: SpacesService,
   ) {}
 
+  /**
+   * OWNER/ADMIN see every project in the space, same as before this
+   * feature existed; a regular MEMBER only sees projects they've actually
+   * been added to (see `assertAccess` for the same rule applied to a
+   * single project).
+   */
   async listForSpace(userId: string, spaceId: string) {
-    await this.spacesService.getForUserOrThrow(userId, spaceId);
+    const space = await this.spacesService.getForUserOrThrow(userId, spaceId);
+    const canSeeEverything =
+      space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN;
     return this.prisma.project.findMany({
-      where: { spaceId },
+      where: canSeeEverything ? { spaceId } : { spaceId, members: { some: { userId } } },
       orderBy: { createdAt: 'asc' },
     });
   }
 
   async create(userId: string, spaceId: string, dto: CreateProjectDto) {
     await this.spacesService.getForUserOrThrow(userId, spaceId);
-    return this.prisma.project.create({
+    const project = await this.prisma.project.create({
       data: {
         name: dto.name,
         clientName: dto.clientName,
@@ -32,6 +41,11 @@ export class ProjectsService {
         spaceId,
       },
     });
+    // Whoever creates a project is its PM (project lead) by default.
+    await this.prisma.projectMember.create({
+      data: { userId, projectId: project.id, role: ProjectRole.PM },
+    });
+    return project;
   }
 
   async getOne(userId: string, projectId: string) {
@@ -96,7 +110,26 @@ export class ProjectsService {
     return project;
   }
 
+  /**
+   * Every project-scoped endpoint (work items, schedule, calendar, member
+   * management) funnels through here — this is the one place that decides
+   * who can touch a given project. Space OWNER/ADMIN always pass (they
+   * need oversight of everything in their own company space); a regular
+   * MEMBER additionally needs a `ProjectMember` row on this specific
+   * project. Personal spaces have no project-membership concept (only
+   * their owner can ever reach one), so they skip straight through once
+   * space-level access is confirmed.
+   */
   async assertAccess(userId: string, project: Project): Promise<void> {
-    await this.spacesService.getForUserOrThrow(userId, project.spaceId);
+    const space = await this.spacesService.getForUserOrThrow(userId, project.spaceId);
+    if (space.type === SpaceType.PERSONAL) return;
+    if (space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN) return;
+
+    const membership = await this.prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId: project.id } },
+    });
+    if (!membership) {
+      throw new ForbiddenException('You do not have access to this project');
+    }
   }
 }

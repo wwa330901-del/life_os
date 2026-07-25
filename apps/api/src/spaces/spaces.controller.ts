@@ -18,4 +18,9 @@ export class SpacesController {
   getOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.spacesService.getForUserOrThrow(user.id, id);
   }
+
+  @Get(':id/members')
+  listMembers(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.spacesService.listMembers(user.id, id);
+  }
 }

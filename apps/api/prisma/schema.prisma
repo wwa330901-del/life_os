@@ -22,6 +22,11 @@ enum MembershipRole {
   MEMBER
 }
 
+enum ProjectRole {
+  PM
+  MEMBER
+}
+
 model User {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -47,8 +52,9 @@ model User {
   // one company space.
   isPlatformAdmin Boolean @default(false)
 
-  personalSpace Space?              @relation("PersonalSpaceOwner")
-  memberships   CompanyMembership[]
+  personalSpace      Space?              @relation("PersonalSpaceOwner")
+  memberships        CompanyMembership[]
+  projectMemberships ProjectMember[]
 }
 
 model Space {
@@ -104,7 +110,22 @@ model Project {
   adHocHolidays                DateTime[] @db.Date @default([])
   adHocWorkdays                 DateTime[] @db.Date @default([])
 
-  items WorkItem[]
+  items   WorkItem[]
+  members ProjectMember[]
+}
+
+model ProjectMember {
+  id        String      @id @default(uuid())
+  role      ProjectRole
+  createdAt DateTime    @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
 }
 
 model WorkItem {

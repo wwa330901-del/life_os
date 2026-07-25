@@ -77,4 +77,23 @@ export class SpacesService {
 
     return { ...space, role: membership.role };
   }
+
+  /** Every member of a company space — used to populate "who can I add to
+   * this project" pickers. Any member of the space may call this (not just
+   * platform admins, unlike the equivalent admin endpoint). */
+  async listMembers(userId: string, spaceId: string) {
+    await this.getForUserOrThrow(userId, spaceId);
+    const memberships = await this.prisma.companyMembership.findMany({
+      where: { spaceId },
+      include: { user: { select: { id: true, username: true, name: true, email: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return memberships.map((m) => ({
+      userId: m.user.id,
+      username: m.user.username,
+      name: m.user.name,
+      email: m.user.email,
+      role: m.role,
+    }));
+  }
 }
