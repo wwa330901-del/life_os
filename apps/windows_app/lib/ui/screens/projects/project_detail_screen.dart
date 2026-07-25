@@ -3,15 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../state/project_editor_provider.dart';
 import '../../shell/breadcrumb_bar.dart';
-import 'tabs/coming_soon_tab.dart';
 import 'tabs/members_tab.dart';
+import 'tabs/project_info_tab.dart';
 import 'tabs/schedule_tab.dart';
 
-/// Project detail content — lives inside `SpaceShell`'s content pane. 工期
-/// and 專案成員 have real functionality; the other four
-/// (金額/合約條件/發包狀態/成本控制) are navigation placeholders so the shape is
-/// already in place for each to be filled in as its own slice later,
-/// without redesigning this screen.
+/// Project detail content — lives inside `SpaceShell`'s content pane.
+/// Three tabs, all with real functionality: 工期 (schedule), 專案資料
+/// (type/status/client/site/case number), 專案成員. The four business
+/// modules planned for later (金額/合約條件/發包狀態/成本控制) don't have a
+/// placeholder here anymore — an empty "coming soon" tab wasn't earning its
+/// spot in the tab bar; they'll get added back once each has real content.
 class ProjectDetailScreen extends ConsumerWidget {
   const ProjectDetailScreen({
     super.key,
@@ -24,14 +25,7 @@ class ProjectDetailScreen extends ConsumerWidget {
   final String spaceName;
   final VoidCallback onBackToList;
 
-  static const _tabs = [
-    Tab(text: '工期'),
-    Tab(text: '金額'),
-    Tab(text: '合約條件'),
-    Tab(text: '發包狀態'),
-    Tab(text: '成本控制'),
-    Tab(text: '專案成員'),
-  ];
+  static const _tabs = [Tab(text: '工期'), Tab(text: '專案資料'), Tab(text: '專案成員')];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -65,10 +59,7 @@ class ProjectDetailScreen extends ConsumerWidget {
               data: (_) => TabBarView(
                 children: [
                   ScheduleTab(projectId: projectId),
-                  const ComingSoonTab(label: '金額'),
-                  const ComingSoonTab(label: '合約條件'),
-                  const ComingSoonTab(label: '發包狀態'),
-                  const ComingSoonTab(label: '成本控制'),
+                  ProjectInfoTab(projectId: projectId),
                   MembersTab(projectId: projectId),
                 ],
               ),

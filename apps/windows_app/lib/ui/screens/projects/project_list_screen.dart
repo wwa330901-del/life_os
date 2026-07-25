@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/api_client.dart';
-import '../../../state/auth_provider.dart';
 import '../../../state/projects_provider.dart';
 import '../../shell/breadcrumb_bar.dart';
+import '../../widgets/projects/create_project_dialog.dart';
 
 /// Project list content for one company space — the default view of
 /// `SpaceShell`'s content pane for a company space (sidebar stays put).
@@ -20,83 +19,6 @@ class ProjectListScreen extends ConsumerWidget {
   final String spaceName;
   final ValueChanged<String> onOpenProject;
 
-  Future<void> _createProject(BuildContext context, WidgetRef ref) async {
-    final nameController = TextEditingController();
-    final clientController = TextEditingController();
-    var startDate = DateTime.now();
-
-    final created = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('新增專案'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                decoration: const InputDecoration(labelText: '專案名稱'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: clientController,
-                decoration: const InputDecoration(labelText: '業主（選填）'),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '開工日：${startDate.year}/${startDate.month}/${startDate.day}',
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: startDate,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) setState(() => startDate = picked);
-                    },
-                    child: const Text('選擇日期'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('建立'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (created != true || !context.mounted) return;
-    final name = nameController.text.trim();
-    if (name.isEmpty) return;
-
-    try {
-      await ref.read(apiClientProvider).createProject(
-        spaceId: spaceId,
-        name: name,
-        clientName: clientController.text.trim().isEmpty ? null : clientController.text.trim(),
-        projectStartDate: startDate,
-      );
-      ref.invalidate(spaceProjectsProvider(spaceId));
-    } on ApiException catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projectsAsync = ref.watch(spaceProjectsProvider(spaceId));
@@ -109,7 +31,7 @@ class ProjectListScreen extends ConsumerWidget {
           segments: [BreadcrumbSegment(spaceName)],
           actions: [
             FilledButton.icon(
-              onPressed: () => _createProject(context, ref),
+              onPressed: () => CreateProjectDialog.show(context, spaceId),
               icon: const Icon(Icons.add, size: 18),
               label: const Text('新增專案'),
             ),
@@ -125,7 +47,7 @@ class ProjectListScreen extends ConsumerWidget {
                 padding: const EdgeInsets.all(24),
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: 280,
-                  mainAxisExtent: 108,
+                  mainAxisExtent: 128,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
                 ),
@@ -156,10 +78,18 @@ class ProjectListScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                project.clientName != null ? '業主：${project.clientName}' : '尚未填寫業主',
+                                '業主：${project.clientName}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                children: [
+                                  _Badge(label: project.type.label, color: scheme.primary),
+                                  _Badge(label: project.status.label, color: scheme.secondary),
+                                ],
                               ),
                             ],
                           ),
@@ -174,6 +104,22 @@ class ProjectListScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
+      child: Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: color)),
     );
   }
 }

@@ -156,21 +156,90 @@ class ApiClient {
   Future<Project> createProject({
     required String spaceId,
     required String name,
-    String? clientName,
-    String? siteAddress,
+    required String clientName,
+    required String siteAddress,
+    String? caseNumber,
+    required String typeId,
+    required String statusId,
     required DateTime projectStartDate,
   }) async {
     final body = await _post('/spaces/$spaceId/projects', {
       'name': name,
-      if (clientName != null) 'clientName': clientName,
-      if (siteAddress != null) 'siteAddress': siteAddress,
+      'clientName': clientName,
+      'siteAddress': siteAddress,
+      if (caseNumber != null && caseNumber.isNotEmpty) 'caseNumber': caseNumber,
+      'typeId': typeId,
+      'statusId': statusId,
       'projectStartDate': _dateOnly(projectStartDate),
     });
     return Project.fromJson(body);
   }
 
+  Future<List<ProjectOption>> listProjectTypeOptions() async {
+    final body = await _getList('/project-options/types');
+    return body.map((e) => ProjectOption.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<ProjectOption>> listProjectStatusOptions() async {
+    final body = await _getList('/project-options/statuses');
+    return body.map((e) => ProjectOption.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> adminCreateProjectTypeOption(String label) async {
+    await _post('/admin/project-options/types', {'label': label});
+  }
+
+  Future<void> adminRenameProjectTypeOption(String id, String label) async {
+    await _patchIgnoreBody('/admin/project-options/types/$id', {'label': label});
+  }
+
+  Future<void> adminDeleteProjectTypeOption(String id) async {
+    await _delete('/admin/project-options/types/$id');
+  }
+
+  Future<void> adminCreateProjectStatusOption(String label) async {
+    await _post('/admin/project-options/statuses', {'label': label});
+  }
+
+  Future<void> adminRenameProjectStatusOption(String id, String label) async {
+    await _patchIgnoreBody('/admin/project-options/statuses/$id', {'label': label});
+  }
+
+  Future<void> adminDeleteProjectStatusOption(String id) async {
+    await _delete('/admin/project-options/statuses/$id');
+  }
+
   Future<Project> getProject(String projectId) async {
     final body = await _get('/projects/$projectId');
+    return Project.fromJson(body);
+  }
+
+  /// Every field is "not sent" when omitted (unchanged) — same convention
+  /// as [updateWorkItem]. `clearCaseNumber: true` clears an optional 案號
+  /// back to null.
+  Future<Project> updateProject({
+    required String projectId,
+    String? name,
+    String? clientName,
+    String? siteAddress,
+    String? caseNumber,
+    bool clearCaseNumber = false,
+    String? typeId,
+    String? statusId,
+    DateTime? projectStartDate,
+  }) async {
+    final body = await _patch('/projects/$projectId', {
+      if (name != null) 'name': name,
+      if (clientName != null) 'clientName': clientName,
+      if (siteAddress != null) 'siteAddress': siteAddress,
+      if (clearCaseNumber)
+        'caseNumber': null
+      else if (caseNumber != null)
+        'caseNumber': caseNumber,
+      if (typeId != null) 'typeId': typeId,
+      if (statusId != null) 'statusId': statusId,
+      if (projectStartDate != null) 'projectStartDate': _dateOnly(projectStartDate),
+    });
     return Project.fromJson(body);
   }
 
