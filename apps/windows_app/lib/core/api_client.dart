@@ -321,11 +321,13 @@ class ApiClient {
     required String projectId,
     String? name,
     DateTime? projectStartDate,
+    DateTime? projectEndDate,
     List<PropertyValueInput> propertyValues = const [],
   }) async {
     final body = await _patch('/projects/$projectId', {
       if (name != null) 'name': name,
       if (projectStartDate != null) 'projectStartDate': _dateOnly(projectStartDate),
+      if (projectEndDate != null) 'projectEndDate': _dateOnly(projectEndDate),
       if (propertyValues.isNotEmpty)
         'propertyValues': propertyValues.map((v) => v.toJson()).toList(),
     });

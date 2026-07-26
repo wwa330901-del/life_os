@@ -91,6 +91,9 @@ export class ProjectsService {
           ...(dto.projectStartDate !== undefined && {
             projectStartDate: new Date(dto.projectStartDate),
           }),
+          ...(dto.projectEndDate !== undefined && {
+            projectEndDate: new Date(dto.projectEndDate),
+          }),
         },
       });
       if (dto.propertyValues?.length) {

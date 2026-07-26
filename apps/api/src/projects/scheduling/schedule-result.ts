@@ -12,6 +12,7 @@ export interface ScheduledTask {
 export enum SchedulingIssueType {
   CycleDetected = 'cycleDetected',
   DanglingPredecessor = 'danglingPredecessor',
+  ExceedsContractDeadline = 'exceedsContractDeadline',
 }
 
 export interface SchedulingIssue {

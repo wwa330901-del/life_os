@@ -31,6 +31,12 @@ class Project {
   final String id;
   final String name;
   final DateTime projectStartDate;
+
+  /// 預計結案日 (target/contract completion date) — null until a
+  /// 完工日-bearing contract is filled (see DocumentField's `writesTo`) or
+  /// the user sets it directly on the 專案資料 tab. The schedule engine
+  /// warns when the computed finish date slips past this.
+  final DateTime? projectEndDate;
   final HolidayCalendar calendar;
   final String spaceId;
   final List<ProjectPropertyValue> propertyValues;
@@ -44,6 +50,7 @@ class Project {
     required this.id,
     required this.name,
     required this.projectStartDate,
+    this.projectEndDate,
     required this.calendar,
     required this.spaceId,
     required this.propertyValues,
@@ -74,6 +81,9 @@ class Project {
     id: json['id'] as String,
     name: json['name'] as String,
     projectStartDate: DateTime.parse(json['projectStartDate'] as String),
+    projectEndDate: json['projectEndDate'] == null
+        ? null
+        : DateTime.parse(json['projectEndDate'] as String),
     calendar: HolidayCalendar.fromProjectJson(json),
     spaceId: json['spaceId'] as String,
     propertyValues: (json['propertyValues'] as List<dynamic>? ?? const [])

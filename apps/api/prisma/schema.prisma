@@ -98,10 +98,14 @@ model DocumentTemplate {
 
   docxData Bytes // the tagged .docx, ready for docxtemplater
 
-  /// [{ key, label, source }] — `source` is one of `null` (always manual),
+  /// [{ key, label, type?, source?, writesTo? }] — `type` is `"text"`
+  /// (default) or `"date"`. `source` is one of `null` (always manual),
   /// `"project.name"` / `"project.startDate"` (the project's own fixed
   /// fields), or `"property:<name>"` (look up by name in the project's own
-  /// propertyValues) — see ProjectPropertyDefinition/Value.
+  /// propertyValues) — see ProjectPropertyDefinition/Value. `writesTo` is
+  /// the reverse: for a `date` field, `"project.endDate"` means the value
+  /// picked when filling this template is written back onto the project's
+  /// own `projectEndDate` (e.g. a contract's 完工日 setting 預計結案日).
   fields Json
 
   /// ProjectPropertyOption ids under this space's "類型" property — which
@@ -223,6 +227,14 @@ model Project {
   // Baseline anchor date: items with no predecessors start here. Date-only —
   // no time-of-day, no timezone (see WorkItem's date fields for the same rule).
   projectStartDate DateTime @db.Date
+
+  // Contract-committed completion date (預計結案日) — nullable since it's
+  // usually unset until a 完工日-bearing contract (e.g. the 裝修工程承攬合約書
+  // template) is actually filled and signed; see DocumentField's `writesTo`
+  // for how filling a contract writes here. Once set, the schedule engine
+  // compares the computed finish date against it and raises a
+  // SchedulingIssue if the forecast has slipped past it.
+  projectEndDate DateTime? @db.Date
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

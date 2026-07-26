@@ -23,7 +23,7 @@ class ScheduledTask {
   );
 }
 
-enum SchedulingIssueType { cycleDetected, danglingPredecessor }
+enum SchedulingIssueType { cycleDetected, danglingPredecessor, exceedsContractDeadline }
 
 class SchedulingIssue {
   final SchedulingIssueType type;
@@ -38,9 +38,11 @@ class SchedulingIssue {
 
   factory SchedulingIssue.fromJson(Map<String, dynamic> json) =>
       SchedulingIssue(
-        type: (json['type'] as String) == 'cycleDetected'
-            ? SchedulingIssueType.cycleDetected
-            : SchedulingIssueType.danglingPredecessor,
+        type: switch (json['type'] as String) {
+          'cycleDetected' => SchedulingIssueType.cycleDetected,
+          'exceedsContractDeadline' => SchedulingIssueType.exceedsContractDeadline,
+          _ => SchedulingIssueType.danglingPredecessor,
+        },
         involvedWorkItemIds: (json['involvedWorkItemIds'] as List<dynamic>)
             .cast<String>(),
         message: json['message'] as String,

@@ -13,6 +13,10 @@ export class UpdateProjectDto {
   projectStartDate?: string;
 
   @IsOptional()
+  @IsDateString()
+  projectEndDate?: string;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PropertyValueInputDto)

@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from './projects.service';
 import { scheduleProject } from './scheduling/gantt-scheduler';
 import { HolidayCalendarInput, SchedulingWorkItem } from './scheduling/scheduling-types';
+import { SchedulingIssue, SchedulingIssueType } from './scheduling/schedule-result';
 
 // The only place that touches both Prisma and the pure scheduler. Schedule
 // dates are never written back to the database — computed fresh on every
@@ -46,7 +47,7 @@ export class ScheduleService {
   }
 
   private compute(
-    project: { projectStartDate: Date } & HolidayCalendarInput,
+    project: { projectStartDate: Date; projectEndDate: Date | null } & HolidayCalendarInput,
     items: {
       id: string;
       name: string;
@@ -78,10 +79,32 @@ export class ScheduleService {
       items: schedulingItems,
     });
 
+    const issues: SchedulingIssue[] = [...result.issues];
+    if (project.projectEndDate) {
+      const deadline = project.projectEndDate;
+      let forecastEnd: Date | null = null;
+      for (const task of result.byId.values()) {
+        if (!forecastEnd || task.end > forecastEnd) forecastEnd = task.end;
+      }
+      if (forecastEnd && forecastEnd > deadline) {
+        issues.push({
+          type: SchedulingIssueType.ExceedsContractDeadline,
+          involvedWorkItemIds: [...result.byId.values()]
+            .filter((task) => task.end.getTime() === forecastEnd!.getTime())
+            .map((task) => task.workItemId),
+          message: `工期預估已超出合約完工日（合約：${formatDate(deadline)}，目前預估完工：${formatDate(forecastEnd)}）`,
+        });
+      }
+    }
+
     return {
       tasks: [...result.byId.values()],
       topologicalOrder: result.topologicalOrder,
-      issues: result.issues,
+      issues,
     };
   }
+}
+
+function formatDate(date: Date): string {
+  return `${date.getUTCFullYear()}/${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
 }

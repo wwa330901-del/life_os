@@ -144,10 +144,12 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
               _buildField(project, definition),
               const SizedBox(height: 16),
             ],
-            // 簽約日期 is still backed by the fixed `projectStartDate` column
-            // (the schedule/Gantt engine anchors off it) rather than a
-            // generic property — this just renders it in the same visual
-            // language as the properties above it, at the end of the list.
+            // 簽約日期/預計結案日 are still backed by the fixed `projectStartDate`/
+            // `projectEndDate` columns (the schedule/Gantt engine anchors off
+            // the former; the latter feeds the "超出合約期限" schedule
+            // warning) rather than a generic property — this just renders
+            // them in the same visual language as the properties above,
+            // at the end of the list.
             _buildDateField(
               label: '簽約日期',
               value: project.projectStartDate,
@@ -163,6 +165,25 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
                   () => ref
                       .read(apiClientProvider)
                       .updateProject(projectId: widget.projectId, projectStartDate: picked),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildDateField(
+              label: '預計結案日',
+              value: project.projectEndDate,
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: project.projectEndDate ?? project.projectStartDate,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                );
+                if (picked == null) return;
+                await _run(
+                  () => ref
+                      .read(apiClientProvider)
+                      .updateProject(projectId: widget.projectId, projectEndDate: picked),
                 );
               },
             ),

@@ -60,23 +60,25 @@ class ProjectDocumentsTab extends ConsumerWidget {
     final project = ref.read(projectEditorProvider(projectId)).value?.project;
     if (project == null) return;
 
-    final values = await showDialog<Map<String, String>>(
+    final result = await showDialog<_FillResult>(
       context: context,
       builder: (_) => _FillDialog(template: template, project: project),
     );
-    if (values == null || !context.mounted) return;
+    if (result == null || !context.mounted) return;
 
     final Uint8List bytes;
     try {
       bytes = await ref
           .read(apiClientProvider)
-          .fillDocumentTemplate(projectId: projectId, templateId: template.id, values: values);
+          .fillDocumentTemplate(projectId: projectId, templateId: template.id, values: result.values);
     } on ApiException catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
       return;
     }
+    if (!context.mounted) return;
+    await _writeBackDates(context, ref, template, result);
     if (!context.mounted) return;
 
     final action = await showDialog<String>(
@@ -151,6 +153,44 @@ class ProjectDocumentsTab extends ConsumerWidget {
       const SnackBar(content: Text('找不到 LibreOffice，請先安裝（libreoffice.org）後再試一次')),
     );
   }
+
+  /// After a document is generated, any `date`-type field whose template
+  /// definition has `writesTo` set feeds its picked value back onto the
+  /// project (currently only `"project.endDate"` — a contract's 完工日
+  /// setting the project's 預計結案日) so the schedule tab's deadline
+  /// warning has something to compare against.
+  Future<void> _writeBackDates(
+    BuildContext context,
+    WidgetRef ref,
+    DocumentTemplate template,
+    _FillResult result,
+  ) async {
+    for (final field in template.fields) {
+      if (field.writesTo != 'project.endDate') continue;
+      final date = result.dateValues[field.key];
+      if (date == null) continue;
+      try {
+        await ref.read(apiClientProvider).updateProject(projectId: projectId, projectEndDate: date);
+        ref.invalidate(projectEditorProvider(projectId));
+      } on ApiException catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('更新預計結案日失敗：${e.message}')));
+        }
+      }
+    }
+  }
+}
+
+/// What [_FillDialog] hands back: `values` is what goes to the fill API
+/// (docx substitution text for every field), `dateValues` additionally
+/// carries the raw picked [DateTime] for each `date`-type field so
+/// [ProjectDocumentsTab._writeBackDates] doesn't have to re-parse the
+/// formatted text.
+class _FillResult {
+  const _FillResult({required this.values, required this.dateValues});
+
+  final Map<String, String> values;
+  final Map<String, DateTime?> dateValues;
 }
 
 class _FillDialog extends StatefulWidget {
@@ -166,7 +206,13 @@ class _FillDialog extends StatefulWidget {
 class _FillDialogState extends State<_FillDialog> {
   late final Map<String, TextEditingController> _controllers = {
     for (final field in widget.template.fields)
-      field.key: TextEditingController(text: _autoFillValue(field) ?? ''),
+      if (field.type == DocumentFieldType.text)
+        field.key: TextEditingController(text: _autoFillValue(field) ?? ''),
+  };
+
+  late final Map<String, DateTime?> _dateValues = {
+    for (final field in widget.template.fields)
+      if (field.type == DocumentFieldType.date) field.key: _autoFillDate(field),
   };
 
   @override
@@ -197,6 +243,33 @@ class _FillDialogState extends State<_FillDialog> {
     return null;
   }
 
+  /// Same resolution as [_autoFillValue] but for `date`-type fields, which
+  /// need the raw [DateTime] (both to show a real date picker and, via
+  /// `writesTo`, to write back onto the project without re-parsing text).
+  DateTime? _autoFillDate(DocumentField field) {
+    final source = field.source;
+    if (source == null) return null;
+    if (source == 'project.startDate') return widget.project.projectStartDate;
+    if (source.startsWith('property:')) {
+      final name = source.substring('property:'.length);
+      return widget.project.propertyByName(name)?.dateValue;
+    }
+    return null;
+  }
+
+  String _formatChineseDate(DateTime d) => '${d.year}年${d.month}月${d.day}日';
+
+  Future<void> _pickDate(String key) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateValues[key] ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(() => _dateValues[key] = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -209,10 +282,26 @@ class _FillDialogState extends State<_FillDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (final field in widget.template.fields) ...[
-                TextField(
-                  controller: _controllers[field.key],
-                  decoration: InputDecoration(labelText: field.label),
-                ),
+                if (field.type == DocumentFieldType.date)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: () => _pickDate(field.key),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: field.label,
+                        suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+                      ),
+                      isEmpty: _dateValues[field.key] == null,
+                      child: _dateValues[field.key] == null
+                          ? null
+                          : Text(_formatChineseDate(_dateValues[field.key]!)),
+                    ),
+                  )
+                else
+                  TextField(
+                    controller: _controllers[field.key],
+                    decoration: InputDecoration(labelText: field.label),
+                  ),
                 const SizedBox(height: 12),
               ],
             ],
@@ -223,8 +312,13 @@ class _FillDialogState extends State<_FillDialog> {
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(
           onPressed: () {
-            final values = {for (final entry in _controllers.entries) entry.key: entry.value.text};
-            Navigator.of(context).pop(values);
+            final values = {
+              for (final field in widget.template.fields)
+                field.key: field.type == DocumentFieldType.date
+                    ? (_dateValues[field.key] == null ? '' : _formatChineseDate(_dateValues[field.key]!))
+                    : (_controllers[field.key]?.text ?? ''),
+            };
+            Navigator.of(context).pop(_FillResult(values: values, dateValues: _dateValues));
           },
           child: const Text('產生'),
         ),
