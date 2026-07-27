@@ -13,6 +13,13 @@ const _indentWidth = 18.0;
 const _minColumnWidth = 40.0;
 const _minNameWidth = 100.0;
 
+/// Width of everything a depth-0 body row renders before its name column
+/// (16 drag-handle icon + 18 collapse-toggle slot + 4 color bar + 8
+/// spacer) — the header has no drag handle/toggle/color bar of its own,
+/// so it reserves this same width as blank space to keep 工項名稱 and
+/// every column after it lined up with the actual row content below.
+const _leadingGutterWidth = 16.0 + 18.0 + 4.0 + 8.0;
+
 /// Column widths for the five data columns — plain mutable fields (not a
 /// provider/state object) since this is purely this table's own render
 /// state, mutated via `setState` in `_TaskTableState` and read by every
@@ -153,7 +160,7 @@ class _TaskTableState extends State<TaskTable> {
             physics: const ClampingScrollPhysics(),
             child: Row(
               children: [
-                const SizedBox(width: 12),
+                const SizedBox(width: _leadingGutterWidth),
                 SizedBox(
                   width: _widths.name,
                   child: Text('工項名稱', style: headerStyle),
