@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,12 +8,19 @@ import '../../core/models/app_user.dart';
 import '../../core/theme/app_accents.dart';
 import '../../state/auth_provider.dart';
 import '../../state/space_provider.dart';
+import '../../state/ui_prefs_provider.dart';
 
-/// Persistent left navigation for a selected space — replaces the old
-/// "swap space" icon buried in `home_screen.dart`'s header with a always-
-/// visible rail, so switching space or module doesn't require backing out
-/// of whatever screen you're on.
-class AppSidebar extends ConsumerWidget {
+const _sidebarWidth = 220.0;
+const _railWidth = 14.0;
+
+/// Persistent left navigation for a selected space. Normally pinned open
+/// (`_sidebarWidth` wide); the pin button lets the user collapse it to a
+/// slim `_railWidth` rail instead, freeing that space for the content pane
+/// — hovering the rail pops the full nav back out as a floating overlay
+/// (via `Overlay`/`CompositedTransformFollower` so it draws above the
+/// content pane instead of being squeezed into the rail's own layout box)
+/// without re-pinning it open.
+class AppSidebar extends ConsumerStatefulWidget {
   const AppSidebar({
     super.key,
     required this.space,
@@ -26,6 +35,131 @@ class AppSidebar extends ConsumerWidget {
   final bool propertiesSettingsSelected;
 
   @override
+  ConsumerState<AppSidebar> createState() => _AppSidebarState();
+}
+
+class _AppSidebarState extends ConsumerState<AppSidebar> {
+  final _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
+  Timer? _hideTimer;
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    _overlayEntry?.remove();
+    super.dispose();
+  }
+
+  void _cancelHide() => _hideTimer?.cancel();
+
+  void _scheduleHide() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(milliseconds: 200), _removeOverlay);
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  void _pin() {
+    ref.read(sidebarCollapsedProvider.notifier).toggle();
+    _removeOverlay();
+  }
+
+  void _showFlyout() {
+    _cancelHide();
+    if (_overlayEntry != null) return;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    _overlayEntry = OverlayEntry(
+      builder: (context) => CompositedTransformFollower(
+        link: _layerLink,
+        showWhenUnlinked: false,
+        child: MouseRegion(
+          onEnter: (_) => _cancelHide(),
+          onExit: (_) => _scheduleHide(),
+          child: SizedBox(
+            width: _sidebarWidth,
+            height: screenHeight,
+            child: Material(
+              elevation: 8,
+              child: _SidebarPanel(
+                space: widget.space,
+                onGoToProjects: widget.onGoToProjects,
+                onOpenPropertiesSettings: widget.onOpenPropertiesSettings,
+                propertiesSettingsSelected: widget.propertiesSettingsSelected,
+                collapsed: true,
+                onTogglePin: _pin,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final collapsed = ref.watch(sidebarCollapsedProvider);
+
+    if (!collapsed) {
+      return SizedBox(
+        width: _sidebarWidth,
+        child: _SidebarPanel(
+          space: widget.space,
+          onGoToProjects: widget.onGoToProjects,
+          onOpenPropertiesSettings: widget.onOpenPropertiesSettings,
+          propertiesSettingsSelected: widget.propertiesSettingsSelected,
+          collapsed: false,
+          onTogglePin: () => ref.read(sidebarCollapsedProvider.notifier).toggle(),
+        ),
+      );
+    }
+
+    final scheme = Theme.of(context).colorScheme;
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: MouseRegion(
+        onEnter: (_) => _showFlyout(),
+        onExit: (_) => _scheduleHide(),
+        child: Container(
+          width: _railWidth,
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            border: Border(right: BorderSide(color: scheme.outline.withValues(alpha: 0.25))),
+          ),
+          child: Center(
+            child: Icon(Icons.chevron_right, size: 14, color: scheme.onSurface.withValues(alpha: 0.4)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarPanel extends ConsumerWidget {
+  const _SidebarPanel({
+    required this.space,
+    required this.onGoToProjects,
+    required this.onOpenPropertiesSettings,
+    required this.propertiesSettingsSelected,
+    required this.collapsed,
+    required this.onTogglePin,
+  });
+
+  final SpaceSummary space;
+  final VoidCallback onGoToProjects;
+  final VoidCallback onOpenPropertiesSettings;
+  final bool propertiesSettingsSelected;
+
+  /// Whether this panel is currently rendering as the hover flyout (vs.
+  /// pinned open in the normal layout) — only changes the pin button's
+  /// icon/tooltip, the nav content itself is identical either way.
+  final bool collapsed;
+  final VoidCallback onTogglePin;
+
+  @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final session = ref.watch(authControllerProvider).value;
@@ -34,7 +168,6 @@ class AppSidebar extends ConsumerWidget {
         : AppAccents.company(scheme.brightness);
 
     return Container(
-      width: 220,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
         border: Border(right: BorderSide(color: scheme.outline.withValues(alpha: 0.25))),
@@ -44,10 +177,24 @@ class AppSidebar extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-              child: Text(
-                '元序',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              padding: const EdgeInsets.fromLTRB(16, 16, 8, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '元序',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(collapsed ? Icons.push_pin_outlined : Icons.push_pin, size: 16),
+                    tooltip: collapsed ? '固定顯示側邊欄' : '隱藏側邊欄（滑鼠靠近可暫時顯示）',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: onTogglePin,
+                  ),
+                ],
               ),
             ),
             Padding(

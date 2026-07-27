@@ -18,3 +18,16 @@ class ZoomNotifier extends Notifier<double> {
 final zoomDayWidthProvider = NotifierProvider<ZoomNotifier, double>(
   ZoomNotifier.new,
 );
+
+/// Whether the left `AppSidebar` is collapsed to a slim hover-to-peek rail
+/// — in memory only, so it resets to expanded (pinned open) on next launch.
+class SidebarCollapsedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void toggle() => state = !state;
+}
+
+final sidebarCollapsedProvider = NotifierProvider<SidebarCollapsedNotifier, bool>(
+  SidebarCollapsedNotifier.new,
+);

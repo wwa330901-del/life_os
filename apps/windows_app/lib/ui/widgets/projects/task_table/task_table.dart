@@ -13,11 +13,13 @@ const _indentWidth = 18.0;
 const _minColumnWidth = 40.0;
 const _minNameWidth = 100.0;
 
-/// Width of everything a depth-0 body row renders before its name column
-/// (16 drag-handle icon + 18 collapse-toggle slot + 4 color bar + 8
-/// spacer) — the header has no drag handle/toggle/color bar of its own,
-/// so it reserves this same width as blank space to keep 工項名稱 and
-/// every column after it lined up with the actual row content below.
+/// Width of everything a body row renders before its name column (16
+/// drag-handle icon + 18 collapse-toggle slot + 4 color bar + 8 spacer —
+/// depth indent lives *inside* the name column itself, see `_TaskRowState`,
+/// so this gutter is the same at every nesting depth). The header has no
+/// drag handle/toggle/color bar of its own, so it reserves this same width
+/// as blank space to keep 工項名稱 and every column after it lined up with
+/// the actual row content below.
 const _leadingGutterWidth = 16.0 + 18.0 + 4.0 + 8.0;
 
 /// Column widths for the five data columns — plain mutable fields (not a
@@ -163,32 +165,44 @@ class _TaskTableState extends State<TaskTable> {
                 const SizedBox(width: _leadingGutterWidth),
                 SizedBox(
                   width: _widths.name,
-                  child: Text('工項名稱', style: headerStyle),
+                  child: Text('工項名稱', textAlign: TextAlign.center, style: headerStyle),
                 ),
                 _ColumnResizeHandle(
                   onDrag: (dx) => setState(
                     () => _widths.name = (_widths.name + dx).clamp(_minNameWidth, double.infinity),
                   ),
                 ),
-                SizedBox(width: _widths.startDate, child: Text('起始日', style: headerStyle)),
+                SizedBox(
+                  width: _widths.startDate,
+                  child: Text('起始日', textAlign: TextAlign.center, style: headerStyle),
+                ),
                 _ColumnResizeHandle(
                   onDrag: (dx) => setState(
                     () => _widths.startDate = (_widths.startDate + dx).clamp(_minColumnWidth, double.infinity),
                   ),
                 ),
-                SizedBox(width: _widths.endDate, child: Text('結束日', style: headerStyle)),
+                SizedBox(
+                  width: _widths.endDate,
+                  child: Text('結束日', textAlign: TextAlign.center, style: headerStyle),
+                ),
                 _ColumnResizeHandle(
                   onDrag: (dx) => setState(
                     () => _widths.endDate = (_widths.endDate + dx).clamp(_minColumnWidth, double.infinity),
                   ),
                 ),
-                SizedBox(width: _widths.duration, child: Text('工期(天)', style: headerStyle)),
+                SizedBox(
+                  width: _widths.duration,
+                  child: Text('工期(天)', textAlign: TextAlign.center, style: headerStyle),
+                ),
                 _ColumnResizeHandle(
                   onDrag: (dx) => setState(
                     () => _widths.duration = (_widths.duration + dx).clamp(_minColumnWidth, double.infinity),
                   ),
                 ),
-                SizedBox(width: _widths.predecessor, child: Text('相依', style: headerStyle)),
+                SizedBox(
+                  width: _widths.predecessor,
+                  child: Text('相依', textAlign: TextAlign.center, style: headerStyle),
+                ),
                 _ColumnResizeHandle(
                   onDrag: (dx) => setState(
                     () => _widths.predecessor = (_widths.predecessor + dx).clamp(_minColumnWidth, double.infinity),
@@ -456,7 +470,6 @@ class _TaskRowState extends State<_TaskRow> {
               childWhenDragging: Icon(Icons.drag_indicator, size: 16, color: faintText),
               child: Icon(Icons.drag_indicator, size: 16, color: mutedText),
             ),
-            SizedBox(width: widget.depth * _indentWidth),
             SizedBox(
               width: 18,
               child: widget.hasChildren
@@ -471,21 +484,35 @@ class _TaskRowState extends State<_TaskRow> {
             ),
             Container(width: 4, height: 20, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
             const SizedBox(width: 8),
+            // The depth indent lives *inside* this fixed-width box (rather
+            // than as a preceding sibling in the row) so the box's own
+            // width — and therefore every column after it — stays constant
+            // across depths. Indenting via a sibling would grow each
+            // nested row's total width by `depth * _indentWidth`, pushing
+            // 起始日/結束日/工期/相依 further right the deeper an item is
+            // nested, so child rows no longer lined up with their parent's.
             SizedBox(
               width: widths.name,
-              child: TextField(
-                controller: _nameController,
-                focusNode: _nameFocusNode,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isParentRow ? FontWeight.w600 : FontWeight.normal,
-                ),
-                onSubmitted: (_) => _nameFocusNode.unfocus(),
+              child: Row(
+                children: [
+                  SizedBox(width: widget.depth * _indentWidth),
+                  Expanded(
+                    child: TextField(
+                      controller: _nameController,
+                      focusNode: _nameFocusNode,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isParentRow ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      onSubmitted: (_) => _nameFocusNode.unfocus(),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 9),
