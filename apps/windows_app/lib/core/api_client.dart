@@ -93,6 +93,11 @@ class ApiClient {
     return AppUser.fromJson(body);
   }
 
+  Future<AppUser> updateMe({required String name}) async {
+    final body = await _patch('/auth/me', {'name': name});
+    return AppUser.fromJson(body);
+  }
+
   Future<List<SpaceSummary>> mySpaces() async {
     final body = await _getList('/spaces/me');
     return body
@@ -276,39 +281,6 @@ class ApiClient {
     return res.bodyBytes;
   }
 
-  Future<List<ProjectOption>> listProjectTypeOptions() async {
-    final body = await _getList('/project-options/types');
-    return body.map((e) => ProjectOption.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
-  Future<List<ProjectOption>> listProjectStatusOptions() async {
-    final body = await _getList('/project-options/statuses');
-    return body.map((e) => ProjectOption.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
-  Future<void> adminCreateProjectTypeOption(String label) async {
-    await _post('/admin/project-options/types', {'label': label});
-  }
-
-  Future<void> adminRenameProjectTypeOption(String id, String label) async {
-    await _patchIgnoreBody('/admin/project-options/types/$id', {'label': label});
-  }
-
-  Future<void> adminDeleteProjectTypeOption(String id) async {
-    await _delete('/admin/project-options/types/$id');
-  }
-
-  Future<void> adminCreateProjectStatusOption(String label) async {
-    await _post('/admin/project-options/statuses', {'label': label});
-  }
-
-  Future<void> adminRenameProjectStatusOption(String id, String label) async {
-    await _patchIgnoreBody('/admin/project-options/statuses/$id', {'label': label});
-  }
-
-  Future<void> adminDeleteProjectStatusOption(String id) async {
-    await _delete('/admin/project-options/statuses/$id');
-  }
 
   Future<Project> getProject(String projectId) async {
     final body = await _get('/projects/$projectId');

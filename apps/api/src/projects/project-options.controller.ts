@@ -2,9 +2,8 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ProjectOptionsService } from './project-options.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
-/** Read-only — any logged-in user needs these to populate the 類型/狀態
- * dropdowns when creating or editing a project. Managing the lists
- * themselves is platform-admin-only, see `AdminProjectOptionsController`. */
+/** Read-only legacy lookup — kept only so an old `typeId`/`statusId` on a
+ * `Project` row still resolves to a label; see `ProjectOptionsService`. */
 @UseGuards(JwtAuthGuard)
 @Controller('project-options')
 export class ProjectOptionsController {

@@ -55,27 +55,20 @@ class AdminUserSummary {
   );
 }
 
+/// The platform-admin space list only ever returns company spaces —
+/// personal (per-user, auto-created) spaces aren't platform-admin-managed
+/// and are filtered out server-side (`AdminService.listSpaces`).
 class AdminSpaceSummary {
-  const AdminSpaceSummary({
-    required this.id,
-    required this.type,
-    required this.name,
-    required this.memberCount,
-    required this.personalOwnerName,
-  });
+  const AdminSpaceSummary({required this.id, required this.name, required this.memberCount});
 
   final String id;
-  final SpaceType type;
   final String name;
-  final int? memberCount;
-  final String? personalOwnerName;
+  final int memberCount;
 
   factory AdminSpaceSummary.fromJson(Map<String, dynamic> json) => AdminSpaceSummary(
     id: json['id'] as String,
-    type: (json['type'] as String) == 'PERSONAL' ? SpaceType.personal : SpaceType.company,
     name: json['name'] as String,
-    memberCount: json['memberCount'] as int?,
-    personalOwnerName: json['personalOwnerName'] as String?,
+    memberCount: json['memberCount'] as int,
   );
 }
 

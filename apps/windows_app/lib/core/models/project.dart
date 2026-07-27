@@ -6,16 +6,6 @@ import 'project_property.dart';
 /// per-space [PropertyDefinition]/[PropertyOption] system, but the old
 /// tables/endpoints/admin screen are still around (stage-2 cleanup, not yet
 /// done), so this stays until that's removed.
-class ProjectOption {
-  const ProjectOption({required this.id, required this.label});
-
-  final String id;
-  final String label;
-
-  factory ProjectOption.fromJson(Map<String, dynamic> json) =>
-      ProjectOption(id: json['id'] as String, label: json['label'] as String);
-}
-
 /// One 專案 under a company space. The backend's Project row also carries
 /// the holiday calendar fields flattened onto it (see schema.prisma) — this
 /// client model embeds them as a [HolidayCalendar] for convenience, same

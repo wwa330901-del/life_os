@@ -30,12 +30,16 @@ export class AdminService {
     }));
   }
 
+  /** Company spaces only — personal (per-user, auto-created) spaces aren't
+   * something a platform admin manages, so they're excluded here. This is
+   * scoped to just this admin listing; personal spaces are untouched
+   * everywhere else (space lookup, project creation, `spaces/me`, ...). */
   async listSpaces() {
     const spaces = await this.prisma.space.findMany({
+      where: { type: SpaceType.COMPANY },
       orderBy: { createdAt: 'asc' },
       include: {
         _count: { select: { memberships: true } },
-        owner: { select: { name: true } },
       },
     });
     return spaces.map((s) => ({
@@ -43,8 +47,7 @@ export class AdminService {
       type: s.type,
       name: s.name,
       createdAt: s.createdAt,
-      memberCount: s.type === SpaceType.COMPANY ? s._count.memberships : null,
-      personalOwnerName: s.type === SpaceType.PERSONAL ? s.owner?.name : null,
+      memberCount: s._count.memberships,
     }));
   }
 

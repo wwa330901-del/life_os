@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { AuthenticatedUser } from './jwt-payload';
@@ -52,6 +53,21 @@ export class AuthController {
       email: user!.email,
       name: user!.name,
       isPlatformAdmin: user!.isPlatformAdmin,
+    };
+  }
+
+  /** Self-service display-name change — any logged-in user, not just a
+   * platform admin (who can only view accounts, not edit them). */
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  async updateMe(@CurrentUser() currentUser: AuthenticatedUser, @Body() dto: UpdateMeDto) {
+    const user = await this.usersService.updateName(currentUser.id, dto.name.trim());
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      name: user.name,
+      isPlatformAdmin: user.isPlatformAdmin,
     };
   }
 }

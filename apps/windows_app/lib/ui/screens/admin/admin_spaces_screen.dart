@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_client.dart';
-import '../../../core/models/app_user.dart';
 import '../../../state/admin_provider.dart';
 import '../../../state/auth_provider.dart';
 import 'admin_space_detail_screen.dart';
@@ -64,22 +63,17 @@ class AdminSpacesScreen extends ConsumerWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final space = spaces[index];
-              final isCompany = space.type == SpaceType.company;
               return Card(
                 child: ListTile(
-                  leading: Icon(isCompany ? Icons.apartment : Icons.person),
+                  leading: const Icon(Icons.apartment),
                   title: Text(space.name),
-                  subtitle: Text(
-                    isCompany ? '公司空間 · ${space.memberCount} 位成員' : '個人空間 · ${space.personalOwnerName}',
+                  subtitle: Text('公司空間 · ${space.memberCount} 位成員'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AdminSpaceDetailScreen(spaceId: space.id, spaceName: space.name),
+                    ),
                   ),
-                  trailing: isCompany ? const Icon(Icons.chevron_right) : null,
-                  onTap: isCompany
-                      ? () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => AdminSpaceDetailScreen(spaceId: space.id, spaceName: space.name),
-                          ),
-                        )
-                      : null,
                 ),
               );
             },

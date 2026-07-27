@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'admin_accounts_screen.dart';
-import 'admin_project_options_screen.dart';
 import 'admin_spaces_screen.dart';
 
 class AdminHomeScreen extends StatelessWidget {
@@ -35,18 +34,6 @@ class AdminHomeScreen extends StatelessWidget {
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const AdminSpacesScreen())),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.dashboard_customize_outlined),
-              title: const Text('專案類型/狀態管理'),
-              subtitle: const Text('設定所有專案共用的類型與狀態選項'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const AdminProjectOptionsScreen())),
             ),
           ),
         ],

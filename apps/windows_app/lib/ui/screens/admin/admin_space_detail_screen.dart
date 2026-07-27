@@ -13,50 +13,91 @@ class AdminSpaceDetailScreen extends ConsumerWidget {
   final String spaceName;
 
   Future<void> _addMember(BuildContext context, WidgetRef ref) async {
-    final usernameController = TextEditingController();
+    final List<AdminUserSummary> users;
+    try {
+      users = await ref.read(adminUsersProvider.future);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    // Best-effort — if the space detail hasn't loaded yet this is just
+    // empty, so the picker shows everyone; the backend still rejects an
+    // already-added account with a clear error either way.
+    final existingUserIds = ref
+        .read(adminSpaceDetailProvider(spaceId))
+        .value
+        ?.members
+        .map((m) => m.userId)
+        .toSet();
+    final candidates = users.where((u) => existingUserIds?.contains(u.id) != true).toList();
+
+    AdminUserSummary? selected;
     var role = MembershipRole.member;
 
-    final result = await showDialog<(String, MembershipRole)>(
+    final result = await showDialog<(AdminUserSummary, MembershipRole)>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: const Text('新增成員'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: usernameController,
-                autofocus: true,
-                decoration: const InputDecoration(labelText: '帳號（username）'),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<MembershipRole>(
-                initialValue: role,
-                decoration: const InputDecoration(labelText: '角色'),
-                items: MembershipRole.values
-                    .map((r) => DropdownMenuItem(value: r, child: Text(r.label)))
-                    .toList(),
-                onChanged: (value) => setState(() => role = value ?? role),
-              ),
-            ],
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Autocomplete<AdminUserSummary>(
+                  displayStringForOption: (u) => '${u.name}（@${u.username}）',
+                  optionsBuilder: (textEditingValue) {
+                    final query = textEditingValue.text.trim().toLowerCase();
+                    if (query.isEmpty) return candidates;
+                    return candidates.where(
+                      (u) =>
+                          u.name.toLowerCase().contains(query) ||
+                          u.username.toLowerCase().contains(query) ||
+                          u.email.toLowerCase().contains(query),
+                    );
+                  },
+                  onSelected: (u) => setState(() => selected = u),
+                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) => TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    autofocus: true,
+                    decoration: const InputDecoration(labelText: '帳號', hintText: '輸入姓名、帳號或 email 搜尋'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<MembershipRole>(
+                  initialValue: role,
+                  decoration: const InputDecoration(labelText: '角色'),
+                  items: MembershipRole.values
+                      .map((r) => DropdownMenuItem(value: r, child: Text(r.label)))
+                      .toList(),
+                  onChanged: (value) => setState(() => role = value ?? role),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
             FilledButton(
-              onPressed: () =>
-                  Navigator.of(context).pop((usernameController.text.trim(), role)),
+              onPressed: selected == null
+                  ? null
+                  : () => Navigator.of(context).pop((selected!, role)),
               child: const Text('新增'),
             ),
           ],
         ),
       ),
     );
-    if (result == null || result.$1.isEmpty || !context.mounted) return;
+    if (result == null || !context.mounted) return;
 
     try {
       await ref
           .read(apiClientProvider)
-          .adminAddMember(spaceId: spaceId, username: result.$1, role: result.$2);
+          .adminAddMember(spaceId: spaceId, username: result.$1.username, role: result.$2);
       ref.invalidate(adminSpaceDetailProvider(spaceId));
       ref.invalidate(adminSpacesProvider);
     } on ApiException catch (e) {

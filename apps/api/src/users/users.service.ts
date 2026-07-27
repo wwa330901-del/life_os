@@ -45,6 +45,15 @@ export class UsersService {
     });
   }
 
+  /** Self-service: any logged-in user can change their own display name
+   * (distinct from the platform-admin user list, which is read-only). */
+  updateName(userId: string, name: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { name },
+    });
+  }
+
   setVerificationCode(userId: string, code: string, expiresAt: Date) {
     return this.prisma.user.update({
       where: { id: userId },

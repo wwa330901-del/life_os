@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api_client.dart';
 import '../../core/models/app_user.dart';
 import '../../core/theme/app_accents.dart';
 import '../../state/auth_provider.dart';
@@ -101,8 +102,14 @@ class AppSidebar extends ConsumerWidget {
             const Spacer(),
             Divider(height: 1, color: scheme.outline.withValues(alpha: 0.25)),
             _NavItem(
+              icon: Icons.person_outline,
+              label: session?.user.name ?? '個人設定',
+              selected: false,
+              onTap: () => _editName(context, ref, session?.user.name ?? ''),
+            ),
+            _NavItem(
               icon: Icons.logout,
-              label: session?.user.name ?? '登出',
+              label: '登出',
               selected: false,
               onTap: () => ref.read(authControllerProvider.notifier).logout(),
             ),
@@ -111,6 +118,37 @@ class AppSidebar extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _editName(BuildContext context, WidgetRef ref, String currentName) async {
+    final controller = TextEditingController(text: currentName);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('個人設定'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: '顯示名稱'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('儲存'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || name == currentName || !context.mounted) return;
+
+    try {
+      await ref.read(authControllerProvider.notifier).updateName(name);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 }
 

@@ -22,10 +22,26 @@ class ProjectInfoTab extends ConsumerStatefulWidget {
   ConsumerState<ProjectInfoTab> createState() => _ProjectInfoTabState();
 }
 
+/// Property names now backed by a fixed `Project` column instead of a
+/// generic property — reserved so a space can no longer create/keep a
+/// same-named custom property that would render as a confusing duplicate
+/// next to the fixed field below.
+const _reservedPropertyNames = {'簽約日期', '預計結案日'};
+
 class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, FocusNode> _focusNodes = {};
   Project? _lastKnownProject;
+
+  late final TextEditingController _nameController;
+  final FocusNode _nameFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+    _nameFocusNode.addListener(_commitNameOnBlur);
+  }
 
   @override
   void dispose() {
@@ -35,7 +51,25 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
     for (final focus in _focusNodes.values) {
       focus.dispose();
     }
+    _nameController.dispose();
+    _nameFocusNode.dispose();
     super.dispose();
+  }
+
+  void _commitNameOnBlur() {
+    if (_nameFocusNode.hasFocus) return;
+    final project = _lastKnownProject;
+    if (project == null) return;
+    final text = _nameController.text.trim();
+    if (text.isEmpty || text == project.name) {
+      _nameController.text = project.name;
+      return;
+    }
+    _run(
+      () => ref
+          .read(apiClientProvider)
+          .updateProject(projectId: widget.projectId, name: text),
+    );
   }
 
   void _ensureControllerFor(String definitionId) {
@@ -50,6 +84,7 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
   void _syncControllers(Project project, List<PropertyDefinition> definitions) {
     if (identical(project, _lastKnownProject)) return;
     _lastKnownProject = project;
+    if (!_nameFocusNode.hasFocus) _nameController.text = project.name;
     for (final definition in definitions) {
       if (definition.type != PropertyType.text && definition.type != PropertyType.number) continue;
       final focus = _focusNodes[definition.id];
@@ -115,7 +150,10 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
       data: (editor) {
         final propertiesAsync = ref.watch(spacePropertiesProvider(editor.project.spaceId));
         return propertiesAsync.when(
-          data: (definitions) {
+          data: (allDefinitions) {
+            final definitions = allDefinitions
+                .where((d) => !_reservedPropertyNames.contains(d.name))
+                .toList();
             _definitions = definitions;
             for (final definition in definitions) {
               _ensureControllerFor(definition.id);
@@ -132,7 +170,20 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
     );
   }
 
+  /// Fixed display order: 案號、業主名稱、案名、專案地點、類型、狀態、簽約日期、
+  /// 預計結案日 — mixes per-space custom properties (looked up by name) with
+  /// the two fixed fields (案名/簽約日期/預計結案日 aren't properties at all).
+  /// Any custom property a space adds beyond this standard set still shows
+  /// up, just appended after — so nothing a space owner configured silently
+  /// disappears just because it wasn't in this fixed list.
+  static const _propertyDisplayOrder = ['案號', '業主名稱', '專案地點', '類型', '狀態'];
+
   Widget _buildBody(Project project, List<PropertyDefinition> definitions) {
+    final byName = {for (final d in definitions) d.name: d};
+    final extras = definitions.where((d) => !_propertyDisplayOrder.contains(d.name));
+
+    Widget field(Widget child) => Padding(padding: const EdgeInsets.only(bottom: 16), child: child);
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: ConstrainedBox(
@@ -140,53 +191,65 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final definition in definitions) ...[
-              _buildField(project, definition),
-              const SizedBox(height: 16),
-            ],
+            if (byName['案號'] case final def?) field(_buildField(project, def)),
+            if (byName['業主名稱'] case final def?) field(_buildField(project, def)),
+            field(
+              TextField(
+                controller: _nameController,
+                focusNode: _nameFocusNode,
+                decoration: const InputDecoration(labelText: '案名'),
+                onSubmitted: (_) => _nameFocusNode.unfocus(),
+              ),
+            ),
+            if (byName['專案地點'] case final def?) field(_buildField(project, def)),
+            if (byName['類型'] case final def?) field(_buildField(project, def)),
+            if (byName['狀態'] case final def?) field(_buildField(project, def)),
             // 簽約日期/預計結案日 are still backed by the fixed `projectStartDate`/
             // `projectEndDate` columns (the schedule/Gantt engine anchors off
             // the former; the latter feeds the "超出合約期限" schedule
             // warning) rather than a generic property — this just renders
-            // them in the same visual language as the properties above,
-            // at the end of the list.
-            _buildDateField(
-              label: '簽約日期',
-              value: project.projectStartDate,
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: project.projectStartDate,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                );
-                if (picked == null) return;
-                await _run(
-                  () => ref
-                      .read(apiClientProvider)
-                      .updateProject(projectId: widget.projectId, projectStartDate: picked),
-                );
-              },
+            // them in the same visual language as the properties above.
+            field(
+              _buildDateField(
+                label: '簽約日期',
+                value: project.projectStartDate,
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: project.projectStartDate,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked == null) return;
+                  await _run(
+                    () => ref
+                        .read(apiClientProvider)
+                        .updateProject(projectId: widget.projectId, projectStartDate: picked),
+                  );
+                },
+              ),
             ),
-            const SizedBox(height: 16),
-            _buildDateField(
-              label: '預計結案日',
-              value: project.projectEndDate,
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: project.projectEndDate ?? project.projectStartDate,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                );
-                if (picked == null) return;
-                await _run(
-                  () => ref
-                      .read(apiClientProvider)
-                      .updateProject(projectId: widget.projectId, projectEndDate: picked),
-                );
-              },
+            field(
+              _buildDateField(
+                label: '預計結案日',
+                value: project.projectEndDate,
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: project.projectEndDate ?? project.projectStartDate,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked == null) return;
+                  await _run(
+                    () => ref
+                        .read(apiClientProvider)
+                        .updateProject(projectId: widget.projectId, projectEndDate: picked),
+                  );
+                },
+              ),
             ),
+            for (final definition in extras) field(_buildField(project, definition)),
           ],
         ),
       ),

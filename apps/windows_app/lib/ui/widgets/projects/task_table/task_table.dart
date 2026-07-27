@@ -476,7 +476,11 @@ class _TaskRowState extends State<_TaskRow> {
               child: TextField(
                 controller: _nameController,
                 focusNode: _nameFocusNode,
-                decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isParentRow ? FontWeight.w600 : FontWeight.normal,
@@ -488,10 +492,7 @@ class _TaskRowState extends State<_TaskRow> {
             SizedBox(
               width: widths.startDate,
               child: isParentRow
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Text(dateLabel, style: TextStyle(fontSize: 12, color: mutedText)),
-                    )
+                  ? Text(dateLabel, style: TextStyle(fontSize: 12, color: mutedText))
                   : Tooltip(
                       message: isPinned ? '手動指定起始日(點兩下可改回自動)' : '自動依相依關係計算,點擊可手動指定',
                       child: InkWell(
@@ -522,14 +523,11 @@ class _TaskRowState extends State<_TaskRow> {
             SizedBox(
               width: widths.endDate,
               child: isParentRow
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Text(
-                        widget.computedEndDate == null
-                            ? '--/--'
-                            : '${widget.computedEndDate!.month}/${widget.computedEndDate!.day}',
-                        style: TextStyle(fontSize: 12, color: mutedText),
-                      ),
+                  ? Text(
+                      widget.computedEndDate == null
+                          ? '--/--'
+                          : '${widget.computedEndDate!.month}/${widget.computedEndDate!.day}',
+                      style: TextStyle(fontSize: 12, color: mutedText),
                     )
                   : Tooltip(
                       message: '點擊選擇結束日,工期會自動依公休日曆重新計算',
@@ -548,15 +546,16 @@ class _TaskRowState extends State<_TaskRow> {
             SizedBox(
               width: widths.duration,
               child: isParentRow
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Text('—', style: TextStyle(fontSize: 13, color: faintText)),
-                    )
+                  ? Text('—', style: TextStyle(fontSize: 13, color: faintText))
                   : TextField(
                       controller: _durationController,
                       focusNode: _durationFocusNode,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
                       style: const TextStyle(fontSize: 13),
                       onSubmitted: (_) => _durationFocusNode.unfocus(),
                     ),
@@ -573,6 +572,7 @@ class _TaskRowState extends State<_TaskRow> {
                         style: TextButton.styleFrom(
                           padding: EdgeInsets.zero,
                           minimumSize: const Size(40, 28),
+                          alignment: Alignment.centerLeft,
                           foregroundColor: widget.hasIssue ? scheme.error : null,
                         ),
                         child: Text(

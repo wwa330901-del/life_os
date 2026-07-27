@@ -86,6 +86,16 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     });
   }
 
+  /// Self-service display-name change — any logged-in user can rename
+  /// themselves, not just a platform admin (who can only view accounts).
+  Future<void> updateName(String name) async {
+    final current = state.value;
+    if (current == null) return;
+    final api = ref.read(apiClientProvider);
+    final user = await api.updateMe(name: name);
+    state = AsyncValue.data(AuthSession(token: current.token, user: user));
+  }
+
   Future<void> logout() async {
     ref.read(apiClientProvider).setToken(null);
     await ref.read(tokenStorageProvider).clear();

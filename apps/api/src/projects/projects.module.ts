@@ -4,7 +4,6 @@ import { ProjectsController } from './projects.controller';
 import { WorkItemsController } from './work-items.controller';
 import { ProjectMembersController } from './project-members.controller';
 import { ProjectOptionsController } from './project-options.controller';
-import { AdminProjectOptionsController } from './admin-project-options.controller';
 import { ProjectPropertiesController } from './project-properties.controller';
 import { ProjectsService } from './projects.service';
 import { WorkItemsService } from './work-items.service';
@@ -23,7 +22,6 @@ import { UsersModule } from '../users/users.module';
     WorkItemsController,
     ProjectMembersController,
     ProjectOptionsController,
-    AdminProjectOptionsController,
     ProjectPropertiesController,
   ],
   providers: [
