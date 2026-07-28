@@ -41,7 +41,7 @@ class FinanceAccountsTab extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        account.balance.toStringAsFixed(0),
+                        _balanceLabel(account),
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: account.balance < 0 ? Theme.of(context).colorScheme.error : null,
                         ),
@@ -65,6 +65,20 @@ class FinanceAccountsTab extends ConsumerWidget {
         error: (error, _) => Center(child: Text('讀取帳戶失敗：$error')),
       ),
     );
+  }
+
+  /// A credit card's derived balance works the same way every other
+  /// account's does (initialBalance − expenses + income/transfers-in) —
+  /// but for a credit card, going negative means "this much is owed to the
+  /// card issuer," not "spent past zero." Paying off the card is just a
+  /// transfer from a bank/cash account into the card account, which brings
+  /// this back toward zero. Labeling it "欠款" instead of a bare negative
+  /// number make that reading explicit instead of looking like an error.
+  String _balanceLabel(FinanceAccount account) {
+    if (account.type == FinanceAccountType.creditCard && account.balance < 0) {
+      return '欠款 ${(-account.balance).toStringAsFixed(0)}';
+    }
+    return account.balance.toStringAsFixed(0);
   }
 
   IconData _iconFor(FinanceAccountType type) => switch (type) {

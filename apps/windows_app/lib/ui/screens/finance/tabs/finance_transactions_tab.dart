@@ -203,10 +203,43 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
       if (!result.date.isSameMonth(DateTime.parse('$_month-01'))) {
         setState(() => _month = FinanceMonthSelector.monthKeyOf(result.date));
       }
+      if (context.mounted) {
+        await _warnIfOverBudget(context, result);
+      }
     } on ApiException catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
+    }
+  }
+
+  /// After saving an expense against a budgeted category, checks whether
+  /// that category's spend for the transaction's own month has now crossed
+  /// its monthly budget — the progress bar on the 總覽 tab only shows this
+  /// passively when the user happens to look, so a transaction that pushes
+  /// a category over gets a proactive warning right when it happens.
+  Future<void> _warnIfOverBudget(BuildContext context, _TransactionEditorResult result) async {
+    if (result.type != FinanceTransactionType.expense || result.categoryId == null) return;
+    final month = FinanceMonthSelector.monthKeyOf(result.date);
+    try {
+      final statuses = await ref
+          .read(apiClientProvider)
+          .financeBudgetStatus(spaceId: widget.spaceId, month: month);
+      final status = statuses.firstWhereOrNull((s) => s.categoryId == result.categoryId);
+      if (status == null || status.spent <= status.monthlyAmount) return;
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '「${status.categoryName}」本月已超出預算'
+            '（已花費 ${status.spent.toStringAsFixed(0)} / 預算 ${status.monthlyAmount.toStringAsFixed(0)}）',
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } on ApiException {
+      // Budget status is a courtesy check on top of an already-saved
+      // transaction — a failure here shouldn't block or scare the user.
     }
   }
 }
