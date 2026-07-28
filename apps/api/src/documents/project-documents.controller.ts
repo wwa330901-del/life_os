@@ -1,6 +1,6 @@
 import {
-  Body,
   Controller,
+  Body,
   Get,
   Header,
   Param,
@@ -29,22 +29,55 @@ export class ProjectDocumentsController {
     return this.projectDocumentsService.listForProject(user.id, projectId);
   }
 
+  /// Fills the template and persists the result as a `GeneratedDocument`
+  /// — returns its metadata (not the rendered file itself); see
+  /// `ProjectDocumentsController` below for listing/downloading it
+  /// afterward.
   @Post(':templateId/fill')
-  @Header(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  )
-  async fill(
+  fill(
     @CurrentUser() user: AuthenticatedUser,
     @Param('projectId') projectId: string,
     @Param('templateId') templateId: string,
     @Body() dto: FillDocumentDto,
   ) {
-    const { filename, buffer } = await this.projectDocumentsService.fill(
+    return this.projectDocumentsService.fill(user.id, projectId, templateId, dto);
+  }
+}
+
+/// Project-facing access to already-generated documents (the persisted
+/// result of `ProjectDocumentsController.fill` above) — a separate
+/// `projects/:projectId/documents` route so a project's "已產生的文件" list
+/// reads as its own resource, distinct from the template catalogue it was
+/// generated from.
+@UseGuards(JwtAuthGuard)
+@Controller('projects/:projectId/documents')
+export class GeneratedDocumentsController {
+  constructor(
+    private readonly projectDocumentsService: ProjectDocumentsService,
+  ) {}
+
+  @Get()
+  list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+  ) {
+    return this.projectDocumentsService.listGenerated(user.id, projectId);
+  }
+
+  @Get(':id/download')
+  @Header(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  )
+  async download(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('id') id: string,
+  ) {
+    const { filename, buffer } = await this.projectDocumentsService.downloadGenerated(
       user.id,
       projectId,
-      templateId,
-      dto,
+      id,
     );
     return new StreamableFile(buffer, {
       disposition: `attachment; filename="${encodeURIComponent(filename)}"`,

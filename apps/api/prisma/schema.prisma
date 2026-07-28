@@ -62,6 +62,7 @@ model User {
   personalSpace      Space?              @relation("PersonalSpaceOwner")
   memberships        CompanyMembership[]
   projectMemberships ProjectMember[]
+  generatedDocuments GeneratedDocument[]
 }
 
 model Space {
@@ -78,6 +79,7 @@ model Space {
   projects            Project[]
   propertyDefinitions ProjectPropertyDefinition[]
   documentTemplates   DocumentTemplate[]
+  generatedDocuments  GeneratedDocument[]
 }
 
 /// One document template a space can generate for its projects — a
@@ -114,7 +116,46 @@ model DocumentTemplate {
 
   createdAt DateTime @default(now())
 
+  generatedDocuments GeneratedDocument[]
+
   @@unique([spaceId, code])
+}
+
+/// A document actually generated from a DocumentTemplate for a specific
+/// project — the persisted result of filling in a template's fields, kept
+/// as a record inside the app (not just a one-time download) so it can be
+/// referenced later and, eventually, routed through a company approval/
+/// sign-off workflow once that exists. `templateId` is nullable with
+/// onDelete: SetNull so a generated document survives its template being
+/// edited or removed — it already carries its own rendered `docxData` and
+/// a snapshot of the values that were filled in, so it doesn't depend on
+/// the template still existing unchanged.
+model GeneratedDocument {
+  id String @id @default(uuid())
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  templateId String?
+  template   DocumentTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  name String // defaults to the template's name at generation time
+
+  /// The exact field values used to fill the template ({key: value}),
+  /// kept for display/audit even after the template itself changes.
+  values Json
+
+  docxData Bytes // the rendered result — re-download doesn't re-run docxtemplater
+
+  createdAt DateTime @default(now())
+
+  createdByUserId String?
+  createdBy       User?   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
 }
 
 /// One property a space has defined for its projects — the "columns" of
@@ -251,9 +292,10 @@ model Project {
   adHocHolidays                DateTime[] @db.Date @default([])
   adHocWorkdays                 DateTime[] @db.Date @default([])
 
-  items          WorkItem[]
-  members        ProjectMember[]
-  propertyValues ProjectPropertyValue[]
+  items              WorkItem[]
+  members            ProjectMember[]
+  propertyValues     ProjectPropertyValue[]
+  generatedDocuments GeneratedDocument[]
 }
 
 model ProjectMember {

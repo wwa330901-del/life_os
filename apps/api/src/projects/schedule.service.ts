@@ -4,6 +4,7 @@ import { ProjectsService } from './projects.service';
 import { scheduleProject } from './scheduling/gantt-scheduler';
 import { HolidayCalendarInput, SchedulingWorkItem } from './scheduling/scheduling-types';
 import { SchedulingIssue, SchedulingIssueType } from './scheduling/schedule-result';
+import type { Project } from '../../generated/prisma/client.js';
 
 // The only place that touches both Prisma and the pure scheduler. Schedule
 // dates are never written back to the database — computed fresh on every
@@ -37,12 +38,23 @@ export class ScheduleService {
   async getEditorState(userId: string, projectId: string) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
+    return this.buildEditorState(project);
+  }
 
+  /**
+   * Same project+items+schedule bundle as `getEditorState`, but for a
+   * caller (e.g. `WorkItemsService`) that already fetched and authorized
+   * `project` itself as part of its own mutation — letting a work-item
+   * write return the fresh editor state directly instead of the client
+   * needing a second `getEditorState` round trip right after, which used
+   * to double both the network latency and the repeated access-check
+   * queries on every single edit.
+   */
+  async buildEditorState(project: Project) {
     const items = await this.prisma.workItem.findMany({
-      where: { projectId },
+      where: { projectId: project.id },
       orderBy: { sortOrder: 'asc' },
     });
-
     return { project, items, schedule: this.compute(project, items) };
   }
 

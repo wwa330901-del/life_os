@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from './projects.service';
+import { ScheduleService } from './schedule.service';
 import type { WorkItem } from '../../generated/prisma/client.js';
 import { CreateWorkItemDto } from './dto/create-work-item.dto';
 import { UpdateWorkItemDto } from './dto/update-work-item.dto';
@@ -11,18 +12,29 @@ export class WorkItemsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectsService: ProjectsService,
+    private readonly scheduleService: ScheduleService,
   ) {}
 
   async list(userId: string, projectId: string) {
-    await this.assertProjectAccess(userId, projectId);
+    await this.getAuthorizedProject(userId, projectId);
     return this.prisma.workItem.findMany({
       where: { projectId },
       orderBy: { sortOrder: 'asc' },
     });
   }
 
+  /**
+   * Every mutation below returns the fresh project+items+schedule bundle
+   * (via `ScheduleService.buildEditorState`, reusing the `project` row
+   * already fetched for the access check here) instead of just the raw
+   * changed row — the schedule tab always needs the recomputed dates right
+   * after an edit anyway, and previously had to make a *second* full
+   * `getEditorState` round trip to get them, doubling both the network hop
+   * and the repeated project/space/membership access-check queries on
+   * every single edit action.
+   */
   async create(userId: string, projectId: string, dto: CreateWorkItemDto) {
-    await this.assertProjectAccess(userId, projectId);
+    const project = await this.getAuthorizedProject(userId, projectId);
 
     if (dto.parentId) {
       await this.getWorkItemOrThrow(projectId, dto.parentId);
@@ -33,7 +45,7 @@ export class WorkItemsService {
       _max: { sortOrder: true },
     });
 
-    return this.prisma.workItem.create({
+    const created = await this.prisma.workItem.create({
       data: {
         name: dto.name,
         durationDays: dto.durationDays,
@@ -49,6 +61,8 @@ export class WorkItemsService {
         projectId,
       },
     });
+
+    return { createdId: created.id, ...(await this.scheduleService.buildEditorState(project)) };
   }
 
   async update(
@@ -57,7 +71,7 @@ export class WorkItemsService {
     workItemId: string,
     dto: UpdateWorkItemDto,
   ) {
-    await this.assertProjectAccess(userId, projectId);
+    const project = await this.getAuthorizedProject(userId, projectId);
     await this.getWorkItemOrThrow(projectId, workItemId);
 
     if (dto.parentId !== undefined && dto.parentId !== null) {
@@ -67,7 +81,7 @@ export class WorkItemsService {
       await this.getWorkItemOrThrow(projectId, dto.parentId);
     }
 
-    return this.prisma.workItem.update({
+    await this.prisma.workItem.update({
       where: { id: workItemId },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -94,10 +108,12 @@ export class WorkItemsService {
         ...(dto.parentId !== undefined && { parentId: dto.parentId }),
       },
     });
+
+    return this.scheduleService.buildEditorState(project);
   }
 
   async remove(userId: string, projectId: string, workItemId: string) {
-    await this.assertProjectAccess(userId, projectId);
+    const project = await this.getAuthorizedProject(userId, projectId);
     await this.getWorkItemOrThrow(projectId, workItemId);
 
     // No DB-level cascade on WorkItem's self-relation (Postgres rejects
@@ -111,6 +127,8 @@ export class WorkItemsService {
     await this.prisma.workItem.deleteMany({
       where: { id: { in: idsToDelete } },
     });
+
+    return this.scheduleService.buildEditorState(project);
   }
 
   async reorder(
@@ -119,7 +137,7 @@ export class WorkItemsService {
     workItemId: string,
     dto: ReorderWorkItemDto,
   ) {
-    await this.assertProjectAccess(userId, projectId);
+    const project = await this.getAuthorizedProject(userId, projectId);
 
     const item = await this.getWorkItemOrThrow(projectId, workItemId);
     const target = await this.getWorkItemOrThrow(projectId, dto.targetId);
@@ -146,11 +164,14 @@ export class WorkItemsService {
         }),
       ),
     );
+
+    return this.scheduleService.buildEditorState(project);
   }
 
-  private async assertProjectAccess(userId: string, projectId: string): Promise<void> {
+  private async getAuthorizedProject(userId: string, projectId: string) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
+    return project;
   }
 
   private async getWorkItemOrThrow(

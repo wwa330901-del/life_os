@@ -96,6 +96,21 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
 
   WorkItem? _find(String id) => state.value?.items.firstWhereOrNull((i) => i.id == id);
 
+  /// Every mutation method below applies the server's response directly to
+  /// `state` instead of following up with a separate `refresh()` call — the
+  /// work-item mutation endpoints already return the fresh project+items+
+  /// schedule bundle in their response (see `ApiClient`'s doc comment on
+  /// `createWorkItem`), so a second round trip just to re-fetch the exact
+  /// same thing would double the network latency behind every single edit
+  /// for no benefit.
+  void _applyEditorState({
+    required Project project,
+    required List<WorkItem> items,
+    required ScheduleResult schedule,
+  }) {
+    state = AsyncValue.data(ProjectEditorState(project: project, items: items, schedule: schedule));
+  }
+
   /// Adds a new work item and returns its id (for auto-select).
   Future<String> addWorkItem({
     String name = '新工項',
@@ -110,9 +125,9 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
       durationDays: durationDays,
       parentId: parentId,
     );
-    await refresh();
-    if (recordHistory) _record(AddAction(created.id, parentId));
-    return created.id;
+    _applyEditorState(project: created.project, items: created.items, schedule: created.schedule);
+    if (recordHistory) _record(AddAction(created.createdId, parentId));
+    return created.createdId;
   }
 
   /// Recreates a deleted work item from its pre-delete snapshot (used by
@@ -120,9 +135,9 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
   /// id and lands at the end of its sibling group, not its original sort
   /// position; restoring the exact position would need a further reorder
   /// call, which isn't worth the complexity for an undo path.
-  Future<WorkItem> recreateWorkItem(WorkItem snapshot, {bool recordHistory = true}) async {
+  Future<void> recreateWorkItem(WorkItem snapshot, {bool recordHistory = true}) async {
     final api = ref.read(apiClientProvider);
-    var created = await api.createWorkItem(
+    final created = await api.createWorkItem(
       projectId: projectId,
       name: snapshot.name,
       durationDays: snapshot.durationDays,
@@ -130,24 +145,25 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
       predecessorIds: snapshot.predecessorIds.isEmpty ? null : snapshot.predecessorIds,
     );
     if (snapshot.isManuallyPinned && snapshot.manualStartDate != null) {
-      created = await api.updateWorkItem(
+      final pinned = await api.updateWorkItem(
         projectId: projectId,
-        workItemId: created.id,
+        workItemId: created.createdId,
         manualStartDate: snapshot.manualStartDate,
         isManuallyPinned: true,
       );
+      _applyEditorState(project: pinned.project, items: pinned.items, schedule: pinned.schedule);
+    } else {
+      _applyEditorState(project: created.project, items: created.items, schedule: created.schedule);
     }
-    await refresh();
-    if (recordHistory) _record(AddAction(created.id, snapshot.parentId));
-    return created;
+    if (recordHistory) _record(AddAction(created.createdId, snapshot.parentId));
   }
 
   Future<void> renameWorkItem(String id, String name, {bool recordHistory = true}) async {
     final oldName = _find(id)?.name;
-    await ref
+    final result = await ref
         .read(apiClientProvider)
         .updateWorkItem(projectId: projectId, workItemId: id, name: name);
-    await refresh();
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
     if (recordHistory && oldName != null && oldName != name) {
       _record(RenameAction(id, oldName, name));
     }
@@ -155,10 +171,10 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
 
   Future<void> changeDuration(String id, int durationDays, {bool recordHistory = true}) async {
     final oldDuration = _find(id)?.durationDays;
-    await ref
+    final result = await ref
         .read(apiClientProvider)
         .updateWorkItem(projectId: projectId, workItemId: id, durationDays: durationDays);
-    await refresh();
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
     if (recordHistory && oldDuration != null && oldDuration != durationDays) {
       _record(DurationAction(id, oldDuration, durationDays));
     }
@@ -168,22 +184,20 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
   Future<void> changeStartDate(String id, DateTime? date, {bool recordHistory = true}) async {
     final old = recordHistory ? _find(id) : null;
     final api = ref.read(apiClientProvider);
-    if (date == null) {
-      await api.updateWorkItem(
-        projectId: projectId,
-        workItemId: id,
-        clearManualStartDate: true,
-        isManuallyPinned: false,
-      );
-    } else {
-      await api.updateWorkItem(
-        projectId: projectId,
-        workItemId: id,
-        manualStartDate: date,
-        isManuallyPinned: true,
-      );
-    }
-    await refresh();
+    final result = date == null
+        ? await api.updateWorkItem(
+            projectId: projectId,
+            workItemId: id,
+            clearManualStartDate: true,
+            isManuallyPinned: false,
+          )
+        : await api.updateWorkItem(
+            projectId: projectId,
+            workItemId: id,
+            manualStartDate: date,
+            isManuallyPinned: true,
+          );
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
     if (recordHistory && old != null) {
       final oldDate = old.isManuallyPinned ? old.manualStartDate : null;
       _record(StartDateAction(id, oldDate, date));
@@ -199,14 +213,14 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
     // Assigning a predecessor hands scheduling back to the auto-computed
     // date (predecessor's end + 1 working day) even if this item previously
     // had a manually pinned start date.
-    await ref.read(apiClientProvider).updateWorkItem(
+    final result = await ref.read(apiClientProvider).updateWorkItem(
       projectId: projectId,
       workItemId: id,
       predecessorIds: predecessorIds,
       isManuallyPinned: false,
       clearManualStartDate: true,
     );
-    await refresh();
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
     if (recordHistory && oldIds != null) {
       _record(PredecessorsAction(id, oldIds, predecessorIds));
     }
@@ -214,8 +228,10 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
 
   Future<void> removeWorkItem(String id, {bool recordHistory = true}) async {
     final snapshot = recordHistory ? _find(id) : null;
-    await ref.read(apiClientProvider).deleteWorkItem(projectId: projectId, workItemId: id);
-    await refresh();
+    final result = await ref
+        .read(apiClientProvider)
+        .deleteWorkItem(projectId: projectId, workItemId: id);
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
     if (recordHistory && snapshot != null) {
       _record(DeleteAction(snapshot));
     }
@@ -254,13 +270,13 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
         }
       }
     }
-    await ref.read(apiClientProvider).reorderWorkItem(
+    final result = await ref.read(apiClientProvider).reorderWorkItem(
       projectId: projectId,
       workItemId: draggedId,
       targetId: targetId,
       insertAfter: insertAfter,
     );
-    await refresh();
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
     if (action != null) _record(action);
   }
 

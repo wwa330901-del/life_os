@@ -8,17 +8,23 @@ import 'package:printing/printing.dart';
 
 import '../../../../core/api_client.dart';
 import '../../../../core/models/document_template.dart';
+import '../../../../core/models/generated_document.dart';
 import '../../../../core/models/project.dart';
 import '../../../../services/documents/document_fill_service.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/document_templates_provider.dart';
 import '../../../../state/project_editor_provider.dart';
 
-/// 相關文件 tab — every document template this project's own "類型" allows
-/// (set up in the space's 專案設定 → 文件選用), each with a "產生文件" action
-/// that fills the template with this project's data and lets the user save
-/// it as Word (always available, byte-identical to the template) or PDF /
-/// send to a printer (both need a local LibreOffice install).
+/// 相關文件 tab — two sections: every document template this project's own
+/// "類型" allows (set up in the space's 專案設定 → 文件選用), each with a
+/// "產生文件" action; and every document already generated from one of
+/// those templates for this project, kept as a record inside the app (not
+/// a one-shot download) so it can be reopened later — laying the ground
+/// for a future company sign-off/approval workflow, which needs something
+/// stateful to attach to rather than a file that only ever existed for the
+/// length of one download dialog. 列印/匯出 Word/匯出 PDF are actions on an
+/// already-generated record, not the immediate and only outcome of filling
+/// a template.
 class ProjectDocumentsTab extends ConsumerWidget {
   const ProjectDocumentsTab({super.key, required this.projectId});
 
@@ -27,33 +33,110 @@ class ProjectDocumentsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final templatesAsync = ref.watch(projectDocumentTemplatesProvider(projectId));
+    final generatedAsync = ref.watch(generatedDocumentsProvider(projectId));
 
-    return templatesAsync.when(
-      data: (templates) {
-        if (templates.isEmpty) {
-          return const Center(child: Text('這個專案目前的類型沒有可用的文件範本'));
-        }
-        return ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            for (final template in templates)
-              Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  title: Text(template.name),
-                  subtitle: Text('${template.code} · ${template.category}'),
-                  trailing: FilledButton(
-                    onPressed: () => _generate(context, ref, template),
-                    child: const Text('產生文件'),
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Text('可用範本', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        templatesAsync.when(
+          data: (templates) {
+            if (templates.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('這個專案目前的類型沒有可用的文件範本'),
+              );
+            }
+            return Column(
+              children: [
+                for (final template in templates)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      title: Text(template.name),
+                      subtitle: Text('${template.code} · ${template.category}'),
+                      trailing: FilledButton(
+                        onPressed: () => _generate(context, ref, template),
+                        child: const Text('產生文件'),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-          ],
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('讀取文件範本失敗：$error')),
+              ],
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Text('讀取文件範本失敗：$error'),
+        ),
+        const SizedBox(height: 32),
+        Text('已產生的文件', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        generatedAsync.when(
+          data: (docs) {
+            if (docs.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('目前還沒有產生過任何文件'),
+              );
+            }
+            return Column(
+              children: [
+                for (final doc in docs)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      leading: const Icon(Icons.description_outlined),
+                      title: Text(doc.name),
+                      subtitle: Text(_formatDateTime(doc.createdAt)),
+                      trailing: PopupMenuButton<String>(
+                        onSelected: (action) => _handleAction(context, ref, doc, action),
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'docx', child: Text('另存為 Word 檔')),
+                          PopupMenuItem(value: 'pdf', child: Text('另存為 PDF')),
+                          PopupMenuItem(value: 'print', child: Text('列印')),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Text('讀取已產生文件失敗：$error'),
+        ),
+      ],
     );
+  }
+
+  String _formatDateTime(DateTime d) =>
+      '${d.year}/${d.month}/${d.day} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _handleAction(
+    BuildContext context,
+    WidgetRef ref,
+    GeneratedDocument doc,
+    String action,
+  ) async {
+    final Uint8List bytes;
+    try {
+      bytes = await ref
+          .read(apiClientProvider)
+          .downloadGeneratedDocument(projectId: projectId, documentId: doc.id);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    switch (action) {
+      case 'docx':
+        await _saveDocx(doc.name, bytes);
+      case 'pdf':
+        await _savePdf(context, doc.name, bytes);
+      case 'print':
+        await _print(context, doc.name, bytes);
+    }
   }
 
   Future<void> _generate(BuildContext context, WidgetRef ref, DocumentTemplate template) async {
@@ -66,11 +149,11 @@ class ProjectDocumentsTab extends ConsumerWidget {
     );
     if (result == null || !context.mounted) return;
 
-    final Uint8List bytes;
     try {
-      bytes = await ref
+      await ref
           .read(apiClientProvider)
           .fillDocumentTemplate(projectId: projectId, templateId: template.id, values: result.values);
+      ref.invalidate(generatedDocumentsProvider(projectId));
     } on ApiException catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -81,38 +164,14 @@ class ProjectDocumentsTab extends ConsumerWidget {
     await _writeBackDates(context, ref, template, result);
     if (!context.mounted) return;
 
-    final action = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('文件已產生'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(context).pop('docx'),
-            child: const Text('另存為 Word 檔'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(context).pop('pdf'),
-            child: const Text('另存為 PDF'),
-          ),
-          SimpleDialogOption(onPressed: () => Navigator.of(context).pop('print'), child: const Text('列印')),
-        ],
-      ),
-    );
-    if (action == null || !context.mounted) return;
-
-    switch (action) {
-      case 'docx':
-        await _saveDocx(template, bytes);
-      case 'pdf':
-        await _savePdf(context, template, bytes);
-      case 'print':
-        await _print(context, template, bytes);
-    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('「${template.name}」已產生，可以在下面「已產生的文件」列表找到')));
   }
 
-  Future<void> _saveDocx(DocumentTemplate template, Uint8List bytes) async {
+  Future<void> _saveDocx(String name, Uint8List bytes) async {
     final location = await getSaveLocation(
-      suggestedName: '${template.name}.docx',
+      suggestedName: '$name.docx',
       acceptedTypeGroups: const [
         XTypeGroup(label: 'Word 文件', extensions: ['docx']),
       ],
@@ -122,14 +181,14 @@ class ProjectDocumentsTab extends ConsumerWidget {
     await File(path).writeAsBytes(bytes);
   }
 
-  Future<void> _savePdf(BuildContext context, DocumentTemplate template, Uint8List bytes) async {
+  Future<void> _savePdf(BuildContext context, String name, Uint8List bytes) async {
     final pdfBytes = await DocumentFillService.convertDocxToPdf(bytes);
     if (pdfBytes == null) {
       if (context.mounted) _showLibreOfficeMissing(context);
       return;
     }
     final location = await getSaveLocation(
-      suggestedName: '${template.name}.pdf',
+      suggestedName: '$name.pdf',
       acceptedTypeGroups: const [
         XTypeGroup(label: 'PDF 文件', extensions: ['pdf']),
       ],
@@ -139,13 +198,13 @@ class ProjectDocumentsTab extends ConsumerWidget {
     await File(path).writeAsBytes(pdfBytes);
   }
 
-  Future<void> _print(BuildContext context, DocumentTemplate template, Uint8List bytes) async {
+  Future<void> _print(BuildContext context, String name, Uint8List bytes) async {
     final pdfBytes = await DocumentFillService.convertDocxToPdf(bytes);
     if (pdfBytes == null) {
       if (context.mounted) _showLibreOfficeMissing(context);
       return;
     }
-    await Printing.layoutPdf(onLayout: (_) async => pdfBytes, name: template.name);
+    await Printing.layoutPdf(onLayout: (_) async => pdfBytes, name: name);
   }
 
   void _showLibreOfficeMissing(BuildContext context) {

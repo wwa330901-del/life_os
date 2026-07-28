@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/document_template.dart';
+import '../core/models/generated_document.dart';
 import 'auth_provider.dart';
 
 /// Every document template this space has defined (platform-admin managed,
@@ -20,4 +21,13 @@ final projectDocumentTemplatesProvider = FutureProvider.family<List<DocumentTemp
   projectId,
 ) {
   return ref.read(apiClientProvider).listProjectDocumentTemplates(projectId);
+});
+
+/// Documents already generated for this project (persisted records, not
+/// one-shot downloads) — what the 相關文件 tab's "已產生的文件" list renders.
+final generatedDocumentsProvider = FutureProvider.family<List<GeneratedDocument>, String>((
+  ref,
+  projectId,
+) {
+  return ref.read(apiClientProvider).listGeneratedDocuments(projectId);
 });

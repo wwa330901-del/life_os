@@ -16,6 +16,20 @@ const metadataSelect = {
   createdAt: true,
 } as const;
 
+/// Every list/get response omits `docxData` — same reasoning as
+/// DocumentTemplate's own `metadataSelect`, a multi-KB binary blob has no
+/// business riding along in a metadata JSON response. The dedicated
+/// `download` endpoint is the only place that returns the raw bytes.
+const generatedMetadataSelect = {
+  id: true,
+  projectId: true,
+  templateId: true,
+  name: true,
+  values: true,
+  createdAt: true,
+  createdByUserId: true,
+} as const;
+
 /**
  * Project-facing side of the document-template system: which templates a
  * project may use (based on its own "類型" property value) and generating
@@ -51,12 +65,22 @@ export class ProjectDocumentsService {
     });
   }
 
+  /**
+   * Renders the template and persists the result as a `GeneratedDocument`
+   * row — filling out a document used to be a one-shot action (render,
+   * stream the bytes back, forget it ever happened); now it becomes a
+   * record the project keeps, so it can be listed/reopened later and,
+   * eventually, routed through a company approval/sign-off workflow that
+   * needs something stateful to attach to. Returns metadata only —
+   * `docxData` is fetched separately via `download`, same reasoning as
+   * `DocumentTemplate` never inlining its own bytes into list responses.
+   */
   async fill(
     userId: string,
     projectId: string,
     templateId: string,
     dto: FillDocumentDto,
-  ): Promise<{ filename: string; buffer: Buffer }> {
+  ) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
 
@@ -80,6 +104,39 @@ export class ProjectDocumentsService {
     doc.render(dto.values);
     const buffer = doc.getZip().generate({ type: 'nodebuffer' }) as Buffer;
 
-    return { filename: `${template.name}.docx`, buffer };
+    return this.prisma.generatedDocument.create({
+      data: {
+        spaceId: project.spaceId,
+        projectId,
+        templateId,
+        name: dto.name?.trim() || template.name,
+        values: dto.values,
+        docxData: new Uint8Array(buffer),
+        createdByUserId: userId,
+      },
+      select: generatedMetadataSelect,
+    });
+  }
+
+  async listGenerated(userId: string, projectId: string) {
+    const project = await this.projectsService.getProjectOrThrow(projectId);
+    await this.projectsService.assertAccess(userId, project);
+
+    return this.prisma.generatedDocument.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'desc' },
+      select: generatedMetadataSelect,
+    });
+  }
+
+  async downloadGenerated(userId: string, projectId: string, id: string) {
+    const project = await this.projectsService.getProjectOrThrow(projectId);
+    await this.projectsService.assertAccess(userId, project);
+
+    const doc = await this.prisma.generatedDocument.findUnique({ where: { id } });
+    if (!doc || doc.projectId !== projectId) {
+      throw new NotFoundException('Generated document not found');
+    }
+    return { filename: `${doc.name}.docx`, buffer: Buffer.from(doc.docxData) };
   }
 }

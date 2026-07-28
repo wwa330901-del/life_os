@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'models/admin_models.dart';
 import 'models/app_user.dart';
 import 'models/document_template.dart';
+import 'models/generated_document.dart';
 import 'models/project.dart';
 import 'models/project_member.dart';
 import 'models/project_property.dart';
@@ -259,17 +260,36 @@ class ApiClient {
     return body.map((e) => DocumentTemplate.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  /// Returns the filled `.docx` bytes — byte-identical to the template's
-  /// original layout apart from the substituted `values`.
-  Future<Uint8List> fillDocumentTemplate({
+  /// Fills the template and persists the result — returns the new
+  /// [GeneratedDocument]'s metadata, not the rendered bytes themselves
+  /// (fetch those separately via [downloadGeneratedDocument] when the user
+  /// actually wants to save/print, see [listGeneratedDocuments]).
+  Future<GeneratedDocument> fillDocumentTemplate({
     required String projectId,
     required String templateId,
     required Map<String, String> values,
+    String? name,
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/projects/$projectId/document-templates/$templateId/fill'),
+    final body = await _post('/projects/$projectId/document-templates/$templateId/fill', {
+      'values': values,
+      if (name != null) 'name': name,
+    });
+    return GeneratedDocument.fromJson(body);
+  }
+
+  Future<List<GeneratedDocument>> listGeneratedDocuments(String projectId) async {
+    final body = await _getList('/projects/$projectId/documents');
+    return body.map((e) => GeneratedDocument.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// Returns the rendered `.docx` bytes for an already-generated document.
+  Future<Uint8List> downloadGeneratedDocument({
+    required String projectId,
+    required String documentId,
+  }) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/projects/$projectId/documents/$documentId/download'),
       headers: _headers,
-      body: jsonEncode({'values': values}),
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       final decoded = res.body.isEmpty ? null : jsonDecode(res.body);
@@ -325,6 +345,12 @@ class ApiClient {
     String projectId,
   ) async {
     final body = await _get('/projects/$projectId/editor-state');
+    return _parseEditorState(body);
+  }
+
+  ({Project project, List<WorkItem> items, ScheduleResult schedule}) _parseEditorState(
+    Map<String, dynamic> body,
+  ) {
     return (
       project: Project.fromJson(body['project'] as Map<String, dynamic>),
       items: (body['items'] as List<dynamic>)
@@ -339,7 +365,15 @@ class ApiClient {
     return body.map((e) => WorkItem.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<WorkItem> createWorkItem({
+  /// The work-item mutation endpoints below (`create`/`update`/`delete`/
+  /// `reorder`) all return the fresh project+items+schedule bundle in the
+  /// same response as the write itself — the schedule tab always needs the
+  /// recomputed dates right after an edit, and used to make a *second*
+  /// full `getProjectEditorState` round trip to get them. Folding that into
+  /// one response halves both the network round trips and the repeated
+  /// project-access-check queries behind every single edit action.
+  Future<({String createdId, Project project, List<WorkItem> items, ScheduleResult schedule})>
+  createWorkItem({
     required String projectId,
     required String name,
     required int durationDays,
@@ -352,13 +386,19 @@ class ApiClient {
       if (parentId != null) 'parentId': parentId,
       if (predecessorIds != null) 'predecessorIds': predecessorIds,
     });
-    return WorkItem.fromJson(body);
+    final state = _parseEditorState(body);
+    return (
+      createdId: body['createdId'] as String,
+      project: state.project,
+      items: state.items,
+      schedule: state.schedule,
+    );
   }
 
   /// Every field is "not sent" when omitted (unchanged) vs. explicitly
   /// `null` (cleared) — see UpdateWorkItemDto on the backend. Passing
   /// `clearManualStartDate: true` sends manualStartDate as null.
-  Future<WorkItem> updateWorkItem({
+  Future<({Project project, List<WorkItem> items, ScheduleResult schedule})> updateWorkItem({
     required String projectId,
     required String workItemId,
     String? name,
@@ -384,23 +424,28 @@ class ApiClient {
       else if (parentId != null)
         'parentId': parentId,
     });
-    return WorkItem.fromJson(body);
+    return _parseEditorState(body);
   }
 
-  Future<void> deleteWorkItem({required String projectId, required String workItemId}) async {
-    await _delete('/projects/$projectId/work-items/$workItemId');
+  Future<({Project project, List<WorkItem> items, ScheduleResult schedule})> deleteWorkItem({
+    required String projectId,
+    required String workItemId,
+  }) async {
+    final body = await _deleteWithBody('/projects/$projectId/work-items/$workItemId');
+    return _parseEditorState(body);
   }
 
-  Future<void> reorderWorkItem({
+  Future<({Project project, List<WorkItem> items, ScheduleResult schedule})> reorderWorkItem({
     required String projectId,
     required String workItemId,
     required String targetId,
     required bool insertAfter,
   }) async {
-    await _patchIgnoreBody('/projects/$projectId/work-items/$workItemId/reorder', {
+    final body = await _patch('/projects/$projectId/work-items/$workItemId/reorder', {
       'targetId': targetId,
       'insertAfter': insertAfter,
     });
+    return _parseEditorState(body);
   }
 
   Future<Project> updateCalendar({
@@ -499,6 +544,11 @@ class ApiClient {
   Future<void> _delete(String path) async {
     final res = await http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
     _checkStatus(res);
+  }
+
+  Future<Map<String, dynamic>> _deleteWithBody(String path) async {
+    final res = await http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
+    return _decodeObject(res);
   }
 
   /// For endpoints whose response body isn't needed by the caller (e.g.
