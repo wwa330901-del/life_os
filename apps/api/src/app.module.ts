@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { ProjectsModule } from './projects/projects.module';
 import { DocumentsModule } from './documents/documents.module';
+import { FinanceModule } from './finance/finance.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { DocumentsModule } from './documents/documents.module';
     AdminModule,
     ProjectsModule,
     DocumentsModule,
+    FinanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

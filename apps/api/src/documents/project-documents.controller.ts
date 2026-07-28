@@ -1,8 +1,10 @@
 import {
   Controller,
   Body,
+  Delete,
   Get,
   Header,
+  HttpCode,
   Param,
   Post,
   StreamableFile,
@@ -82,5 +84,15 @@ export class GeneratedDocumentsController {
     return new StreamableFile(buffer, {
       disposition: `attachment; filename="${encodeURIComponent(filename)}"`,
     });
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('id') id: string,
+  ) {
+    return this.projectDocumentsService.removeGenerated(user.id, projectId, id);
   }
 }

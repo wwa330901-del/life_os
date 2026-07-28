@@ -88,12 +88,15 @@ class ProjectDocumentsTab extends ConsumerWidget {
                       leading: const Icon(Icons.description_outlined),
                       title: Text(doc.name),
                       subtitle: Text(_formatDateTime(doc.createdAt)),
+                      onTap: () => _preview(context, ref, doc),
                       trailing: PopupMenuButton<String>(
                         onSelected: (action) => _handleAction(context, ref, doc, action),
                         itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'preview', child: Text('預覽')),
                           PopupMenuItem(value: 'docx', child: Text('另存為 Word 檔')),
                           PopupMenuItem(value: 'pdf', child: Text('另存為 PDF')),
                           PopupMenuItem(value: 'print', child: Text('列印')),
+                          PopupMenuItem(value: 'delete', child: Text('刪除')),
                         ],
                       ),
                     ),
@@ -117,6 +120,15 @@ class ProjectDocumentsTab extends ConsumerWidget {
     GeneratedDocument doc,
     String action,
   ) async {
+    if (action == 'delete') {
+      await _delete(context, ref, doc);
+      return;
+    }
+    if (action == 'preview') {
+      await _preview(context, ref, doc);
+      return;
+    }
+
     final Uint8List bytes;
     try {
       bytes = await ref
@@ -136,6 +148,58 @@ class ProjectDocumentsTab extends ConsumerWidget {
         await _savePdf(context, doc.name, bytes);
       case 'print':
         await _print(context, doc.name, bytes);
+    }
+  }
+
+  Future<void> _preview(BuildContext context, WidgetRef ref, GeneratedDocument doc) async {
+    final Uint8List bytes;
+    try {
+      bytes = await ref
+          .read(apiClientProvider)
+          .downloadGeneratedDocument(projectId: projectId, documentId: doc.id);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    final pdfBytes = await DocumentFillService.convertDocxToPdf(bytes);
+    if (pdfBytes == null) {
+      if (context.mounted) _showLibreOfficeMissing(context);
+      return;
+    }
+    if (!context.mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => _DocumentPreviewScreen(name: doc.name, pdfBytes: pdfBytes)),
+    );
+  }
+
+  Future<void> _delete(BuildContext context, WidgetRef ref, GeneratedDocument doc) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('刪除文件'),
+        content: Text('確定要刪除「${doc.name}」嗎？這個動作無法復原。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('刪除')),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .deleteGeneratedDocument(projectId: projectId, documentId: doc.id);
+      ref.invalidate(generatedDocumentsProvider(projectId));
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
     }
   }
 
@@ -275,11 +339,36 @@ class _FillDialogState extends State<_FillDialog> {
   };
 
   @override
+  void initState() {
+    super.initState();
+    // Auto-fill from `source` (e.g. a date pulled from the project's own
+    // properties) can already populate both ends of a duration pair before
+    // the user touches anything, so seed derived fields once up front too.
+    _recomputeDurations();
+  }
+
+  @override
   void dispose() {
     for (final controller in _controllers.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  /// Fills in every `text` field that declares `durationFromKey`/
+  /// `durationToKey` (see [DocumentField]) as the day count between those
+  /// two date fields, once both are set — e.g. a contract's 工期(天) field
+  /// computed from 開工日/完工日 instead of typed by hand.
+  void _recomputeDurations() {
+    for (final field in widget.template.fields) {
+      final fromKey = field.durationFromKey;
+      final toKey = field.durationToKey;
+      if (fromKey == null || toKey == null) continue;
+      final from = _dateValues[fromKey];
+      final to = _dateValues[toKey];
+      if (from == null || to == null) continue;
+      _controllers[field.key]?.text = to.difference(from).inDays.toString();
+    }
   }
 
   /// Resolves a field's `source` against this project — `null` means
@@ -326,7 +415,10 @@ class _FillDialogState extends State<_FillDialog> {
       lastDate: DateTime(2100),
     );
     if (picked == null) return;
-    setState(() => _dateValues[key] = picked);
+    setState(() {
+      _dateValues[key] = picked;
+      _recomputeDurations();
+    });
   }
 
   @override
@@ -382,6 +474,29 @@ class _FillDialogState extends State<_FillDialog> {
           child: const Text('產生'),
         ),
       ],
+    );
+  }
+}
+
+/// In-app preview of an already-generated document — converts its docx
+/// bytes to PDF (same local-LibreOffice path the print/export actions
+/// already use) and renders it with `printing`'s own preview widget rather
+/// than requiring the user to open an external file just to see what's in
+/// it.
+class _DocumentPreviewScreen extends StatelessWidget {
+  const _DocumentPreviewScreen({required this.name, required this.pdfBytes});
+
+  final String name;
+  final Uint8List pdfBytes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(name)),
+      body: PdfPreview(
+        build: (format) async => pdfBytes,
+        pdfFileName: '$name.pdf',
+      ),
     );
   }
 }

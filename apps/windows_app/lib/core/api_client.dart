@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'models/admin_models.dart';
 import 'models/app_user.dart';
 import 'models/document_template.dart';
+import 'models/finance.dart';
 import 'models/generated_document.dart';
 import 'models/project.dart';
 import 'models/project_member.dart';
@@ -282,6 +283,13 @@ class ApiClient {
     return body.map((e) => GeneratedDocument.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Future<void> deleteGeneratedDocument({
+    required String projectId,
+    required String documentId,
+  }) async {
+    await _delete('/projects/$projectId/documents/$documentId');
+  }
+
   /// Returns the rendered `.docx` bytes for an already-generated document.
   Future<Uint8List> downloadGeneratedDocument({
     required String projectId,
@@ -492,6 +500,165 @@ class ApiClient {
 
   Future<void> removeProjectMember({required String projectId, required String userId}) async {
     await _delete('/projects/$projectId/members/$userId');
+  }
+
+  // --- Finance (記帳), personal-space only ---
+
+  Future<List<FinanceAccount>> listFinanceAccounts(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/finance/accounts');
+    return body.map((e) => FinanceAccount.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createFinanceAccount({
+    required String spaceId,
+    required String name,
+    required FinanceAccountType type,
+    double? initialBalance,
+  }) async {
+    await _post('/spaces/$spaceId/finance/accounts', {
+      'name': name,
+      'type': type.toJson(),
+      if (initialBalance != null) 'initialBalance': initialBalance,
+    });
+  }
+
+  Future<void> updateFinanceAccount({
+    required String spaceId,
+    required String accountId,
+    String? name,
+    FinanceAccountType? type,
+    double? initialBalance,
+  }) async {
+    await _patchIgnoreBody('/spaces/$spaceId/finance/accounts/$accountId', {
+      if (name != null) 'name': name,
+      if (type != null) 'type': type.toJson(),
+      if (initialBalance != null) 'initialBalance': initialBalance,
+    });
+  }
+
+  Future<void> deleteFinanceAccount({required String spaceId, required String accountId}) async {
+    await _delete('/spaces/$spaceId/finance/accounts/$accountId');
+  }
+
+  Future<List<FinanceCategory>> listFinanceCategories(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/finance/categories');
+    return body.map((e) => FinanceCategory.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createFinanceCategory({
+    required String spaceId,
+    required String name,
+    required FinanceCategoryKind kind,
+  }) async {
+    await _post('/spaces/$spaceId/finance/categories', {'name': name, 'kind': kind.toJson()});
+  }
+
+  Future<void> updateFinanceCategory({
+    required String spaceId,
+    required String categoryId,
+    required String name,
+  }) async {
+    await _patchIgnoreBody('/spaces/$spaceId/finance/categories/$categoryId', {'name': name});
+  }
+
+  Future<void> deleteFinanceCategory({required String spaceId, required String categoryId}) async {
+    await _delete('/spaces/$spaceId/finance/categories/$categoryId');
+  }
+
+  /// `month` is `"YYYY-MM"`; omit to list every transaction, newest first.
+  Future<List<FinanceTransaction>> listFinanceTransactions({
+    required String spaceId,
+    String? month,
+  }) async {
+    final query = month == null ? '' : '?month=$month';
+    final body = await _getList('/spaces/$spaceId/finance/transactions$query');
+    return body.map((e) => FinanceTransaction.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<FinanceMonthlySummary> financeMonthlySummary({
+    required String spaceId,
+    required String month,
+  }) async {
+    final body = await _get('/spaces/$spaceId/finance/transactions/summary?month=$month');
+    return FinanceMonthlySummary.fromJson(body);
+  }
+
+  Future<void> createFinanceTransaction({
+    required String spaceId,
+    required FinanceTransactionType type,
+    required double amount,
+    required String accountId,
+    String? toAccountId,
+    String? categoryId,
+    required DateTime date,
+    String? note,
+  }) async {
+    await _post('/spaces/$spaceId/finance/transactions', {
+      'type': type.toJson(),
+      'amount': amount,
+      'accountId': accountId,
+      if (toAccountId != null) 'toAccountId': toAccountId,
+      if (categoryId != null) 'categoryId': categoryId,
+      'date': _dateOnly(date),
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> updateFinanceTransaction({
+    required String spaceId,
+    required String transactionId,
+    FinanceTransactionType? type,
+    double? amount,
+    String? accountId,
+    String? toAccountId,
+    String? categoryId,
+    DateTime? date,
+    String? note,
+  }) async {
+    await _patchIgnoreBody('/spaces/$spaceId/finance/transactions/$transactionId', {
+      if (type != null) 'type': type.toJson(),
+      if (amount != null) 'amount': amount,
+      if (accountId != null) 'accountId': accountId,
+      if (toAccountId != null) 'toAccountId': toAccountId,
+      if (categoryId != null) 'categoryId': categoryId,
+      if (date != null) 'date': _dateOnly(date),
+      if (note != null) 'note': note,
+    });
+  }
+
+  Future<void> deleteFinanceTransaction({
+    required String spaceId,
+    required String transactionId,
+  }) async {
+    await _delete('/spaces/$spaceId/finance/transactions/$transactionId');
+  }
+
+  Future<List<FinanceBudget>> listFinanceBudgets(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/finance/budgets');
+    return body.map((e) => FinanceBudget.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<FinanceBudgetStatus>> financeBudgetStatus({
+    required String spaceId,
+    required String month,
+  }) async {
+    final body = await _getList('/spaces/$spaceId/finance/budgets/status?month=$month');
+    return body.map((e) => FinanceBudgetStatus.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> upsertFinanceBudget({
+    required String spaceId,
+    required String categoryId,
+    required double monthlyAmount,
+  }) async {
+    await _post('/spaces/$spaceId/finance/budgets', {
+      'categoryId': categoryId,
+      'monthlyAmount': monthlyAmount,
+    });
+  }
+
+  Future<void> deleteFinanceBudget({required String spaceId, required String budgetId}) async {
+    await _delete('/spaces/$spaceId/finance/budgets/$budgetId');
   }
 
   /// Date-only string (no time-of-day, no timezone) — the backend column is

@@ -139,4 +139,15 @@ export class ProjectDocumentsService {
     }
     return { filename: `${doc.name}.docx`, buffer: Buffer.from(doc.docxData) };
   }
+
+  async removeGenerated(userId: string, projectId: string, id: string) {
+    const project = await this.projectsService.getProjectOrThrow(projectId);
+    await this.projectsService.assertAccess(userId, project);
+
+    const doc = await this.prisma.generatedDocument.findUnique({ where: { id } });
+    if (!doc || doc.projectId !== projectId) {
+      throw new NotFoundException('Generated document not found');
+    }
+    await this.prisma.generatedDocument.delete({ where: { id } });
+  }
 }

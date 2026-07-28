@@ -34,6 +34,24 @@ enum PropertyType {
   SELECT
 }
 
+enum FinanceAccountType {
+  CASH
+  BANK
+  CREDIT_CARD
+  OTHER
+}
+
+enum FinanceCategoryKind {
+  INCOME
+  EXPENSE
+}
+
+enum FinanceTransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
 model User {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -80,6 +98,10 @@ model Space {
   propertyDefinitions ProjectPropertyDefinition[]
   documentTemplates   DocumentTemplate[]
   generatedDocuments  GeneratedDocument[]
+  financeAccounts     FinanceAccount[]
+  financeCategories   FinanceCategory[]
+  financeTransactions FinanceTransaction[]
+  financeBudgets      FinanceBudget[]
 }
 
 /// One document template a space can generate for its projects — a
@@ -350,4 +372,86 @@ model WorkItem {
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+/// First 個人功能 module: a personal-space money container (現金/銀行/信用卡/
+/// 其他), 記帳系統's "帳戶". Balance is derived (initialBalance plus every
+/// transaction against it, including transfers in/out) rather than stored,
+/// so it never drifts out of sync with the transaction log.
+model FinanceAccount {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  name           String
+  type           FinanceAccountType
+  initialBalance Float              @default(0)
+  sortOrder      Int                @default(0)
+  createdAt      DateTime           @default(now())
+
+  transactions FinanceTransaction[] @relation("AccountTransactions")
+  transfersIn  FinanceTransaction[] @relation("TransferToAccount")
+}
+
+/// A 記帳 category (收入/支出), user-managed per personal space from day
+/// one — no platform-wide fixed list, same "each space owns its own"
+/// pattern as ProjectPropertyDefinition.
+model FinanceCategory {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  name      String
+  kind      FinanceCategoryKind
+  sortOrder Int                 @default(0)
+  createdAt DateTime            @default(now())
+
+  transactions FinanceTransaction[]
+  budget       FinanceBudget?
+
+  @@unique([spaceId, name, kind])
+}
+
+model FinanceTransaction {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  type   FinanceTransactionType
+  amount Float
+
+  accountId String
+  account   FinanceAccount @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: Cascade)
+
+  // Only set for `type = TRANSFER` — the other side of the money movement.
+  toAccountId String?
+  toAccount   FinanceAccount? @relation("TransferToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+
+  // Null for TRANSFER; required for INCOME/EXPENSE.
+  categoryId String?
+  category   FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  // Date-only, no time-of-day — same convention as Project/WorkItem's own
+  // date fields.
+  date      DateTime @db.Date
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([spaceId, date])
+}
+
+/// Standing monthly spending target per category — compared against that
+/// month's actual FinanceTransaction total when the user looks at a given
+/// month, not itself tied to one specific month (applies every month until
+/// changed).
+model FinanceBudget {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  categoryId    String          @unique
+  category      FinanceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  monthlyAmount Float
+
+  createdAt DateTime @default(now())
 }

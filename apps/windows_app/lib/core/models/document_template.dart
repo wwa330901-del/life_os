@@ -11,6 +11,12 @@ enum DocumentFieldType { text, date }
 /// `writesTo` is the reverse direction: for `date` fields, `"project.endDate"`
 /// means the value picked here is written back onto the project's own
 /// 預計結案日 when the document is generated (e.g. a contract's 完工日 field).
+///
+/// `durationFromKey`/`durationToKey` mark a `text` field as a derived day
+/// count between two of this template's own `date` fields — e.g. a
+/// contract's 工期(天) field auto-fills as (完工日 − 開工日) once both dates
+/// are picked, instead of the user typing it in by hand. Still an ordinary
+/// editable text box after that — auto-fill just seeds it, it isn't locked.
 class DocumentField {
   const DocumentField({
     required this.key,
@@ -18,6 +24,8 @@ class DocumentField {
     this.type = DocumentFieldType.text,
     this.source,
     this.writesTo,
+    this.durationFromKey,
+    this.durationToKey,
   });
 
   final String key;
@@ -25,6 +33,8 @@ class DocumentField {
   final DocumentFieldType type;
   final String? source;
   final String? writesTo;
+  final String? durationFromKey;
+  final String? durationToKey;
 
   factory DocumentField.fromJson(Map<String, dynamic> json) => DocumentField(
     key: json['key'] as String,
@@ -32,6 +42,8 @@ class DocumentField {
     type: (json['type'] as String?) == 'date' ? DocumentFieldType.date : DocumentFieldType.text,
     source: json['source'] as String?,
     writesTo: json['writesTo'] as String?,
+    durationFromKey: json['durationFromKey'] as String?,
+    durationToKey: json['durationToKey'] as String?,
   );
 }
 

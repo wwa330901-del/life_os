@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/app_user.dart';
 import '../../core/theme/app_theme.dart';
 import '../../state/auth_provider.dart';
+import '../screens/finance/finance_home_screen.dart';
 
-/// Content pane for a personal space — no modules there yet. Company spaces
-/// skip this entirely and go straight to the project list (`SpaceShell`).
+/// Content pane for a personal space — currently just the 記帳 module (the
+/// first of what will eventually be several 個人功能). Company spaces skip
+/// this entirely and go straight to the project list (`SpaceShell`).
 class DashboardView extends ConsumerWidget {
   const DashboardView({super.key, required this.space});
 
@@ -37,18 +39,7 @@ class DashboardView extends ConsumerWidget {
             ),
           ),
         ),
-        Expanded(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check_circle, size: 40, color: scheme.primary),
-                const SizedBox(height: 16),
-                Text('個人空間的功能模組尚未推出。', style: Theme.of(context).textTheme.bodyMedium),
-              ],
-            ),
-          ),
-        ),
+        Expanded(child: FinanceHomeScreen(spaceId: space.id)),
       ],
     );
   }
