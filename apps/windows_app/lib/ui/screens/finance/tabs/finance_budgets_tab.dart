@@ -5,6 +5,7 @@ import '../../../../core/api_client.dart';
 import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
+import '../widgets/finance_format.dart';
 
 /// Standing monthly targets per (expense) category — 收入 categories don't
 /// get a budget, there's nothing to cap.
@@ -37,7 +38,7 @@ class FinanceBudgetsTab extends ConsumerWidget {
                 return Card(
                   child: ListTile(
                     title: Text(category.name),
-                    subtitle: Text(budget == null ? '尚未設定預算' : '每月預算 ${budget.monthlyAmount.toStringAsFixed(0)}'),
+                    subtitle: Text(budget == null ? '尚未設定預算' : '每月預算 ${formatAmount(budget.monthlyAmount)}'),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

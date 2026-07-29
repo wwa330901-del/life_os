@@ -5,6 +5,7 @@ import '../../../../core/api_client.dart';
 import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
+import '../widgets/finance_format.dart';
 
 class FinanceAccountsTab extends ConsumerWidget {
   const FinanceAccountsTab({super.key, required this.spaceId});
@@ -76,9 +77,9 @@ class FinanceAccountsTab extends ConsumerWidget {
   /// number make that reading explicit instead of looking like an error.
   String _balanceLabel(FinanceAccount account) {
     if (account.type == FinanceAccountType.creditCard && account.balance < 0) {
-      return '欠款 ${(-account.balance).toStringAsFixed(0)}';
+      return '欠款 ${formatAmount(-account.balance)}';
     }
-    return account.balance.toStringAsFixed(0);
+    return formatAmount(account.balance);
   }
 
   IconData _iconFor(FinanceAccountType type) => switch (type) {

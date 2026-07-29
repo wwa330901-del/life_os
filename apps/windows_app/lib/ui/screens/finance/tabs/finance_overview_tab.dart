@@ -6,6 +6,7 @@ import '../../../../core/api_client.dart';
 import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
+import '../widgets/finance_format.dart';
 import '../widgets/finance_month_selector.dart';
 
 const _chartPalette = [
@@ -166,7 +167,7 @@ class _StatCard extends StatelessWidget {
             Text(label, style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 4),
             Text(
-              value.toStringAsFixed(0),
+              formatAmount(value),
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: color),
             ),
           ],
@@ -243,7 +244,7 @@ class _ExpensePieChart extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(child: Text(expenses[i].name, overflow: TextOverflow.ellipsis)),
-                                  Text(expenses[i].total.toStringAsFixed(0)),
+                                  Text(formatAmount(expenses[i].total)),
                                 ],
                               ),
                             ),
@@ -283,7 +284,7 @@ class _BudgetProgressTile extends StatelessWidget {
               children: [
                 Expanded(child: Text(status.categoryName)),
                 Text(
-                  '${status.spent.toStringAsFixed(0)} / ${status.monthlyAmount.toStringAsFixed(0)}',
+                  '${formatAmount(status.spent)} / ${formatAmount(status.monthlyAmount)}',
                   style: TextStyle(color: over ? scheme.error : null, fontWeight: FontWeight.w600),
                 ),
               ],

@@ -471,6 +471,12 @@ model LineAccountLink {
   linkCode          String?   @unique
   linkCodeExpiresAt DateTime?
 
+  /// In-progress "支出/收入 → 分類 → 帳戶 → 金額" guided flow state, e.g.
+  /// `{ type: "EXPENSE", categoryId: "...", accountId: "..." }` — built up
+  /// one quick-reply button tap at a time, cleared once the transaction is
+  /// created (or the flow is cancelled). Null when no flow is in progress.
+  pendingDraft Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

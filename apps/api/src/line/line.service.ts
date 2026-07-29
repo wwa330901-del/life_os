@@ -1,28 +1,43 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { FinanceTransactionType } from '../../generated/prisma/client.js';
+import { FinanceCategoryKind, FinanceTransactionType, Prisma } from '../../generated/prisma/client.js';
 
 interface LineWebhookEvent {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
   message?: { type: string; text?: string };
+  postback?: { data?: string };
+}
+
+interface PendingDraft {
+  type?: 'EXPENSE' | 'INCOME';
+  categoryId?: string;
+  accountId?: string;
+}
+
+interface QuickReplyItem {
+  label: string;
+  data: string;
 }
 
 const LINK_CODE_TTL_MINUTES = 10;
+/** LINE caps a message's quickReply.items at 13. */
+const MAX_QUICK_REPLY_ITEMS = 13;
 
 /**
  * Backs the 記帳 LINE bot: verifying LINE's webhook signature, linking a
  * LINE account to a life_os user (via a short-lived code generated in the
- * app), and parsing simple "支出/收入 金額 備註 [帳戶]" commands into
- * `FinanceTransaction` rows against that user's personal space. Deliberately
- * bypasses the HTTP-facing `Finance*Service` layer (which is built around
- * "an authenticated user acting on their own space via the app's own
- * endpoints") since this is a different trust boundary — the caller here is
- * LINE itself, authenticated by HMAC signature rather than a JWT, already
- * resolved down to a specific `userId` by the time any finance write
- * happens.
+ * app), and recording `FinanceTransaction` rows against that user's
+ * personal space — either via a guided quick-reply flow (支出/收入 → 分類 →
+ * 帳戶, then just type the amount) or a direct one-line command for anyone
+ * who prefers typing ("支出 120 午餐 現金"). Deliberately bypasses the
+ * HTTP-facing `Finance*Service` layer (built around "an authenticated user
+ * acting on their own space via the app's own endpoints") since this is a
+ * different trust boundary — the caller here is LINE itself, authenticated
+ * by HMAC signature rather than a JWT, already resolved down to a specific
+ * `userId` by the time any finance write happens.
  */
 @Injectable()
 export class LineService {
@@ -54,16 +69,25 @@ export class LineService {
 
   async handleEvents(events: LineWebhookEvent[]): Promise<void> {
     for (const event of events) {
-      if (event.type !== 'message' || event.message?.type !== 'text') continue;
       const lineUserId = event.source?.userId;
-      const text = event.message.text?.trim();
       const replyToken = event.replyToken;
-      if (!lineUserId || !text || !replyToken) continue;
+      if (!lineUserId || !replyToken) continue;
 
       try {
         const link = await this.prisma.lineAccountLink.findUnique({ where: { lineUserId } });
+
+        if (event.type === 'postback' && event.postback?.data) {
+          if (!link) continue;
+          await this.handlePostback(link.id, link.userId, event.postback.data, replyToken);
+          continue;
+        }
+
+        if (event.type !== 'message' || event.message?.type !== 'text') continue;
+        const text = event.message.text?.trim();
+        if (!text) continue;
+
         if (link) {
-          await this.handleTransactionCommand(link.userId, text, replyToken);
+          await this.handleTextForLinkedUser(link.id, link.userId, link.pendingDraft as PendingDraft | null, text, replyToken);
         } else {
           await this.tryCompleteLinking(lineUserId, text, replyToken);
         }
@@ -85,20 +109,185 @@ export class LineService {
     });
     await this.reply(
       replyToken,
-      '綁定成功！以後可以直接傳「支出 120 午餐 現金」這樣的訊息記帳，帳戶可以省略，會用你排序第一個的帳戶。',
+      '綁定成功！傳任何一句話就會開始記帳流程（選支出/收入 → 分類 → 帳戶，最後輸入金額），也可以直接傳「支出 120 午餐 現金」一次記完。',
     );
   }
 
-  private async handleTransactionCommand(userId: string, text: string, replyToken: string) {
-    const parsed = this.parseCommand(text);
-    if (!parsed) {
-      await this.reply(
-        replyToken,
-        '看不懂這則訊息，格式是「支出 金額 備註 [帳戶]」或「收入 金額 備註 [帳戶]」，例如「支出 120 午餐 現金」。',
-      );
+  // --- Guided quick-reply flow ---
+
+  private async handlePostback(linkId: string, userId: string, data: string, replyToken: string) {
+    if (data === 'cancel') {
+      await this.prisma.lineAccountLink.update({
+        where: { id: linkId },
+        data: { pendingDraft: Prisma.DbNull },
+      });
+      await this.reply(replyToken, '已取消。');
       return;
     }
 
+    const [key, value] = data.split(':');
+    if (key === 't' && (value === 'EXPENSE' || value === 'INCOME')) {
+      const draft: PendingDraft = { type: value };
+      await this.saveDraft(linkId, draft);
+      await this.promptCategory(userId, draft, replyToken);
+      return;
+    }
+    if (key === 'c') {
+      const draft: PendingDraft = { type: await this.currentType(linkId), categoryId: value };
+      await this.saveDraft(linkId, draft);
+      await this.promptAccount(userId, draft, replyToken);
+      return;
+    }
+    if (key === 'a') {
+      const existing = await this.prisma.lineAccountLink.findUnique({ where: { id: linkId } });
+      const draft: PendingDraft = { ...(existing?.pendingDraft as PendingDraft | null), accountId: value };
+      await this.saveDraft(linkId, draft);
+      await this.reply(replyToken, '請輸入金額，可以加備註，例如「120 午餐」。');
+    }
+  }
+
+  private async currentType(linkId: string): Promise<'EXPENSE' | 'INCOME' | undefined> {
+    const existing = await this.prisma.lineAccountLink.findUnique({ where: { id: linkId } });
+    return (existing?.pendingDraft as PendingDraft | null)?.type;
+  }
+
+  private async saveDraft(linkId: string, draft: PendingDraft) {
+    await this.prisma.lineAccountLink.update({
+      where: { id: linkId },
+      data: { pendingDraft: draft as object },
+    });
+  }
+
+  private async startFlow(linkId: string, replyToken: string) {
+    await this.saveDraft(linkId, {});
+    await this.replyWithQuickReply(replyToken, '要記支出還是收入？', [
+      { label: '支出', data: 't:EXPENSE' },
+      { label: '收入', data: 't:INCOME' },
+      { label: '取消', data: 'cancel' },
+    ]);
+  }
+
+  private async promptCategory(userId: string, draft: PendingDraft, replyToken: string) {
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+    const kind = draft.type === 'INCOME' ? FinanceCategoryKind.INCOME : FinanceCategoryKind.EXPENSE;
+    const categories = await this.prisma.financeCategory.findMany({
+      where: { spaceId: space.id, kind },
+      orderBy: { sortOrder: 'asc' },
+      take: MAX_QUICK_REPLY_ITEMS - 1,
+    });
+    if (categories.length === 0) {
+      await this.reply(replyToken, '還沒有任何分類，請先到元序 App 記帳「分類」分頁新增。');
+      return;
+    }
+    await this.replyWithQuickReply(replyToken, '選分類：', [
+      ...categories.map((c) => ({ label: c.name, data: `c:${c.id}` })),
+      { label: '取消', data: 'cancel' },
+    ]);
+  }
+
+  private async promptAccount(userId: string, draft: PendingDraft, replyToken: string) {
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+    const accounts = await this.prisma.financeAccount.findMany({
+      where: { spaceId: space.id },
+      orderBy: { sortOrder: 'asc' },
+      take: MAX_QUICK_REPLY_ITEMS - 1,
+    });
+    if (accounts.length === 0) {
+      await this.reply(replyToken, '還沒有任何帳戶，請先到元序 App 記帳「帳戶」分頁新增。');
+      return;
+    }
+    await this.replyWithQuickReply(replyToken, '選帳戶：', [
+      ...accounts.map((a) => ({ label: a.name, data: `a:${a.id}` })),
+      { label: '取消', data: 'cancel' },
+    ]);
+  }
+
+  // --- Free-text handling for a linked user (either finishing a draft's
+  // amount, a one-line "支出 120 午餐 現金" command, or starting the guided
+  // flow for anything else) ---
+
+  private async handleTextForLinkedUser(
+    linkId: string,
+    userId: string,
+    pendingDraft: PendingDraft | null,
+    text: string,
+    replyToken: string,
+  ) {
+    if (pendingDraft?.type && pendingDraft.categoryId && pendingDraft.accountId) {
+      await this.finishDraftWithAmount(linkId, userId, pendingDraft, text, replyToken);
+      return;
+    }
+
+    const command = this.parseCommand(text);
+    if (command) {
+      await this.createTransactionFromCommand(userId, command, replyToken);
+      return;
+    }
+
+    await this.startFlow(linkId, replyToken);
+  }
+
+  private async finishDraftWithAmount(
+    linkId: string,
+    userId: string,
+    draft: PendingDraft,
+    text: string,
+    replyToken: string,
+  ) {
+    const tokens = text.split(/\s+/).filter(Boolean);
+    const amount = Number(tokens[0]);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      await this.reply(replyToken, '看不懂金額，請輸入數字，例如「120」或「120 午餐」。');
+      return;
+    }
+    const note = tokens.slice(1).join(' ') || null;
+
+    const [account, category] = await Promise.all([
+      this.prisma.financeAccount.findUnique({ where: { id: draft.accountId } }),
+      this.prisma.financeCategory.findUnique({ where: { id: draft.categoryId } }),
+    ]);
+    if (!account || !category) {
+      await this.saveDraft(linkId, {});
+      await this.reply(replyToken, '這筆記帳的分類或帳戶好像被刪掉了，請重新開始一次。');
+      return;
+    }
+
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) return;
+
+    await this.prisma.financeTransaction.create({
+      data: {
+        spaceId: space.id,
+        type: draft.type === 'INCOME' ? FinanceTransactionType.INCOME : FinanceTransactionType.EXPENSE,
+        amount,
+        accountId: account.id,
+        categoryId: category.id,
+        date: new Date(),
+        note,
+      },
+    });
+    await this.saveDraft(linkId, {});
+
+    const typeLabel = draft.type === 'INCOME' ? '收入' : '支出';
+    await this.reply(
+      replyToken,
+      `已記錄${typeLabel} ${amount.toLocaleString('en-US')}（${category.name} · ${account.name}）${note ? ' · ' + note : ''}`,
+    );
+  }
+
+  private async createTransactionFromCommand(
+    userId: string,
+    parsed: { type: FinanceTransactionType; amount: number; rest: string[] },
+    replyToken: string,
+  ) {
     const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
     if (!space) {
       await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
@@ -140,14 +329,14 @@ export class LineService {
     const typeLabel = parsed.type === FinanceTransactionType.EXPENSE ? '支出' : '收入';
     await this.reply(
       replyToken,
-      `已記錄${typeLabel} ${parsed.amount}（${account.name}）${note ? ' · ' + note : ''}`,
+      `已記錄${typeLabel} ${parsed.amount.toLocaleString('en-US')}（${account.name}，未分類）${note ? ' · ' + note : ''}` +
+        '\n想要有分類的話，下次可以直接傳任何一句話開始選單記帳。',
     );
   }
 
-  /** Not categorized (`categoryId` stays null) — the command format the
-   * user chose is deliberately just "類型 金額 備註 [帳戶]" with no category
-   * token, so a LINE-recorded transaction shows as 未分類 until edited in
-   * the app if the user wants it counted toward a specific budget. */
+  /** One-line fast path for anyone who prefers typing over the guided
+   * button flow — no category token, so it always lands as 未分類 (see the
+   * guided flow above for a categorized alternative). */
   private parseCommand(
     text: string,
   ): { type: FinanceTransactionType; amount: number; rest: string[] } | null {
@@ -166,6 +355,28 @@ export class LineService {
   }
 
   private async reply(replyToken: string, text: string): Promise<void> {
+    await this.callReplyApi({ replyToken, messages: [{ type: 'text', text }] });
+  }
+
+  private async replyWithQuickReply(replyToken: string, text: string, items: QuickReplyItem[]): Promise<void> {
+    await this.callReplyApi({
+      replyToken,
+      messages: [
+        {
+          type: 'text',
+          text,
+          quickReply: {
+            items: items.slice(0, MAX_QUICK_REPLY_ITEMS).map((item) => ({
+              type: 'action',
+              action: { type: 'postback', label: item.label, data: item.data, displayText: item.label },
+            })),
+          },
+        },
+      ],
+    });
+  }
+
+  private async callReplyApi(body: Record<string, unknown>): Promise<void> {
     if (!this.channelAccessToken) {
       this.logger.warn('LINE_CHANNEL_ACCESS_TOKEN not set, skipping reply');
       return;
@@ -177,7 +388,7 @@ export class LineService {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.channelAccessToken}`,
         },
-        body: JSON.stringify({ replyToken, messages: [{ type: 'text', text }] }),
+        body: JSON.stringify(body),
       });
     } catch (error) {
       this.logger.error('Failed to send LINE reply', error);

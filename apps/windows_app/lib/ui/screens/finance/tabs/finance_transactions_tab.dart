@@ -6,6 +6,7 @@ import '../../../../core/api_client.dart';
 import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
+import '../widgets/finance_format.dart';
 import '../widgets/finance_month_selector.dart';
 
 class FinanceTransactionsTab extends ConsumerStatefulWidget {
@@ -77,7 +78,7 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
                             children: [
                               Text(
                                 '${t.type == FinanceTransactionType.income ? '+' : t.type == FinanceTransactionType.expense ? '-' : ''}'
-                                '${t.amount.toStringAsFixed(0)}',
+                                '${formatAmount(t.amount)}',
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   color: t.type == FinanceTransactionType.income
                                       ? Colors.green
@@ -232,7 +233,7 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
         SnackBar(
           content: Text(
             '「${status.categoryName}」本月已超出預算'
-            '（已花費 ${status.spent.toStringAsFixed(0)} / 預算 ${status.monthlyAmount.toStringAsFixed(0)}）',
+            '（已花費 ${formatAmount(status.spent)} / 預算 ${formatAmount(status.monthlyAmount)}）',
           ),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
