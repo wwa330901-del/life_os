@@ -661,6 +661,13 @@ class ApiClient {
     await _delete('/spaces/$spaceId/finance/budgets/$budgetId');
   }
 
+  /// Generates (or replaces) a short-lived code the user sends as a LINE
+  /// message to the 記帳 bot to link their LINE account to this one.
+  Future<({String code, DateTime expiresAt})> generateLineLinkCode() async {
+    final body = await _post('/line/link-code', const {});
+    return (code: body['code'] as String, expiresAt: DateTime.parse(body['expiresAt'] as String));
+  }
+
   /// Date-only string (no time-of-day, no timezone) — the backend column is
   /// `@db.Date`; sending a full ISO timestamp here would risk the calendar
   /// date shifting by a day depending on local vs. UTC offsets.

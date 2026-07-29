@@ -9,6 +9,7 @@ import { AdminModule } from './admin/admin.module';
 import { ProjectsModule } from './projects/projects.module';
 import { DocumentsModule } from './documents/documents.module';
 import { FinanceModule } from './finance/finance.module';
+import { LineModule } from './line/line.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { FinanceModule } from './finance/finance.module';
     ProjectsModule,
     DocumentsModule,
     FinanceModule,
+    LineModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -2,7 +2,9 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/api_client.dart';
 import '../../../../core/models/finance.dart';
+import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_month_selector.dart';
 
@@ -38,6 +40,14 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () => _showLineLinkDialog(context, ref),
+            icon: const Icon(Icons.chat_bubble_outline, size: 16),
+            label: const Text('連結 LINE 記帳'),
+          ),
+        ),
         Center(child: FinanceMonthSelector(month: _month, onChanged: (m) => setState(() => _month = m))),
         const SizedBox(height: 16),
         summaryAsync.when(
@@ -73,6 +83,47 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
         ),
       ],
     );
+  }
+
+  Future<void> _showLineLinkDialog(BuildContext context, WidgetRef ref) async {
+    try {
+      final result = await ref.read(apiClientProvider).generateLineLinkCode();
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('連結 LINE 記帳'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('把這組綁定碼傳給元序記帳的 LINE 官方帳號，完成後就能直接用 LINE 傳「支出 120 午餐 現金」這樣的訊息記帳。'),
+              const SizedBox(height: 16),
+              Center(
+                child: SelectableText(
+                  result.code,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 4),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '10 分鐘內有效，過期可以重新產生一組',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉')),
+          ],
+        ),
+      );
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 }
 

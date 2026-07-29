@@ -81,6 +81,7 @@ model User {
   memberships        CompanyMembership[]
   projectMemberships ProjectMember[]
   generatedDocuments GeneratedDocument[]
+  lineAccountLink    LineAccountLink?
 }
 
 model Space {
@@ -454,4 +455,22 @@ model FinanceBudget {
   monthlyAmount Float
 
   createdAt DateTime @default(now())
+}
+
+/// Links a life_os user to their LINE account, so a message sent to the
+/// 記帳 LINE bot knows whose personal space to record a transaction
+/// against. Two states in one row rather than two tables: `linkCode` set +
+/// `lineUserId` null means "waiting for the user to send this code from
+/// LINE"; `lineUserId` set means linking is complete (`linkCode` cleared).
+model LineAccountLink {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  lineUserId        String?   @unique
+  linkCode          String?   @unique
+  linkCodeExpiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
