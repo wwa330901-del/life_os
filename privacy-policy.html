@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>隱私權政策 — 元序 life_os</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, "Microsoft JhengHei", "PingFang TC", sans-serif;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+    line-height: 1.75;
+    background: #1c1917;
+    color: #f5f0ec;
+  }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; }
+  .updated { color: #998; font-size: 0.9rem; }
+  h2 { font-size: 1.15rem; margin-top: 40px; border-left: 4px solid #b08a63; padding-left: 10px; }
+  a { color: #d8b88a; }
+  ul { padding-left: 1.3em; }
+  li { margin-bottom: 6px; }
+  footer { margin-top: 64px; font-size: 0.85rem; color: #998; }
+</style>
+</head>
+<body>
+  <h1>元序（life_os）隱私權政策</h1>
+  <p class="updated">最後更新日期：2026 年 7 月</p>
+
+  <p>
+    元序（技術代號 life_os，以下稱「本服務」）由個人開發者營運，是一套個人使用的
+    生活與專案管理平台，包含桌面應用程式與其後端服務。本頁說明本服務如何蒐集、
+    使用、儲存與保護使用者的資料，特別是與 Google 使用者資料相關的處理方式。
+  </p>
+
+  <h2>我們蒐集哪些資料</h2>
+  <ul>
+    <li><strong>帳號資料</strong>：使用者註冊時提供的使用者名稱、電子郵件、顯示名稱，以及（若使用 Google 登入）Google 帳號的識別碼、電子郵件與姓名。</li>
+    <li><strong>使用者自行輸入的內容</strong>：專案資料、工期排程、記帳交易、代辦事項、行事曆行程等使用者在本服務內主動建立的資料。</li>
+    <li><strong>Google 行事曆資料（僅限使用者主動連結時）</strong>：若使用者選擇連結 Google 行事曆，本服務會存取該使用者 Google 帳戶中行事曆的事件資料（標題、時間、地點、備註），以及維持連線所需的 OAuth 授權憑證（access token 與 refresh token）。</li>
+    <li><strong>LINE 帳號連結（僅限使用者主動連結時）</strong>：若使用者選擇連結 LINE 官方帳號，本服務會記錄該 LINE 使用者識別碼與本服務帳號的對應關係，以及透過 LINE 傳送的記帳、代辦事項、行事曆指令內容。</li>
+  </ul>
+
+  <h2>我們如何使用 Google 使用者資料</h2>
+  <p>
+    本服務透過 Google OAuth 取得使用者的行事曆存取權限
+    （<code>https://www.googleapis.com/auth/calendar</code>），
+    <strong>唯一用途</strong>是在使用者自己於本服務建立的「行事曆空間」與該使用者自己的
+    Google 行事曆之間，進行雙向同步：
+  </p>
+  <ul>
+    <li>將使用者在本服務內新增、修改、刪除的行程，寫入使用者自己的 Google 行事曆。</li>
+    <li>讀取使用者 Google 行事曆上的異動，同步回本服務內對應的行事曆空間。</li>
+  </ul>
+  <p>
+    本服務<strong>不會</strong>將取得的 Google 使用者資料用於廣告、資料分析、
+    出售或提供給任何第三方，也不會將這些資料用於與上述同步目的無關的其他用途。
+    本服務對 Google 使用者資料的使用，遵循
+    <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">
+      Google API Services User Data Policy
+    </a>，包含其中的 Limited Use 相關規定。
+  </p>
+
+  <h2>資料如何儲存與保護</h2>
+  <p>
+    所有資料儲存於 Supabase 代管的 PostgreSQL 資料庫，透過加密連線（TLS）傳輸。
+    Google OAuth 授權憑證（access token / refresh token）僅儲存在伺服器端資料庫，
+    不會出現在使用者的桌面應用程式安裝檔或本機設定檔中。
+  </p>
+
+  <h2>資料保留與刪除</h2>
+  <p>
+    使用者可以隨時在本服務內取消 Google 行事曆連結，屆時本服務會刪除該筆授權憑證。
+    使用者也可以隨時前往
+    <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">
+      Google 帳戶「第三方應用程式與服務」設定頁面
+    </a>
+    直接撤銷本服務的存取權限。若使用者希望完全刪除帳號與所有相關資料，
+    請透過下方聯絡方式來信提出申請。
+  </p>
+
+  <h2>與第三方分享資料</h2>
+  <p>
+    本服務不會出售使用者資料。僅在使用者主動連結的前提下，
+    與 Google（行事曆同步）及 LINE（記帳/代辦事項/行事曆指令）交換必要資料，
+    以完成使用者要求的功能。
+  </p>
+
+  <h2>政策變更</h2>
+  <p>本政策如有修改，將更新本頁面上方的「最後更新日期」。</p>
+
+  <h2>聯絡方式</h2>
+  <p>如對本隱私權政策有任何疑問，或希望申請刪除帳號資料，請來信：
+    <a href="mailto:wwa330901@gmail.com">wwa330901@gmail.com</a>
+  </p>
+
+  <footer><a href="./index.html">← 回首頁</a></footer>
+</body>
+</html>
