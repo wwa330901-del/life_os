@@ -88,6 +88,9 @@ export class WorkItemsService {
         ...(dto.durationDays !== undefined && {
           durationDays: dto.durationDays,
         }),
+        ...(dto.actualDurationDays !== undefined && {
+          actualDurationDays: dto.actualDurationDays,
+        }),
         ...(dto.predecessorIds !== undefined && {
           predecessorIds: dto.predecessorIds,
         }),

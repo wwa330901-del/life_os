@@ -11,6 +11,11 @@ class WorkItem {
   /// Duration in working days. Must be >= 1 (enforced server-side).
   final int durationDays;
 
+  /// 實際工期 — how many days this item actually took, tracked separately
+  /// from [durationDays] (預計工期, which the schedule engine anchors off).
+  /// Null until recorded. Never included in exports — see `GanttExportPainter`.
+  final int? actualDurationDays;
+
   /// IDs of work items that must finish before this one can start.
   final List<String> predecessorIds;
 
@@ -42,6 +47,7 @@ class WorkItem {
     required this.id,
     required this.name,
     required this.durationDays,
+    this.actualDurationDays,
     this.predecessorIds = const [],
     this.tradeCategory,
     this.colorValue,
@@ -57,6 +63,7 @@ class WorkItem {
     id: json['id'] as String,
     name: json['name'] as String,
     durationDays: json['durationDays'] as int,
+    actualDurationDays: json['actualDurationDays'] as int?,
     predecessorIds: (json['predecessorIds'] as List<dynamic>).cast<String>(),
     tradeCategory: json['tradeCategory'] as String?,
     colorValue: json['colorValue'] as int?,

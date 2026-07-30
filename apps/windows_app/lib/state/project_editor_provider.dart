@@ -180,6 +180,21 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
     }
   }
 
+  /// 實際工期 — independent of the planned [changeDuration]; `days` null
+  /// clears it. Not part of undo/redo history (a bookkeeping field, not a
+  /// scheduling decision like the other edits here).
+  Future<void> changeActualDuration(String id, int? days) async {
+    final result = await ref
+        .read(apiClientProvider)
+        .updateWorkItem(
+          projectId: projectId,
+          workItemId: id,
+          actualDurationDays: days,
+          clearActualDurationDays: days == null,
+        );
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
+  }
+
   /// `date` null clears a manual pin and reverts to the auto-computed date.
   Future<void> changeStartDate(String id, DateTime? date, {bool recordHistory = true}) async {
     final old = recordHistory ? _find(id) : null;

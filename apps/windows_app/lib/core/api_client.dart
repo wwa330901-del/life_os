@@ -411,6 +411,8 @@ class ApiClient {
     required String workItemId,
     String? name,
     int? durationDays,
+    int? actualDurationDays,
+    bool clearActualDurationDays = false,
     List<String>? predecessorIds,
     DateTime? manualStartDate,
     bool clearManualStartDate = false,
@@ -421,6 +423,10 @@ class ApiClient {
     final body = await _patch('/projects/$projectId/work-items/$workItemId', {
       if (name != null) 'name': name,
       if (durationDays != null) 'durationDays': durationDays,
+      if (clearActualDurationDays)
+        'actualDurationDays': null
+      else if (actualDurationDays != null)
+        'actualDurationDays': actualDurationDays,
       if (predecessorIds != null) 'predecessorIds': predecessorIds,
       if (clearManualStartDate)
         'manualStartDate': null

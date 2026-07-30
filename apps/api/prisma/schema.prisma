@@ -340,6 +340,14 @@ model WorkItem {
   name           String
   durationDays   Int
 
+  // 實際工期 — how many days this item actually took, filled in separately
+  // from (and independently of) durationDays/預計工期, which stays the
+  // planned estimate the schedule engine anchors off. Null until the user
+  // records it. Deliberately excluded from every export (Gantt image/PDF
+  // etc. only ever render the planned schedule) — this is a private,
+  // after-the-fact tracking field, not part of the shareable schedule.
+  actualDurationDays Int?
+
   // IDs of work items that must finish before this one can start. A plain
   // array column (not a join table / FK) on purpose: the scheduler already
   // tolerates dangling references as a non-fatal SchedulingIssue rather than

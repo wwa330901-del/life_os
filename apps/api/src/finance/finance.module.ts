@@ -25,5 +25,10 @@ import { FinanceBudgetsService } from './finance-budgets.service';
     FinanceTransactionsService,
     FinanceBudgetsService,
   ],
+  // Reused directly by LineModule so the LINE 財務總覽 command shares the
+  // exact same balance/summary logic as the app's own finance screens,
+  // instead of a second copy of the derived-balance math drifting out of
+  // sync with it.
+  exports: [FinanceAccountsService, FinanceTransactionsService],
 })
 export class FinanceModule {}

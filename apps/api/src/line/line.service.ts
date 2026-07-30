@@ -1,7 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { FinanceCategoryKind, FinanceTransactionType, Prisma } from '../../generated/prisma/client.js';
+import { FinanceAccountsService } from '../finance/finance-accounts.service';
+import { FinanceTransactionsService } from '../finance/finance-transactions.service';
+import {
+  FinanceAccountType,
+  FinanceCategoryKind,
+  FinanceTransactionType,
+  Prisma,
+} from '../../generated/prisma/client.js';
 
 interface LineWebhookEvent {
   type: string;
@@ -32,12 +39,16 @@ const MAX_QUICK_REPLY_ITEMS = 13;
  * app), and recording `FinanceTransaction` rows against that user's
  * personal space — either via a guided quick-reply flow (支出/收入 → 分類 →
  * 帳戶, then just type the amount) or a direct one-line command for anyone
- * who prefers typing ("支出 120 午餐 現金"). Deliberately bypasses the
+ * who prefers typing ("支出 120 午餐 現金"), plus a "總覽" command reading
+ * back balances/spending. Writes go straight through Prisma rather than the
  * HTTP-facing `Finance*Service` layer (built around "an authenticated user
  * acting on their own space via the app's own endpoints") since this is a
  * different trust boundary — the caller here is LINE itself, authenticated
  * by HMAC signature rather than a JWT, already resolved down to a specific
- * `userId` by the time any finance write happens.
+ * `userId` by the time any finance write happens. Reads (the 總覽 command)
+ * do reuse `FinanceAccountsService`/`FinanceTransactionsService` directly
+ * — no access-boundary reason not to, and it keeps the balance/summary math
+ * in exactly one place instead of a second copy drifting out of sync.
  */
 @Injectable()
 export class LineService {
@@ -45,7 +56,11 @@ export class LineService {
   private readonly channelSecret = process.env.LINE_CHANNEL_SECRET ?? '';
   private readonly channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? '';
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly financeAccountsService: FinanceAccountsService,
+    private readonly financeTransactionsService: FinanceTransactionsService,
+  ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
     if (!signature || !this.channelSecret) return false;
@@ -214,6 +229,8 @@ export class LineService {
   // amount, a one-line "支出 120 午餐 現金" command, or starting the guided
   // flow for anything else) ---
 
+  private static readonly OVERVIEW_KEYWORDS = ['總覽', '財務總覽', '總覽財務'];
+
   private async handleTextForLinkedUser(
     linkId: string,
     userId: string,
@@ -221,6 +238,12 @@ export class LineService {
     text: string,
     replyToken: string,
   ) {
+    if (LineService.OVERVIEW_KEYWORDS.includes(text)) {
+      if (pendingDraft) await this.saveDraft(linkId, {});
+      await this.sendOverview(userId, replyToken);
+      return;
+    }
+
     if (pendingDraft?.type && pendingDraft.categoryId && pendingDraft.accountId) {
       await this.finishDraftWithAmount(linkId, userId, pendingDraft, text, replyToken);
       return;
@@ -233,6 +256,72 @@ export class LineService {
     }
 
     await this.startFlow(linkId, replyToken);
+  }
+
+  /** 個人財務總覽：every account's current balance, today's and this
+   * month's income/expense totals, and this month's expense breakdown by
+   * category — everything reused from the same services the app's own
+   * finance screens call, just formatted as one text reply. */
+  private async sendOverview(userId: string, replyToken: string) {
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    const [accounts, monthSummary, todayTransactions] = await Promise.all([
+      this.financeAccountsService.list(userId, space.id),
+      this.financeTransactionsService.monthlySummary(userId, space.id, month),
+      this.prisma.financeTransaction.findMany({
+        where: {
+          spaceId: space.id,
+          date: { gte: todayStart, lt: todayEnd },
+          type: { in: [FinanceTransactionType.INCOME, FinanceTransactionType.EXPENSE] },
+        },
+      }),
+    ]);
+
+    const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+    const todayIncome = todayTransactions
+      .filter((t) => t.type === FinanceTransactionType.INCOME)
+      .reduce((sum, t) => sum + t.amount, 0);
+    const todayExpense = todayTransactions
+      .filter((t) => t.type === FinanceTransactionType.EXPENSE)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const lines: string[] = ['📊 財務總覽', ''];
+
+    lines.push('帳戶餘額：');
+    if (accounts.length === 0) {
+      lines.push('（還沒有任何帳戶）');
+    } else {
+      for (const a of accounts) {
+        const isDebt = a.type === FinanceAccountType.CREDIT_CARD && a.balance < 0;
+        lines.push(`・${a.name}：${isDebt ? `欠款 ${fmt(-a.balance)}` : fmt(a.balance)}`);
+      }
+    }
+
+    lines.push('', `今日：收入 ${fmt(todayIncome)} · 支出 ${fmt(todayExpense)}`);
+    lines.push(`本月：收入 ${fmt(monthSummary.totalIncome)} · 支出 ${fmt(monthSummary.totalExpense)}`);
+
+    const expenseCategories = monthSummary.byCategory
+      .filter((c) => c.kind === FinanceTransactionType.EXPENSE)
+      .sort((a, b) => b.total - a.total);
+    if (expenseCategories.length > 0) {
+      lines.push('', '本月支出分類佔比：');
+      for (const c of expenseCategories) {
+        const pct =
+          monthSummary.totalExpense > 0 ? Math.round((c.total / monthSummary.totalExpense) * 100) : 0;
+        lines.push(`・${c.name} ${pct}%（${fmt(c.total)}）`);
+      }
+    }
+
+    await this.reply(replyToken, lines.join('\n'));
   }
 
   private async finishDraftWithAmount(

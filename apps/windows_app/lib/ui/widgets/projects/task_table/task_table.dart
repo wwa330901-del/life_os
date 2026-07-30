@@ -31,6 +31,7 @@ class _ColumnWidths {
   double startDate = 88;
   double endDate = 80;
   double duration = 56;
+  double actualDuration = 56;
   double predecessor = 60;
 }
 
@@ -93,6 +94,9 @@ class TaskTable extends StatefulWidget {
   /// [date] is null to clear a pin and revert to the auto-computed date.
   final void Function(String id, DateTime? date) onStartDateChanged;
   final void Function(String id, int durationDays) onDurationChanged;
+
+  /// `days` null clears 實際工期.
+  final void Function(String id, int? days) onActualDurationChanged;
   final void Function(String id, DateTime endDate) onEndDateChanged;
   final void Function(String id, List<String> predecessorIds) onPredecessorsChanged;
   final void Function(String id) onDelete;
@@ -108,6 +112,7 @@ class TaskTable extends StatefulWidget {
     required this.onNameChanged,
     required this.onStartDateChanged,
     required this.onDurationChanged,
+    required this.onActualDurationChanged,
     required this.onEndDateChanged,
     required this.onPredecessorsChanged,
     required this.onDelete,
@@ -200,6 +205,18 @@ class _TaskTableState extends State<TaskTable> {
                   ),
                 ),
                 SizedBox(
+                  width: _widths.actualDuration,
+                  child: Text('實際工期(天)', textAlign: TextAlign.center, style: headerStyle),
+                ),
+                _ColumnResizeHandle(
+                  onDrag: (dx) => setState(
+                    () => _widths.actualDuration = (_widths.actualDuration + dx).clamp(
+                      _minColumnWidth,
+                      double.infinity,
+                    ),
+                  ),
+                ),
+                SizedBox(
                   width: _widths.predecessor,
                   child: Text('相依', textAlign: TextAlign.center, style: headerStyle),
                 ),
@@ -241,6 +258,7 @@ class _TaskTableState extends State<TaskTable> {
                       onNameChanged: (name) => widget.onNameChanged(node.item.id, name),
                       onStartDateChanged: (date) => widget.onStartDateChanged(node.item.id, date),
                       onDurationChanged: (d) => widget.onDurationChanged(node.item.id, d),
+                      onActualDurationChanged: (d) => widget.onActualDurationChanged(node.item.id, d),
                       onEndDateChanged: (date) => widget.onEndDateChanged(node.item.id, date),
                       onPredecessorsChanged: (ids) => widget.onPredecessorsChanged(node.item.id, ids),
                       onDelete: () => widget.onDelete(node.item.id),
@@ -282,6 +300,7 @@ class _TaskRow extends StatefulWidget {
   final ValueChanged<String> onNameChanged;
   final ValueChanged<DateTime?> onStartDateChanged;
   final ValueChanged<int> onDurationChanged;
+  final ValueChanged<int?> onActualDurationChanged;
   final ValueChanged<DateTime> onEndDateChanged;
   final ValueChanged<List<String>> onPredecessorsChanged;
   final VoidCallback onDelete;
@@ -304,6 +323,7 @@ class _TaskRow extends StatefulWidget {
     required this.onNameChanged,
     required this.onStartDateChanged,
     required this.onDurationChanged,
+    required this.onActualDurationChanged,
     required this.onEndDateChanged,
     required this.onPredecessorsChanged,
     required this.onDelete,
@@ -321,16 +341,22 @@ class _TaskRow extends StatefulWidget {
 class _TaskRowState extends State<_TaskRow> {
   late final TextEditingController _nameController;
   late final TextEditingController _durationController;
+  late final TextEditingController _actualDurationController;
   final FocusNode _nameFocusNode = FocusNode();
   final FocusNode _durationFocusNode = FocusNode();
+  final FocusNode _actualDurationFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.item.name);
     _durationController = TextEditingController(text: widget.item.durationDays.toString());
+    _actualDurationController = TextEditingController(
+      text: widget.item.actualDurationDays?.toString() ?? '',
+    );
     _nameFocusNode.addListener(_commitNameOnBlur);
     _durationFocusNode.addListener(_commitDurationOnBlur);
+    _actualDurationFocusNode.addListener(_commitActualDurationOnBlur);
   }
 
   void _commitNameOnBlur() {
@@ -353,6 +379,21 @@ class _TaskRowState extends State<_TaskRow> {
     }
   }
 
+  void _commitActualDurationOnBlur() {
+    if (_actualDurationFocusNode.hasFocus) return;
+    final text = _actualDurationController.text.trim();
+    if (text.isEmpty) {
+      if (widget.item.actualDurationDays != null) widget.onActualDurationChanged(null);
+      return;
+    }
+    final parsed = int.tryParse(text);
+    if (parsed != null && parsed >= 0 && parsed != widget.item.actualDurationDays) {
+      widget.onActualDurationChanged(parsed);
+    } else {
+      _actualDurationController.text = widget.item.actualDurationDays?.toString() ?? '';
+    }
+  }
+
   @override
   void didUpdateWidget(covariant _TaskRow oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -362,6 +403,10 @@ class _TaskRowState extends State<_TaskRow> {
     final durationText = widget.item.durationDays.toString();
     if (durationText != _durationController.text && !_durationFocusNode.hasFocus) {
       _durationController.text = durationText;
+    }
+    final actualDurationText = widget.item.actualDurationDays?.toString() ?? '';
+    if (actualDurationText != _actualDurationController.text && !_actualDurationFocusNode.hasFocus) {
+      _actualDurationController.text = actualDurationText;
     }
   }
 
@@ -379,8 +424,10 @@ class _TaskRowState extends State<_TaskRow> {
   void dispose() {
     _nameController.dispose();
     _durationController.dispose();
+    _actualDurationController.dispose();
     _nameFocusNode.dispose();
     _durationFocusNode.dispose();
+    _actualDurationFocusNode.dispose();
     super.dispose();
   }
 
@@ -585,6 +632,26 @@ class _TaskRowState extends State<_TaskRow> {
                       ),
                       style: const TextStyle(fontSize: 13),
                       onSubmitted: (_) => _durationFocusNode.unfocus(),
+                    ),
+            ),
+            const SizedBox(width: 9),
+            SizedBox(
+              width: widths.actualDuration,
+              child: isParentRow
+                  ? Text('—', style: TextStyle(fontSize: 13, color: faintText))
+                  : TextField(
+                      controller: _actualDurationController,
+                      focusNode: _actualDurationFocusNode,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        hintText: '—',
+                        hintStyle: TextStyle(fontSize: 13, color: faintText),
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                      onSubmitted: (_) => _actualDurationFocusNode.unfocus(),
                     ),
             ),
             const SizedBox(width: 9),
