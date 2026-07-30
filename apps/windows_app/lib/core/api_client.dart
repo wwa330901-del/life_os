@@ -137,8 +137,8 @@ class ApiClient {
   }) async {
     final body = await _post('/spaces/$spaceId/calendar/events', {
       'title': title,
-      'startAt': startAt.toUtc().toIso8601String(),
-      if (endAt != null) 'endAt': endAt.toUtc().toIso8601String(),
+      'startAt': allDay ? _dateOnlyIso(startAt) : startAt.toUtc().toIso8601String(),
+      if (endAt != null) 'endAt': allDay ? _dateOnlyIso(endAt) : endAt.toUtc().toIso8601String(),
       'allDay': allDay,
       if (location != null) 'location': location,
       if (notes != null) 'notes': notes,
@@ -159,10 +159,14 @@ class ApiClient {
     String? notes,
     bool clearNotes = false,
   }) async {
+    final effectiveAllDay = allDay ?? false;
     final body = await _patch('/spaces/$spaceId/calendar/events/$eventId', {
       if (title != null) 'title': title,
-      if (startAt != null) 'startAt': startAt.toUtc().toIso8601String(),
-      if (endAt != null) 'endAt': endAt.toUtc().toIso8601String() else if (clearEndAt) 'endAt': null,
+      if (startAt != null) 'startAt': effectiveAllDay ? _dateOnlyIso(startAt) : startAt.toUtc().toIso8601String(),
+      if (endAt != null)
+        'endAt': effectiveAllDay ? _dateOnlyIso(endAt) : endAt.toUtc().toIso8601String()
+      else if (clearEndAt)
+        'endAt': null,
       if (allDay != null) 'allDay': allDay,
       if (location != null) 'location': location else if (clearLocation) 'location': null,
       if (notes != null) 'notes': notes else if (clearNotes) 'notes': null,
@@ -832,6 +836,13 @@ class ApiClient {
     accessToken: body['accessToken'] as String,
     user: AppUser.fromJson(body['user'] as Map<String, dynamic>),
   );
+
+  /// For an all-day event's date, `d`'s local Y/M/D is the calendar date
+  /// the user actually picked — encode it as that same Y/M/D at UTC
+  /// midnight (never `.toUtc()`, which would shift the instant by the
+  /// local UTC offset and can push the date a day either direction, e.g.
+  /// UTC+8 local midnight Aug 1 becoming July 31 16:00 UTC).
+  String _dateOnlyIso(DateTime d) => DateTime.utc(d.year, d.month, d.day).toIso8601String();
 
   Future<Map<String, dynamic>> _get(String path) async {
     final res = await http.get(Uri.parse('$baseUrl$path'), headers: _headers);

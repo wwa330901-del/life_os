@@ -365,6 +365,10 @@ class _DayAgenda extends ConsumerWidget {
     var eventDate = existing?.startAt ?? day;
     var allDay = existing?.allDay ?? false;
     var time = TimeOfDay(hour: existing?.startAt.hour ?? 9, minute: existing?.startAt.minute ?? 0);
+    var endDate = existing?.endAt ?? eventDate;
+    var endTime = existing?.endAt != null
+        ? TimeOfDay(hour: existing!.endAt!.hour, minute: existing.endAt!.minute)
+        : TimeOfDay(hour: (time.hour + 1) % 24, minute: time.minute);
 
     final saved = await showDialog<bool>(
       context: context,
@@ -392,10 +396,15 @@ class _DayAgenda extends ConsumerWidget {
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2100),
                       );
-                      if (picked != null) setState(() => eventDate = picked);
+                      if (picked != null) {
+                        setState(() {
+                          eventDate = picked;
+                          if (endDate.isBefore(eventDate)) endDate = eventDate;
+                        });
+                      }
                     },
                     child: InputDecorator(
-                      decoration: const InputDecoration(labelText: '日期'),
+                      decoration: InputDecoration(labelText: allDay ? '日期' : '開始日期'),
                       child: Text('${eventDate.year}/${eventDate.month}/${eventDate.day}'),
                     ),
                   ),
@@ -406,17 +415,45 @@ class _DayAgenda extends ConsumerWidget {
                     value: allDay,
                     onChanged: (v) => setState(() => allDay = v),
                   ),
-                  if (!allDay)
+                  if (!allDay) ...[
                     InkWell(
                       onTap: () async {
                         final picked = await showTimePicker(context: context, initialTime: time);
                         if (picked != null) setState(() => time = picked);
                       },
                       child: InputDecorator(
-                        decoration: const InputDecoration(labelText: '時間'),
+                        decoration: const InputDecoration(labelText: '開始時間'),
                         child: Text(time.format(context)),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: endDate.isBefore(eventDate) ? eventDate : endDate,
+                          firstDate: eventDate,
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) setState(() => endDate = picked);
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(labelText: '結束日期'),
+                        child: Text('${endDate.year}/${endDate.month}/${endDate.day}'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showTimePicker(context: context, initialTime: endTime);
+                        if (picked != null) setState(() => endTime = picked);
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(labelText: '結束時間'),
+                        child: Text(endTime.format(context)),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextField(
                     controller: locationController,
@@ -448,6 +485,9 @@ class _DayAgenda extends ConsumerWidget {
     final startAt = allDay
         ? DateTime(eventDate.year, eventDate.month, eventDate.day)
         : DateTime(eventDate.year, eventDate.month, eventDate.day, time.hour, time.minute);
+    final endAt = allDay
+        ? null
+        : DateTime(endDate.year, endDate.month, endDate.day, endTime.hour, endTime.minute);
 
     try {
       final api = ref.read(apiClientProvider);
@@ -456,6 +496,7 @@ class _DayAgenda extends ConsumerWidget {
           spaceId: spaceId,
           title: title,
           startAt: startAt,
+          endAt: endAt,
           allDay: allDay,
           location: location.isEmpty ? null : location,
           notes: notes.isEmpty ? null : notes,
@@ -466,6 +507,8 @@ class _DayAgenda extends ConsumerWidget {
           eventId: existing.id,
           title: title,
           startAt: startAt,
+          endAt: endAt,
+          clearEndAt: allDay,
           allDay: allDay,
           location: location.isEmpty ? null : location,
           clearLocation: location.isEmpty,
