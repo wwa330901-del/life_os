@@ -8,6 +8,7 @@ import 'models/app_user.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
 import 'models/generated_document.dart';
+import 'models/project_todo.dart';
 import 'models/project.dart';
 import 'models/project_member.dart';
 import 'models/project_property.dart';
@@ -665,6 +666,64 @@ class ApiClient {
 
   Future<void> deleteFinanceBudget({required String spaceId, required String budgetId}) async {
     await _delete('/spaces/$spaceId/finance/budgets/$budgetId');
+  }
+
+  Future<List<ProjectTodo>> listProjectTodos(String projectId) async {
+    final body = await _getList('/projects/$projectId/todos');
+    return body.map((e) => ProjectTodo.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createProjectTodo({
+    required String projectId,
+    required String title,
+    DateTime? dueDate,
+    TodoPriority? priority,
+    String? notes,
+    String? assigneeUserId,
+  }) async {
+    await _post('/projects/$projectId/todos', {
+      'title': title,
+      if (dueDate != null) 'dueDate': _dateOnly(dueDate),
+      if (priority != null) 'priority': priority.toJson(),
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+      if (assigneeUserId != null) 'assigneeUserId': assigneeUserId,
+    });
+  }
+
+  Future<void> updateProjectTodo({
+    required String projectId,
+    required String todoId,
+    String? title,
+    bool? done,
+    DateTime? dueDate,
+    bool clearDueDate = false,
+    TodoPriority? priority,
+    String? notes,
+    bool clearNotes = false,
+    String? assigneeUserId,
+    bool clearAssignee = false,
+  }) async {
+    await _patchIgnoreBody('/projects/$projectId/todos/$todoId', {
+      if (title != null) 'title': title,
+      if (done != null) 'done': done,
+      if (clearDueDate)
+        'dueDate': null
+      else if (dueDate != null)
+        'dueDate': _dateOnly(dueDate),
+      if (priority != null) 'priority': priority.toJson(),
+      if (clearNotes)
+        'notes': null
+      else if (notes != null)
+        'notes': notes,
+      if (clearAssignee)
+        'assigneeUserId': null
+      else if (assigneeUserId != null)
+        'assigneeUserId': assigneeUserId,
+    });
+  }
+
+  Future<void> deleteProjectTodo({required String projectId, required String todoId}) async {
+    await _delete('/projects/$projectId/todos/$todoId');
   }
 
   /// Generates (or replaces) a short-lived code the user sends as a LINE

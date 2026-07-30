@@ -6,12 +6,13 @@ import '../../shell/breadcrumb_bar.dart';
 import 'tabs/members_tab.dart';
 import 'tabs/project_documents_tab.dart';
 import 'tabs/project_info_tab.dart';
+import 'tabs/project_todos_tab.dart';
 import 'tabs/schedule_tab.dart';
 
 /// Project detail content — lives inside `SpaceShell`'s content pane.
-/// Four tabs, all with real functionality: 工期 (schedule), 專案資料
+/// Five tabs, all with real functionality: 工期 (schedule), 專案資料
 /// (per-space custom properties), 專案成員, 相關文件 (document templates the
-/// project's 類型 allows).
+/// project's 類型 allows), 代辦事項 (plain tasks, no duration).
 class ProjectDetailScreen extends ConsumerWidget {
   const ProjectDetailScreen({
     super.key,
@@ -24,7 +25,13 @@ class ProjectDetailScreen extends ConsumerWidget {
   final String spaceName;
   final VoidCallback onBackToList;
 
-  static const _tabs = [Tab(text: '工期'), Tab(text: '專案資料'), Tab(text: '專案成員'), Tab(text: '相關文件')];
+  static const _tabs = [
+    Tab(text: '工期'),
+    Tab(text: '專案資料'),
+    Tab(text: '專案成員'),
+    Tab(text: '相關文件'),
+    Tab(text: '代辦事項'),
+  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -61,6 +68,7 @@ class ProjectDetailScreen extends ConsumerWidget {
                   ProjectInfoTab(projectId: projectId),
                   MembersTab(projectId: projectId),
                   ProjectDocumentsTab(projectId: projectId),
+                  ProjectTodosTab(projectId: projectId),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),

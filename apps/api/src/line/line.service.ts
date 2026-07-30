@@ -102,7 +102,14 @@ export class LineService {
         if (!text) continue;
 
         if (link) {
-          await this.handleTextForLinkedUser(link.id, link.userId, link.pendingDraft as PendingDraft | null, text, replyToken);
+          await this.handleTextForLinkedUser(
+            link.id,
+            link.userId,
+            link.pendingDraft as PendingDraft | null,
+            link.activeProjectId,
+            text,
+            replyToken,
+          );
         } else {
           await this.tryCompleteLinking(lineUserId, text, replyToken);
         }
@@ -158,6 +165,11 @@ export class LineService {
       const draft: PendingDraft = { ...(existing?.pendingDraft as PendingDraft | null), accountId: value };
       await this.saveDraft(linkId, draft);
       await this.reply(replyToken, '請輸入金額，可以加備註，例如「120 午餐」。');
+      return;
+    }
+    if (key === 'proj') {
+      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { activeProjectId: value } });
+      await this.sendTodoOverview(value, replyToken);
     }
   }
 
@@ -230,17 +242,37 @@ export class LineService {
   // flow for anything else) ---
 
   private static readonly OVERVIEW_KEYWORDS = ['總覽', '財務總覽', '總覽財務'];
+  private static readonly TODO_ENTRY_KEYWORDS = ['代辦', '代辦事項', '待辦', '待辦事項'];
 
   private async handleTextForLinkedUser(
     linkId: string,
     userId: string,
     pendingDraft: PendingDraft | null,
+    activeProjectId: string | null,
     text: string,
     replyToken: string,
   ) {
     if (LineService.OVERVIEW_KEYWORDS.includes(text)) {
       if (pendingDraft) await this.saveDraft(linkId, {});
       await this.sendOverview(userId, replyToken);
+      return;
+    }
+
+    if (LineService.TODO_ENTRY_KEYWORDS.includes(text)) {
+      await this.enterTodoFlow(linkId, userId, activeProjectId, replyToken);
+      return;
+    }
+    if (text === '切換專案') {
+      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { activeProjectId: null } });
+      await this.enterTodoFlow(linkId, userId, null, replyToken);
+      return;
+    }
+    if (text.startsWith('新增')) {
+      await this.createTodoFromText(activeProjectId, text, replyToken);
+      return;
+    }
+    if (text.startsWith('完成')) {
+      await this.completeTodoFromText(activeProjectId, text, replyToken);
       return;
     }
 
@@ -256,6 +288,153 @@ export class LineService {
     }
 
     await this.startFlow(linkId, replyToken);
+  }
+
+  // --- 專案代辦事項 ---
+
+  /** No active project yet → list the user's projects as quick-reply
+   * buttons to pick one (auto-picks if there's only one); otherwise shows
+   * that project's todo overview directly. */
+  private async enterTodoFlow(
+    linkId: string,
+    userId: string,
+    activeProjectId: string | null,
+    replyToken: string,
+  ) {
+    if (activeProjectId) {
+      await this.sendTodoOverview(activeProjectId, replyToken);
+      return;
+    }
+
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId },
+      include: { project: true },
+      orderBy: { createdAt: 'desc' },
+      take: MAX_QUICK_REPLY_ITEMS - 1,
+    });
+    if (memberships.length === 0) {
+      await this.reply(replyToken, '你目前不是任何專案的成員，代辦事項功能需要先加入一個專案。');
+      return;
+    }
+    if (memberships.length === 1) {
+      const projectId = memberships[0].project.id;
+      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { activeProjectId: projectId } });
+      await this.sendTodoOverview(projectId, replyToken);
+      return;
+    }
+    await this.replyWithQuickReply(
+      replyToken,
+      '要記哪個專案的代辦事項？',
+      memberships.map((m) => ({ label: m.project.name.slice(0, 20), data: `proj:${m.project.id}` })),
+    );
+  }
+
+  /** 今日完成的、今日到期但還沒完成的（該重新安排的）、未來 7 天內到期的其餘
+   * 代辦事項 — everything the user asked for in one reply. */
+  private async sendTodoOverview(projectId: string, replyToken: string) {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) {
+      await this.reply(replyToken, '這個專案好像不存在了，傳「切換專案」重新選一個。');
+      return;
+    }
+    const todos = await this.prisma.projectTodo.findMany({
+      where: { projectId },
+      orderBy: [{ dueDate: 'asc' }, { sortOrder: 'asc' }],
+    });
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 86400000);
+    const weekEnd = new Date(todayStart.getTime() + 7 * 86400000);
+    const isSameDay = (d: Date) => d >= todayStart && d < todayEnd;
+
+    const completedToday = todos.filter((t) => t.completedAt && isSameDay(t.completedAt));
+    const overdueToday = todos.filter((t) => !t.done && t.dueDate && isSameDay(t.dueDate));
+    const restOfWeek = todos.filter(
+      (t) => !t.done && t.dueDate && t.dueDate >= todayEnd && t.dueDate < weekEnd,
+    );
+
+    const lines: string[] = [`✅ ${project.name}　代辦事項總覽`, ''];
+
+    lines.push(`今日已完成（${completedToday.length}）：`);
+    lines.push(...(completedToday.length ? completedToday.map((t) => `・${t.title}`) : ['（沒有）']));
+
+    lines.push('', `今日到期但還沒完成，需要安排（${overdueToday.length}）：`);
+    lines.push(...(overdueToday.length ? overdueToday.map((t) => `・${t.title}`) : ['（沒有）']));
+
+    lines.push('', `未來 7 天內到期（${restOfWeek.length}）：`);
+    lines.push(
+      ...(restOfWeek.length
+        ? restOfWeek.map((t) => `・${t.title}（${t.dueDate!.getMonth() + 1}/${t.dueDate!.getDate()}）`)
+        : ['（沒有）']),
+    );
+
+    lines.push('', '傳「新增 XXX」新增代辦、「完成 XXX」標記完成、「切換專案」換專案。');
+
+    await this.reply(replyToken, lines.join('\n'));
+  }
+
+  private async createTodoFromText(activeProjectId: string | null, text: string, replyToken: string) {
+    if (!activeProjectId) {
+      await this.reply(replyToken, '請先傳「代辦事項」選擇要記錄的專案。');
+      return;
+    }
+    const title = text.replace(/^新增(代辦|待辦)?\s*/, '').trim();
+    if (!title) {
+      await this.reply(replyToken, '請在「新增」後面接代辦事項的內容，例如「新增 買材料」。');
+      return;
+    }
+    const project = await this.prisma.project.findUnique({ where: { id: activeProjectId } });
+    if (!project) {
+      await this.reply(replyToken, '這個專案好像不存在了，傳「切換專案」重新選一個。');
+      return;
+    }
+    const maxSortOrder = await this.prisma.projectTodo.aggregate({
+      where: { projectId: activeProjectId },
+      _max: { sortOrder: true },
+    });
+    await this.prisma.projectTodo.create({
+      data: {
+        projectId: activeProjectId,
+        title,
+        sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
+      },
+    });
+    await this.reply(replyToken, `已新增代辦事項「${title}」（${project.name}）。`);
+  }
+
+  private async completeTodoFromText(activeProjectId: string | null, text: string, replyToken: string) {
+    if (!activeProjectId) {
+      await this.reply(replyToken, '請先傳「代辦事項」選擇要記錄的專案。');
+      return;
+    }
+    const query = text.replace(/^完成(代辦|待辦)?\s*/, '').trim();
+    if (!query) {
+      await this.reply(replyToken, '請在「完成」後面接代辦事項的內容，例如「完成 買材料」。');
+      return;
+    }
+    const incomplete = await this.prisma.projectTodo.findMany({
+      where: { projectId: activeProjectId, done: false },
+    });
+    const exact = incomplete.filter((t) => t.title === query);
+    const partial = exact.length > 0 ? exact : incomplete.filter((t) => t.title.includes(query));
+
+    if (partial.length === 0) {
+      await this.reply(replyToken, `找不到還沒完成、標題符合「${query}」的代辦事項。`);
+      return;
+    }
+    if (partial.length > 1) {
+      await this.reply(
+        replyToken,
+        `符合「${query}」的代辦事項不只一個，請打更完整的標題：\n${partial.map((t) => `・${t.title}`).join('\n')}`,
+      );
+      return;
+    }
+    await this.prisma.projectTodo.update({
+      where: { id: partial[0].id },
+      data: { done: true, completedAt: new Date() },
+    });
+    await this.reply(replyToken, `已完成「${partial[0].title}」。`);
   }
 
   /** 個人財務總覽：every account's current balance, today's and this

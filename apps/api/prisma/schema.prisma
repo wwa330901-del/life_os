@@ -34,6 +34,12 @@ enum PropertyType {
   SELECT
 }
 
+enum TodoPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 enum FinanceAccountType {
   CASH
   BANK
@@ -82,6 +88,7 @@ model User {
   projectMemberships ProjectMember[]
   generatedDocuments GeneratedDocument[]
   lineAccountLink    LineAccountLink?
+  assignedTodos      ProjectTodo[]
 }
 
 model Space {
@@ -319,6 +326,8 @@ model Project {
   members            ProjectMember[]
   propertyValues     ProjectPropertyValue[]
   generatedDocuments GeneratedDocument[]
+  todos              ProjectTodo[]
+  lineActiveFor      LineAccountLink[]
 }
 
 model ProjectMember {
@@ -485,6 +494,38 @@ model LineAccountLink {
   /// created (or the flow is cancelled). Null when no flow is in progress.
   pendingDraft Json?
 
+  /// Which project "新增/完成/代辦" commands apply to — unlike 記帳 (always
+  /// the user's own 1:1 personal space), a company-space project is
+  /// ambiguous when the user belongs to more than one, so this has to be
+  /// picked once via a LINE quick-reply and remembered here until changed.
+  activeProjectId String?
+  activeProject    Project? @relation(fields: [activeProjectId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// A project-level to-do item — distinct from 工項 (WorkItem, which is
+/// schedule/duration-bearing and feeds the Gantt engine); a todo is a plain
+/// task with no duration, optionally assigned to a project member.
+model ProjectTodo {
+  id        String @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title    String
+  done     Boolean   @default(false)
+  completedAt DateTime?
+  dueDate  DateTime? @db.Date
+  priority TodoPriority @default(MEDIUM)
+  notes    String?
+
+  assigneeUserId String?
+  assignee       User?   @relation(fields: [assigneeUserId], references: [id], onDelete: SetNull)
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
 }
