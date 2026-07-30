@@ -551,19 +551,13 @@ model LineAccountLink {
   linkCode          String?   @unique
   linkCodeExpiresAt DateTime?
 
-  /// In-progress "支出/收入 → 分類 → 帳戶 → 金額" guided flow state, e.g.
-  /// `{ type: "EXPENSE", categoryId: "...", accountId: "..." }` — built up
-  /// one quick-reply button tap at a time, cleared once the transaction is
-  /// created (or the flow is cancelled). Null when no flow is in progress.
-  pendingDraft Json?
-
-  /// The rich-menu ID currently linked to this LINE user in place of the
-  /// channel-wide default menu, while a guided-flow stage (分類/帳戶
-  /// selection) is showing dynamically-generated buttons instead of the
-  /// static 記帳/財務總覽/代辦事項 menu. Cleared (and the menu deleted via
-  /// LINE's API) once the flow finishes, is cancelled, or moves to the next
-  /// stage — null means "showing the default menu".
-  pendingRichMenuId String?
+  /// The ordered ProjectTodo ids from the last "代辦事項"/"代辦事項總覽" list
+  /// shown to this LINE user — lets "完成 2" reference an item by the
+  /// number printed next to it instead of retyping its title (titles typed
+  /// when completing something often don't match what was typed when it
+  /// was created). Overwritten every time either list is (re-)shown;
+  /// numbers don't shift after a completion within the same shown list.
+  lastTodoListIds String[] @default([])
 
   /// Which project "新增/完成/代辦" commands apply to — unlike 記帳 (always
   /// the user's own 1:1 personal space), a company-space project is

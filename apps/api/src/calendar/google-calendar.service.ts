@@ -47,7 +47,14 @@ export class GoogleCalendarService {
    * and the calendar scope for a refresh token, and persists (or replaces)
    * this space's `GoogleCalendarConnection`. */
   async connect(spaceId: string, connectedByUserId: string, code: string, redirectUri: string) {
-    const { tokens } = await this.oauthClient.getToken({ code, redirect_uri: redirectUri });
+    let tokens: { refresh_token?: string | null; access_token?: string | null; expiry_date?: number | null };
+    try {
+      const result = await this.oauthClient.getToken({ code, redirect_uri: redirectUri });
+      tokens = result.tokens;
+    } catch (error) {
+      this.logger.warn(`Google OAuth code 交換失敗：${error}`);
+      throw new UnauthorizedException('跟 Google 交換授權失敗，請重新連結一次。');
+    }
     if (!tokens.refresh_token) {
       throw new UnauthorizedException(
         'Google 沒有回傳 refresh token，請確認授權時有帶上 access_type=offline 與 prompt=consent。',
