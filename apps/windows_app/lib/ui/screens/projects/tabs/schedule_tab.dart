@@ -206,6 +206,8 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
                         onStartDateChanged: handleStartDateChanged,
                         onDurationChanged: (id, duration) =>
                             _run(() => _notifier.changeDuration(id, duration)),
+                        onActualStartDateChanged: (id, date) =>
+                            _run(() => _notifier.changeActualStartDate(id, date)),
                         onActualDurationChanged: (id, days) =>
                             _run(() => _notifier.changeActualDuration(id, days)),
                         onEndDateChanged: handleEndDateChanged,

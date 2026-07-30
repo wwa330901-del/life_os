@@ -236,15 +236,20 @@ export class LineService {
       this.prisma.financeCategory.findMany({ where: { spaceId: space.id }, orderBy: { sortOrder: 'asc' } }),
       this.prisma.financeAccount.findMany({ where: { spaceId: space.id }, orderBy: { sortOrder: 'asc' } }),
     ]);
-    const expenseCats = categories.filter((c) => c.kind === FinanceCategoryKind.EXPENSE).map((c) => c.name);
-    const incomeCats = categories.filter((c) => c.kind === FinanceCategoryKind.INCOME).map((c) => c.name);
+    // Only 子分類 (or a 母分類 with no children of its own) are ever typed
+    // in a LINE command — a 母分類 that has children can't be recorded
+    // against directly, so it's left out here on purpose (it only shows up
+    // as the rollup grouping in 財務總覽).
+    const leaf = this.leafCategories(categories);
+    const expenseCats = leaf.filter((c) => c.kind === FinanceCategoryKind.EXPENSE).map((c) => c.name);
+    const incomeCats = leaf.filter((c) => c.kind === FinanceCategoryKind.INCOME).map((c) => c.name);
 
     await this.reply(
       replyToken,
       [
         '💰 記帳',
-        '格式：類型 金額 分類 帳戶 備註(選填)，順序固定但分隔符號不拘',
-        '例如「支出 300 午餐 現金」「支出-300-午餐-現金」「支出300午餐現金」都可以',
+        '格式：類型 金額 分類 帳戶 備註(選填)，順序固定，中間留不留空格或符號都可以',
+        '例如「支出300午餐現金」',
         '（分類、帳戶只要出現你自己取的名稱就會自動辨識，其餘文字當備註）',
         '',
         `支出分類：${expenseCats.length ? expenseCats.join('、') : '（還沒有，請到 App 新增）'}`,
@@ -252,6 +257,15 @@ export class LineService {
         `帳戶：${accounts.length ? accounts.map((a) => a.name).join('、') : '（還沒有，請到 App 新增）'}`,
       ].join('\n'),
     );
+  }
+
+  /** Categories that can actually be recorded against directly — a 母分類
+   * with children can't (the child is the real classification), so it's
+   * excluded; everything else (a childless top-level category, or a
+   * 子分類 itself) is a leaf. */
+  private leafCategories<T extends { id: string; parentId: string | null }>(categories: T[]): T[] {
+    const parentIds = new Set(categories.filter((c) => c.parentId).map((c) => c.parentId!));
+    return categories.filter((c) => !parentIds.has(c.id));
   }
 
   /** Returns true once it's decided this text *was* a 記帳 command attempt
@@ -270,7 +284,7 @@ export class LineService {
       this.prisma.financeCategory.findMany({ where: { spaceId: space.id } }),
       this.prisma.financeAccount.findMany({ where: { spaceId: space.id }, orderBy: { sortOrder: 'asc' } }),
     ]);
-    const parsed = this.parseFinanceCommand(text, categories, accounts);
+    const parsed = this.parseFinanceCommand(text, this.leafCategories(categories), accounts);
     if (!parsed) {
       await this.reply(replyToken, '看不懂記帳格式，傳「記帳」看範例跟目前可用的分類/帳戶。');
       return true;

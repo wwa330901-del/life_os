@@ -234,10 +234,32 @@ class GanttPainter extends CustomPainter {
 
       _paintBarLabel(canvas, item.name, rect);
 
+      if (item.actualStartDate != null && item.actualDurationDays != null) {
+        _paintActualBar(canvas, item, top, bottom);
+      }
+
       if (dragPreview != null && dragPreview!.itemId == item.id && dragPreview!.dayOffset != 0) {
         _paintDragPreview(canvas, dragPreview!, left, right, top, bottom);
       }
     }
+  }
+
+  /// A thin strip along the bottom of the row showing where the item
+  /// *actually* ran, so it reads as a direct visual comparison against the
+  /// planned bar above it rather than a number you have to cross-reference
+  /// in the table. Deliberately plain (no progress fill, no label) — it's
+  /// after-the-fact bookkeeping, not part of the schedule the rest of the
+  /// bar represents.
+  void _paintActualBar(Canvas canvas, WorkItem item, double top, double bottom) {
+    final actualStart = item.actualStartDate!;
+    final actualEnd = actualStart.add(Duration(days: item.actualDurationDays! - 1));
+    final left = _xForDate(actualStart);
+    final right = _xForDate(actualEnd.add(const Duration(days: 1)));
+
+    const thickness = 3.0;
+    final stripTop = bottom - thickness;
+    final rect = Rect.fromLTRB(left, stripTop, right, bottom);
+    canvas.drawRect(rect, Paint()..color = colors.actualBar);
   }
 
   /// A ghost outline showing where a dragged bar would land, drawn beside

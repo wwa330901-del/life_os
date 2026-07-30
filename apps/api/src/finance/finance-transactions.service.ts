@@ -79,7 +79,9 @@ export class FinanceTransactionsService {
   /** Per-category income/expense totals for one month, plus overall
    * totals — what the monthly chart renders. Transfers are excluded (they
    * don't represent income or spending, just moving money between the
-   * user's own accounts). */
+   * user's own accounts). Rolled up to 母分類: a transaction filed under a
+   * 子分類 counts toward its parent's total here, never the child's own —
+   * 子分類 only shows up broken out in the transaction list itself. */
   async monthlySummary(userId: string, spaceId: string, month: string) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const range = monthRange(month);
@@ -89,7 +91,7 @@ export class FinanceTransactionsService {
         date: { gte: range.start, lt: range.end },
         type: { in: [FinanceTransactionType.INCOME, FinanceTransactionType.EXPENSE] },
       },
-      include: { category: true },
+      include: { category: { include: { parent: true } } },
     });
 
     const byCategory = new Map<
@@ -103,10 +105,12 @@ export class FinanceTransactionsService {
       if (t.type === FinanceTransactionType.INCOME) totalIncome += t.amount;
       else totalExpense += t.amount;
 
-      const key = t.categoryId ?? `uncategorized-${t.type}`;
+      // Roll up to the 母分類 (or the category itself if it has none).
+      const rollupCategory = t.category?.parent ?? t.category;
+      const key = rollupCategory?.id ?? `uncategorized-${t.type}`;
       const entry = byCategory.get(key) ?? {
-        categoryId: t.categoryId,
-        name: t.category?.name ?? '未分類',
+        categoryId: rollupCategory?.id ?? null,
+        name: rollupCategory?.name ?? '未分類',
         kind: t.type,
         total: 0,
       };
@@ -153,9 +157,13 @@ export class FinanceTransactionsService {
     } else if (input.categoryId) {
       const category = await this.prisma.financeCategory.findUnique({
         where: { id: input.categoryId },
+        include: { _count: { select: { children: true } } },
       });
       if (!category || category.spaceId !== spaceId) {
         throw new BadRequestException('分類不存在');
+      }
+      if (category._count.children > 0) {
+        throw new BadRequestException('這個分類底下有子分類，記帳時要選子分類，不能直接選母分類');
       }
     }
   }

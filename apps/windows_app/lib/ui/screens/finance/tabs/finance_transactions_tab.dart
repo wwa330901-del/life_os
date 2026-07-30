@@ -31,7 +31,13 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
     final accounts = accountsAsync.value ?? const [];
     final categories = categoriesAsync.value ?? const [];
     final accountNameOf = {for (final a in accounts) a.id: a.name};
-    final categoryNameOf = {for (final c in categories) c.id: c.name};
+    final categoryById = {for (final c in categories) c.id: c};
+    // 交易明細 shows both levels ("早餐（飲食）") — everywhere else
+    // (總覽/預算) only ever shows the 母分類 rollup.
+    final categoryNameOf = {
+      for (final c in categories)
+        c.id: c.parentId == null ? c.name : '${c.name}（${categoryById[c.parentId]?.name ?? ''}）',
+    };
 
     return Scaffold(
       floatingActionButton: (accounts.isEmpty)
@@ -298,12 +304,21 @@ class _TransactionEditorDialogState extends State<_TransactionEditorDialog> {
     super.dispose();
   }
 
-  List<FinanceCategory> get _categoriesForType => widget.categories
+  /// Only leaf categories are ever pickable here — a 母分類 with children
+  /// isn't a valid classification on its own (see FinanceCategoryTree).
+  List<FinanceCategory> get _categoriesForType => widget.categories.leaves
       .where(
         (c) =>
             (_type == FinanceTransactionType.income) == (c.kind == FinanceCategoryKind.income),
       )
       .toList();
+
+  /// "早餐（飲食）" for a 子分類, just "交通" for a childless 母分類.
+  String _categoryLabel(FinanceCategory category) {
+    if (category.parentId == null) return category.name;
+    final parent = widget.categories.where((c) => c.id == category.parentId).firstOrNull;
+    return parent == null ? category.name : '${category.name}（${parent.name}）';
+  }
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -396,7 +411,7 @@ class _TransactionEditorDialogState extends State<_TransactionEditorDialog> {
                   initialValue: _categoriesForType.any((c) => c.id == _categoryId) ? _categoryId : null,
                   decoration: const InputDecoration(labelText: '分類'),
                   items: _categoriesForType
-                      .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
+                      .map((c) => DropdownMenuItem(value: c.id, child: Text(_categoryLabel(c))))
                       .toList(),
                   onChanged: (value) => setState(() => _categoryId = value),
                 ),

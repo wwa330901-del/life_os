@@ -9,6 +9,7 @@ import 'models/calendar_event.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
 import 'models/generated_document.dart';
+import 'models/home_dashboard.dart';
 import 'models/project_todo.dart';
 import 'models/project.dart';
 import 'models/project_member.dart';
@@ -107,6 +108,26 @@ class ApiClient {
     return body
         .map((e) => SpaceSummary.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<HomeDashboard> getHomeDashboard() async {
+    final body = await _get('/home/dashboard');
+    return HomeDashboard.fromJson(body);
+  }
+
+  Future<List<HomeWidgetConfig>> getHomeLayout() async {
+    final body = await _getList('/home/layout');
+    return body.map((e) => HomeWidgetConfig.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<HomeWidgetConfig>> setHomeLayout(List<HomeWidgetConfig> widgets) async {
+    final res = await http.put(
+      Uri.parse('$baseUrl/home/layout'),
+      headers: _headers,
+      body: jsonEncode({'widgets': widgets.map((w) => w.toJson()).toList()}),
+    );
+    final body = _decodeList(res);
+    return body.map((e) => HomeWidgetConfig.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<SpaceSummary> getOrCreateCalendarSpace() async {
@@ -503,6 +524,8 @@ class ApiClient {
     required String workItemId,
     String? name,
     int? durationDays,
+    DateTime? actualStartDate,
+    bool clearActualStartDate = false,
     int? actualDurationDays,
     bool clearActualDurationDays = false,
     List<String>? predecessorIds,
@@ -515,6 +538,10 @@ class ApiClient {
     final body = await _patch('/projects/$projectId/work-items/$workItemId', {
       if (name != null) 'name': name,
       if (durationDays != null) 'durationDays': durationDays,
+      if (clearActualStartDate)
+        'actualStartDate': null
+      else if (actualStartDate != null)
+        'actualStartDate': _dateOnly(actualStartDate),
       if (clearActualDurationDays)
         'actualDurationDays': null
       else if (actualDurationDays != null)
@@ -647,16 +674,29 @@ class ApiClient {
     required String spaceId,
     required String name,
     required FinanceCategoryKind kind,
+    String? parentId,
   }) async {
-    await _post('/spaces/$spaceId/finance/categories', {'name': name, 'kind': kind.toJson()});
+    await _post('/spaces/$spaceId/finance/categories', {
+      'name': name,
+      'kind': kind.toJson(),
+      if (parentId != null) 'parentId': parentId,
+    });
   }
 
   Future<void> updateFinanceCategory({
     required String spaceId,
     required String categoryId,
-    required String name,
+    String? name,
+    String? parentId,
+    bool clearParentId = false,
   }) async {
-    await _patchIgnoreBody('/spaces/$spaceId/finance/categories/$categoryId', {'name': name});
+    await _patchIgnoreBody('/spaces/$spaceId/finance/categories/$categoryId', {
+      if (name != null) 'name': name,
+      if (clearParentId)
+        'parentId': null
+      else if (parentId != null)
+        'parentId': parentId,
+    });
   }
 
   Future<void> deleteFinanceCategory({required String spaceId, required String categoryId}) async {

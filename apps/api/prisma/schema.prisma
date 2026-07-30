@@ -84,6 +84,16 @@ model User {
   // one company space.
   isPlatformAdmin Boolean @default(false)
 
+  /// This user's 首頁 widget layout — which widgets are shown and in what
+  /// order, e.g. `{ widgets: [{ type: "personalFinance", visible: true },
+  /// ...] }`. Null means "use the default layout" (all widgets, default
+  /// order) rather than an empty list meaning "hide everything", so a
+  /// brand-new widget added in a future release still shows up for
+  /// existing users instead of silently staying hidden until they touch
+  /// the settings themselves. Server-side (not local-only) so it survives
+  /// a reinstall/new machine, same as every other piece of user data.
+  homeLayoutConfig Json?
+
   personalSpace      Space?              @relation("PersonalSpaceOwner")
   calendarSpace      Space?              @relation("CalendarSpaceOwner")
   memberships        CompanyMembership[]
@@ -412,12 +422,16 @@ model WorkItem {
   name           String
   durationDays   Int
 
-  // 實際工期 — how many days this item actually took, filled in separately
-  // from (and independently of) durationDays/預計工期, which stays the
-  // planned estimate the schedule engine anchors off. Null until the user
-  // records it. Deliberately excluded from every export (Gantt image/PDF
-  // etc. only ever render the planned schedule) — this is a private,
-  // after-the-fact tracking field, not part of the shareable schedule.
+  // 實際開始日期／實際工期 — when this item actually started and how many
+  // days it actually took, filled in separately from (and independently
+  // of) startDate（scheduler-computed）/durationDays/預計工期, which stay
+  // the planned estimate the schedule engine anchors off. Both null until
+  // the user records them — either can be set alone (e.g. "started but
+  // still running" only has actualStartDate). Deliberately excluded from
+  // every export (Gantt image/PDF etc. only ever render the planned
+  // schedule) — this is a private, after-the-fact tracking field, not part
+  // of the shareable schedule.
+  actualStartDate    DateTime? @db.Date
   actualDurationDays Int?
 
   // IDs of work items that must finish before this one can start. A plain
@@ -487,10 +501,22 @@ model FinanceCategory {
   sortOrder Int                 @default(0)
   createdAt DateTime            @default(now())
 
+  // 母分類/子分類 — exactly two levels (a category with a parentId can't
+  // itself have children; enforced in application code, not the DB). Null
+  // parentId = 母分類. A 母分類 with at least one child can't be used
+  // directly on a transaction anymore — the child is the specific
+  // classification, the parent is just the rollup grouping shown in
+  // 總覽/報表/預算 (see FinanceTransaction.categoryId comment). A parent
+  // with zero children stays directly usable, unchanged from before this
+  // feature existed.
+  parentId String?
+  parent   FinanceCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children FinanceCategory[] @relation("CategoryHierarchy")
+
   transactions FinanceTransaction[]
   budget       FinanceBudget?
 
-  @@unique([spaceId, name, kind])
+  @@unique([spaceId, name, kind, parentId])
 }
 
 model FinanceTransaction {

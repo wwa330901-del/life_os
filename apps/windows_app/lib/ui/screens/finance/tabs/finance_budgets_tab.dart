@@ -21,7 +21,12 @@ class FinanceBudgetsTab extends ConsumerWidget {
 
     return categoriesAsync.when(
       data: (categories) {
-        final expenseCategories = categories.where((c) => c.kind == FinanceCategoryKind.expense).toList();
+        // Budgets are set per 母分類 only — matches 總覽/報表 always
+        // rolling child spending up to the parent, so that's the level a
+        // spending cap is meaningful at.
+        final expenseCategories = categories.topLevel
+            .where((c) => c.kind == FinanceCategoryKind.expense)
+            .toList();
         return budgetsAsync.when(
           data: (budgets) {
             final budgetByCategory = {for (final b in budgets) b.categoryId: b};

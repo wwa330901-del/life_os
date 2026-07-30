@@ -88,6 +88,9 @@ export class WorkItemsService {
         ...(dto.durationDays !== undefined && {
           durationDays: dto.durationDays,
         }),
+        ...(dto.actualStartDate !== undefined && {
+          actualStartDate: dto.actualStartDate ? new Date(dto.actualStartDate) : null,
+        }),
         ...(dto.actualDurationDays !== undefined && {
           actualDurationDays: dto.actualDurationDays,
         }),

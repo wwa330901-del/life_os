@@ -31,6 +31,7 @@ class _ColumnWidths {
   double startDate = 88;
   double endDate = 80;
   double duration = 56;
+  double actualStartDate = 88;
   double actualDuration = 56;
   double predecessor = 60;
 }
@@ -95,6 +96,9 @@ class TaskTable extends StatefulWidget {
   final void Function(String id, DateTime? date) onStartDateChanged;
   final void Function(String id, int durationDays) onDurationChanged;
 
+  /// `date` null clears 實際開始日.
+  final void Function(String id, DateTime? date) onActualStartDateChanged;
+
   /// `days` null clears 實際工期.
   final void Function(String id, int? days) onActualDurationChanged;
   final void Function(String id, DateTime endDate) onEndDateChanged;
@@ -112,6 +116,7 @@ class TaskTable extends StatefulWidget {
     required this.onNameChanged,
     required this.onStartDateChanged,
     required this.onDurationChanged,
+    required this.onActualStartDateChanged,
     required this.onActualDurationChanged,
     required this.onEndDateChanged,
     required this.onPredecessorsChanged,
@@ -205,6 +210,18 @@ class _TaskTableState extends State<TaskTable> {
                   ),
                 ),
                 SizedBox(
+                  width: _widths.actualStartDate,
+                  child: Text('實際開始日', textAlign: TextAlign.center, style: headerStyle),
+                ),
+                _ColumnResizeHandle(
+                  onDrag: (dx) => setState(
+                    () => _widths.actualStartDate = (_widths.actualStartDate + dx).clamp(
+                      _minColumnWidth,
+                      double.infinity,
+                    ),
+                  ),
+                ),
+                SizedBox(
                   width: _widths.actualDuration,
                   child: Text('實際工期(天)', textAlign: TextAlign.center, style: headerStyle),
                 ),
@@ -258,6 +275,8 @@ class _TaskTableState extends State<TaskTable> {
                       onNameChanged: (name) => widget.onNameChanged(node.item.id, name),
                       onStartDateChanged: (date) => widget.onStartDateChanged(node.item.id, date),
                       onDurationChanged: (d) => widget.onDurationChanged(node.item.id, d),
+                      onActualStartDateChanged: (date) =>
+                          widget.onActualStartDateChanged(node.item.id, date),
                       onActualDurationChanged: (d) => widget.onActualDurationChanged(node.item.id, d),
                       onEndDateChanged: (date) => widget.onEndDateChanged(node.item.id, date),
                       onPredecessorsChanged: (ids) => widget.onPredecessorsChanged(node.item.id, ids),
@@ -300,6 +319,7 @@ class _TaskRow extends StatefulWidget {
   final ValueChanged<String> onNameChanged;
   final ValueChanged<DateTime?> onStartDateChanged;
   final ValueChanged<int> onDurationChanged;
+  final ValueChanged<DateTime?> onActualStartDateChanged;
   final ValueChanged<int?> onActualDurationChanged;
   final ValueChanged<DateTime> onEndDateChanged;
   final ValueChanged<List<String>> onPredecessorsChanged;
@@ -323,6 +343,7 @@ class _TaskRow extends StatefulWidget {
     required this.onNameChanged,
     required this.onStartDateChanged,
     required this.onDurationChanged,
+    required this.onActualStartDateChanged,
     required this.onActualDurationChanged,
     required this.onEndDateChanged,
     required this.onPredecessorsChanged,
@@ -448,6 +469,17 @@ class _TaskRowState extends State<_TaskRow> {
     );
     if (picked == null) return;
     widget.onStartDateChanged(DateTime(picked.year, picked.month, picked.day));
+  }
+
+  Future<void> _pickActualStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: widget.item.actualStartDate ?? widget.computedStartDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    widget.onActualStartDateChanged(DateTime(picked.year, picked.month, picked.day));
   }
 
   Future<void> _pickEndDate() async {
@@ -632,6 +664,32 @@ class _TaskRowState extends State<_TaskRow> {
                       ),
                       style: const TextStyle(fontSize: 13),
                       onSubmitted: (_) => _durationFocusNode.unfocus(),
+                    ),
+            ),
+            const SizedBox(width: 9),
+            SizedBox(
+              width: widths.actualStartDate,
+              child: isParentRow
+                  ? Text('—', style: TextStyle(fontSize: 13, color: faintText))
+                  : Tooltip(
+                      message: widget.item.actualStartDate == null
+                          ? '點擊記錄實際開始日'
+                          : '點擊修改,點兩下清除',
+                      child: InkWell(
+                        onTap: _pickActualStartDate,
+                        onDoubleTap: widget.item.actualStartDate == null
+                            ? null
+                            : () => widget.onActualStartDateChanged(null),
+                        child: Text(
+                          widget.item.actualStartDate == null
+                              ? '—'
+                              : '${widget.item.actualStartDate!.month}/${widget.item.actualStartDate!.day}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: widget.item.actualStartDate == null ? faintText : mutedText,
+                          ),
+                        ),
+                      ),
                     ),
             ),
             const SizedBox(width: 9),

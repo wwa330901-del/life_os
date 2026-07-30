@@ -63,17 +63,26 @@ export class FinanceBudgetsService {
     }));
   }
 
+  /** Keyed by *both* a transaction's own category id and (if it has one)
+   * its parent's id, so a budget set on either a 子分類 or its 母分類
+   * finds the right total — transactions can only ever be filed under a
+   * leaf category, but a budget is allowed at either level. */
   private async monthlyExpenseByCategory(spaceId: string, month: string): Promise<Map<string, number>> {
     const [year, m] = month.split('-').map(Number);
     const start = new Date(Date.UTC(year, m - 1, 1));
     const end = new Date(Date.UTC(year, m, 1));
     const transactions = await this.prisma.financeTransaction.findMany({
       where: { spaceId, type: FinanceTransactionType.EXPENSE, date: { gte: start, lt: end } },
+      include: { category: true },
     });
     const totals = new Map<string, number>();
     for (const t of transactions) {
       if (!t.categoryId) continue;
       totals.set(t.categoryId, (totals.get(t.categoryId) ?? 0) + t.amount);
+      const parentId = t.category?.parentId;
+      if (parentId) {
+        totals.set(parentId, (totals.get(parentId) ?? 0) + t.amount);
+      }
     }
     return totals;
   }

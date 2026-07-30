@@ -36,6 +36,6 @@ import { UsersModule } from '../users/users.module';
     ProjectPropertiesService,
     ProjectTodosService,
   ],
-  exports: [ProjectsService, ProjectTodosService],
+  exports: [ProjectsService, ProjectTodosService, ScheduleService],
 })
 export class ProjectsModule {}

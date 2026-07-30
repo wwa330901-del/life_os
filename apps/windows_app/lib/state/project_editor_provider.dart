@@ -195,6 +195,21 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
     _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
   }
 
+  /// 實際開始日期 — independent of [changeStartDate]'s planned/manual pin;
+  /// `date` null clears it. Same bookkeeping-not-scheduling status as
+  /// [changeActualDuration] above.
+  Future<void> changeActualStartDate(String id, DateTime? date) async {
+    final result = await ref
+        .read(apiClientProvider)
+        .updateWorkItem(
+          projectId: projectId,
+          workItemId: id,
+          actualStartDate: date,
+          clearActualStartDate: date == null,
+        );
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
+  }
+
   /// `date` null clears a manual pin and reverts to the auto-computed date.
   Future<void> changeStartDate(String id, DateTime? date, {bool recordHistory = true}) async {
     final old = recordHistory ? _find(id) : null;

@@ -26,7 +26,12 @@ export class UpdateWorkItemDto {
   @Min(1)
   durationDays?: number;
 
-  /// 實際工期 — independent of durationDays (預計工期); null clears it.
+  /// 實際開始日期／實際工期 — independent of manualStartDate/durationDays
+  /// (預計); null clears either one on its own.
+  @IsOptional()
+  @IsDateString()
+  actualStartDate?: string | null;
+
   @IsOptional()
   @IsInt()
   @Min(0)

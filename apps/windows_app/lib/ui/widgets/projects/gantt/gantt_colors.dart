@@ -20,6 +20,7 @@ class GanttColors {
     required this.summaryBar,
     required this.selectionOutline,
     required this.dependencyArrow,
+    required this.actualBar,
     required this.palette,
   });
 
@@ -32,6 +33,12 @@ class GanttColors {
   final Color summaryBar;
   final Color selectionOutline;
   final Color dependencyArrow;
+
+  /// The 實際工期 comparison strip drawn under a bar — the app's warm gold
+  /// brand accent (same family as the LINE rich menu / app icon), chosen so
+  /// it reads as "annotation" rather than being mistaken for one more
+  /// category in [palette].
+  final Color actualBar;
 
   /// Fixed order, never cycled by value — each top-level branch gets the
   /// next slot the first time it appears.
@@ -48,6 +55,7 @@ class GanttColors {
       summaryBar: scheme.onSurface.withValues(alpha: 0.75),
       selectionOutline: scheme.onSurface,
       dependencyArrow: scheme.outline,
+      actualBar: const Color(0xFFD8B88A),
       palette: const [
         Color(0xFF4781CC), // muted blue
         Color(0xFFC0623F), // muted terracotta

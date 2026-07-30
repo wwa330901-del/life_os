@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -203,7 +204,7 @@ class _SidebarPanel extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: InkWell(
                 borderRadius: BorderRadius.circular(10),
-                onTap: () => ref.read(selectedSpaceProvider.notifier).clear(),
+                onTap: () => _openSpaceSwitcher(context, ref),
                 child: Padding(
                   padding: const EdgeInsets.all(8),
                   child: Row(
@@ -271,6 +272,71 @@ class _SidebarPanel extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Lets the user jump straight to another space (or back to 首頁)
+  /// without detouring through the full space-picker screen — anchored as
+  /// a popup menu right under the space-name row that opened it.
+  Future<void> _openSpaceSwitcher(BuildContext context, WidgetRef ref) async {
+    final spaces = ref.read(mySpacesProvider).value ?? const <SpaceSummary>[];
+    final others = spaces.where((s) => s.id != space.id).toList();
+
+    final box = context.findRenderObject()! as RenderBox;
+    final overlayBox = Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        box.localToGlobal(Offset.zero, ancestor: overlayBox),
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlayBox),
+      ),
+      Offset.zero & overlayBox.size,
+    );
+
+    const homeValue = '__home__';
+    final selected = await showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        for (final s in others)
+          PopupMenuItem(
+            value: s.id,
+            child: Row(
+              children: [
+                Icon(
+                  switch (s.type) {
+                    SpaceType.personal => Icons.person_outline,
+                    SpaceType.calendar => Icons.calendar_today_outlined,
+                    SpaceType.company => Icons.apartment,
+                  },
+                  size: 16,
+                ),
+                const SizedBox(width: 10),
+                Flexible(child: Text(s.name, overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+          ),
+        if (others.isNotEmpty) const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: homeValue,
+          child: Row(
+            children: [
+              Icon(Icons.home_outlined, size: 16),
+              SizedBox(width: 10),
+              Text('回首頁'),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (selected == null) return;
+    if (selected == homeValue) {
+      ref.read(selectedSpaceProvider.notifier).clear();
+      return;
+    }
+    final target = others.where((s) => s.id == selected).firstOrNull;
+    if (target != null) {
+      ref.read(selectedSpaceProvider.notifier).select(target);
+    }
   }
 
   Future<void> _editName(BuildContext context, WidgetRef ref, String currentName) async {

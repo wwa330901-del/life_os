@@ -86,25 +86,49 @@ class FinanceAccount {
   );
 }
 
+/// 母分類/子分類 — exactly two levels. [parentId] null means this *is* a
+/// 母分類; set means this is a 子分類 under that parent. A 母分類 that has
+/// at least one child can no longer be picked directly on a transaction
+/// (see `FinanceCategoryTree.hasChildren`) — the child is the real
+/// classification, the parent is just the rollup grouping shown in
+/// 總覽/報表/預算.
 class FinanceCategory {
   const FinanceCategory({
     required this.id,
     required this.name,
     required this.kind,
     required this.sortOrder,
+    this.parentId,
   });
 
   final String id;
   final String name;
   final FinanceCategoryKind kind;
   final int sortOrder;
+  final String? parentId;
 
   factory FinanceCategory.fromJson(Map<String, dynamic> json) => FinanceCategory(
     id: json['id'] as String,
     name: json['name'] as String,
     kind: FinanceCategoryKindJson.fromJson(json['kind'] as String),
     sortOrder: json['sortOrder'] as int,
+    parentId: json['parentId'] as String?,
   );
+}
+
+/// Read-only helpers for working with a flat [FinanceCategory] list as a
+/// two-level tree, without needing a separate tree-shaped model.
+extension FinanceCategoryTree on List<FinanceCategory> {
+  List<FinanceCategory> get topLevel => where((c) => c.parentId == null).toList();
+
+  List<FinanceCategory> childrenOf(String parentId) =>
+      where((c) => c.parentId == parentId).toList();
+
+  bool hasChildren(String categoryId) => any((c) => c.parentId == categoryId);
+
+  /// Categories that can actually be picked on a transaction — a 母分類
+  /// with children is excluded (its child is the real classification).
+  List<FinanceCategory> get leaves => where((c) => !hasChildren(c.id)).toList();
 }
 
 class FinanceTransaction {

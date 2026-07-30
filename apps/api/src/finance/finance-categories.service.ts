@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccessService } from './finance-access.service';
 import { FinanceCategoryKind } from '../../generated/prisma/client.js';
@@ -17,6 +17,10 @@ const DEFAULT_CATEGORIES: { name: string; kind: FinanceCategoryKind }[] = [
   { name: '其他收入', kind: FinanceCategoryKind.INCOME },
 ];
 
+/** 母分類/子分類 — exactly two levels, enforced here (not in the DB):
+ * a category may only be set as someone's parent if it has no parent of
+ * its own, and a category with children of its own can't be re-parented
+ * under something else (that would make a 3-level chain). */
 @Injectable()
 export class FinanceCategoriesService {
   constructor(
@@ -28,7 +32,8 @@ export class FinanceCategoriesService {
    * personal space's 記帳 module is opened, rather than at account
    * registration (most users may never touch this feature). Every seeded
    * row is fully user-editable/deletable afterward, same as one the user
-   * adds themselves — there's no "system category" distinction. */
+   * adds themselves — there's no "system category" distinction. All seeded
+   * as 母分類 with no children; the user adds 子分類 themselves. */
   async list(userId: string, spaceId: string) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const existing = await this.prisma.financeCategory.findMany({
@@ -53,6 +58,9 @@ export class FinanceCategoriesService {
 
   async create(userId: string, spaceId: string, dto: CreateFinanceCategoryDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
+    if (dto.parentId) {
+      await this.assertUsableAsParent(spaceId, dto.parentId, dto.kind);
+    }
     const maxSortOrder = await this.prisma.financeCategory.aggregate({
       where: { spaceId },
       _max: { sortOrder: true },
@@ -62,6 +70,7 @@ export class FinanceCategoriesService {
         spaceId,
         name: dto.name,
         kind: dto.kind,
+        parentId: dto.parentId,
         sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
       },
     });
@@ -69,20 +78,52 @@ export class FinanceCategoriesService {
 
   async update(userId: string, spaceId: string, id: string, dto: UpdateFinanceCategoryDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
-    await this.getOrThrow(spaceId, id);
+    const existing = await this.getOrThrow(spaceId, id);
+
+    if (dto.parentId !== undefined && dto.parentId !== existing.parentId) {
+      if (dto.parentId === id) {
+        throw new BadRequestException('分類不能是自己的母分類');
+      }
+      if (dto.parentId) {
+        await this.assertUsableAsParent(spaceId, dto.parentId, existing.kind);
+        const childCount = await this.prisma.financeCategory.count({ where: { parentId: id } });
+        if (childCount > 0) {
+          throw new BadRequestException('這個分類底下已經有子分類，不能再變成別人的子分類（最多兩層）');
+        }
+      }
+    }
+
     return this.prisma.financeCategory.update({
       where: { id },
-      data: { ...(dto.name !== undefined && { name: dto.name }) },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.parentId !== undefined && { parentId: dto.parentId }),
+      },
     });
   }
 
   /** Deleting a category leaves its past transactions intact
    * (categoryId → SetNull) — they just show up as "未分類" afterward
-   * instead of disappearing. */
+   * instead of disappearing. Deleting a 母分類 cascades to its 子分類
+   * (schema-level onDelete: Cascade on the self-relation) — their past
+   * transactions become 未分類 too. */
   async remove(userId: string, spaceId: string, id: string) {
     await this.access.assertPersonalSpace(userId, spaceId);
     await this.getOrThrow(spaceId, id);
     await this.prisma.financeCategory.delete({ where: { id } });
+  }
+
+  private async assertUsableAsParent(spaceId: string, parentId: string, kind: FinanceCategoryKind) {
+    const parent = await this.prisma.financeCategory.findUnique({ where: { id: parentId } });
+    if (!parent || parent.spaceId !== spaceId) {
+      throw new NotFoundException('母分類不存在');
+    }
+    if (parent.kind !== kind) {
+      throw new BadRequestException('子分類的收支類型必須跟母分類一致');
+    }
+    if (parent.parentId !== null) {
+      throw new BadRequestException('母分類本身不能是別人的子分類（最多兩層）');
+    }
   }
 
   private async getOrThrow(spaceId: string, id: string) {
