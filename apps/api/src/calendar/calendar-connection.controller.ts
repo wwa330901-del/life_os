@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Logger, Param, Post, UseGuards } from '@nestjs/common';
+import { BadGatewayException, Body, Controller, Delete, Get, Logger, Param, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload';
@@ -57,7 +57,12 @@ export class CalendarConnectionController {
   @Post('sync')
   async syncNow(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string) {
     await this.access.assertCalendarSpace(user.id, spaceId);
-    await this.sync.syncSpace(spaceId);
+    try {
+      await this.sync.syncSpace(spaceId);
+    } catch (error) {
+      this.logger.warn(`手動同步失敗：${error}`);
+      throw new BadGatewayException(`跟 Google 行事曆同步失敗：${error instanceof Error ? error.message : error}`);
+    }
     return { synced: true };
   }
 }
