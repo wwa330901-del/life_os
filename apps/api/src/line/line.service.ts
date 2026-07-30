@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
+import { LineRichMenuService, type MenuAction } from './line-rich-menu.service';
 import {
   FinanceAccountType,
   FinanceCategoryKind,
@@ -32,13 +33,18 @@ interface QuickReplyItem {
 const LINK_CODE_TTL_MINUTES = 10;
 /** LINE caps a message's quickReply.items at 13. */
 const MAX_QUICK_REPLY_ITEMS = 13;
+/** LINE caps a rich menu at 20 tappable areas; one is always reserved for
+ * the 取消 button appended by `LineRichMenuService.createSelectionMenu`. */
+const MAX_RICH_MENU_SELECTION_ITEMS = 19;
 
 /**
  * Backs the 記帳 LINE bot: verifying LINE's webhook signature, linking a
  * LINE account to a life_os user (via a short-lived code generated in the
  * app), and recording `FinanceTransaction` rows against that user's
- * personal space — either via a guided quick-reply flow (支出/收入 → 分類 →
- * 帳戶, then just type the amount) or a direct one-line command for anyone
+ * personal space — either via a guided flow driven entirely by the bottom
+ * rich menu (支出/收入 → 分類 → 帳戶, each tap swaps in the next stage's
+ * menu via `LineRichMenuService`, then the user only ever has to type the
+ * amount) or a direct one-line command for anyone
  * who prefers typing ("支出 120 午餐 現金"), plus a "總覽" command reading
  * back balances/spending. Writes go straight through Prisma rather than the
  * HTTP-facing `Finance*Service` layer (built around "an authenticated user
@@ -60,6 +66,7 @@ export class LineService {
     private readonly prisma: PrismaService,
     private readonly financeAccountsService: FinanceAccountsService,
     private readonly financeTransactionsService: FinanceTransactionsService,
+    private readonly richMenu: LineRichMenuService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -93,7 +100,7 @@ export class LineService {
 
         if (event.type === 'postback' && event.postback?.data) {
           if (!link) continue;
-          await this.handlePostback(link.id, link.userId, event.postback.data, replyToken);
+          await this.handlePostback(link.id, link.userId, lineUserId, event.postback.data, replyToken);
           continue;
         }
 
@@ -105,6 +112,7 @@ export class LineService {
           await this.handleTextForLinkedUser(
             link.id,
             link.userId,
+            lineUserId,
             link.pendingDraft as PendingDraft | null,
             link.activeProjectId,
             text,
@@ -137,12 +145,19 @@ export class LineService {
 
   // --- Guided quick-reply flow ---
 
-  private async handlePostback(linkId: string, userId: string, data: string, replyToken: string) {
+  private async handlePostback(
+    linkId: string,
+    userId: string,
+    lineUserId: string,
+    data: string,
+    replyToken: string,
+  ) {
     if (data === 'cancel') {
       await this.prisma.lineAccountLink.update({
         where: { id: linkId },
         data: { pendingDraft: Prisma.DbNull },
       });
+      await this.revertToDefaultMenu(linkId, lineUserId);
       await this.reply(replyToken, '已取消。');
       return;
     }
@@ -151,19 +166,20 @@ export class LineService {
     if (key === 't' && (value === 'EXPENSE' || value === 'INCOME')) {
       const draft: PendingDraft = { type: value };
       await this.saveDraft(linkId, draft);
-      await this.promptCategory(userId, draft, replyToken);
+      await this.promptCategory(userId, linkId, lineUserId, draft, replyToken);
       return;
     }
     if (key === 'c') {
       const draft: PendingDraft = { type: await this.currentType(linkId), categoryId: value };
       await this.saveDraft(linkId, draft);
-      await this.promptAccount(userId, draft, replyToken);
+      await this.promptAccount(userId, linkId, lineUserId, draft, replyToken);
       return;
     }
     if (key === 'a') {
       const existing = await this.prisma.lineAccountLink.findUnique({ where: { id: linkId } });
       const draft: PendingDraft = { ...(existing?.pendingDraft as PendingDraft | null), accountId: value };
       await this.saveDraft(linkId, draft);
+      await this.revertToDefaultMenu(linkId, lineUserId);
       await this.reply(replyToken, '請輸入金額，可以加備註，例如「120 午餐」。');
       return;
     }
@@ -171,6 +187,55 @@ export class LineService {
       await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { activeProjectId: value } });
       await this.sendTodoOverview(value, replyToken);
     }
+  }
+
+  // --- Rich-menu stage switching: each guided-flow step swaps the user's
+  // bottom menu instead of showing chat quick-reply bubbles, so the whole
+  // flow (支出/收入 → 分類 → 帳戶) happens by tapping the persistent menu and
+  // the user only ever types the final amount. ---
+
+  private async transitionToEphemeralMenu(
+    linkId: string,
+    lineUserId: string,
+    items: MenuAction[],
+    menuName: string,
+  ): Promise<void> {
+    await this.deletePendingEphemeralMenu(linkId);
+    const richMenuId = await this.richMenu.createSelectionMenu(items, menuName);
+    await this.richMenu.linkToUser(lineUserId, richMenuId);
+    await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { pendingRichMenuId: richMenuId } });
+  }
+
+  private async revertToDefaultMenu(linkId: string, lineUserId: string): Promise<void> {
+    await this.deletePendingEphemeralMenu(linkId);
+    await this.richMenu.unlinkUser(lineUserId);
+  }
+
+  /** Called whenever an incoming message is about to be handled as
+   * something other than continuing the 記帳 guided flow (代辦事項 command,
+   * 總覽, one-line 記帳 command, ...) — if a flow was mid-way (pendingDraft
+   * truthy), its bottom-menu override may still be showing a 分類/帳戶 stage
+   * menu, so this cleans that up before moving on. No-op (cheap) if the
+   * flow was already at rest. */
+  private async abandonFinanceFlowIfActive(
+    linkId: string,
+    lineUserId: string,
+    pendingDraft: PendingDraft | null,
+  ): Promise<void> {
+    if (!pendingDraft) return;
+    await this.saveDraft(linkId, {});
+    await this.revertToDefaultMenu(linkId, lineUserId);
+  }
+
+  /** Deletes and clears the previous per-user ephemeral menu (分類/帳戶
+   * selection), if any — always call before linking the next stage so
+   * stale menus don't accumulate. Returns whether one existed. */
+  private async deletePendingEphemeralMenu(linkId: string): Promise<boolean> {
+    const existing = await this.prisma.lineAccountLink.findUnique({ where: { id: linkId } });
+    if (!existing?.pendingRichMenuId) return false;
+    await this.richMenu.deleteMenu(existing.pendingRichMenuId);
+    await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { pendingRichMenuId: null } });
+    return true;
   }
 
   private async currentType(linkId: string): Promise<'EXPENSE' | 'INCOME' | undefined> {
@@ -185,16 +250,21 @@ export class LineService {
     });
   }
 
-  private async startFlow(linkId: string, replyToken: string) {
+  private async startFlow(linkId: string, lineUserId: string, replyToken: string) {
     await this.saveDraft(linkId, {});
-    await this.replyWithQuickReply(replyToken, '要記支出還是收入？', [
-      { label: '支出', data: 't:EXPENSE' },
-      { label: '收入', data: 't:INCOME' },
-      { label: '取消', data: 'cancel' },
-    ]);
+    await this.deletePendingEphemeralMenu(linkId);
+    const typeMenuId = await this.richMenu.getOrCreateTypeMenu();
+    await this.richMenu.linkToUser(lineUserId, typeMenuId);
+    await this.reply(replyToken, '請用下方選單選擇支出還是收入。');
   }
 
-  private async promptCategory(userId: string, draft: PendingDraft, replyToken: string) {
+  private async promptCategory(
+    userId: string,
+    linkId: string,
+    lineUserId: string,
+    draft: PendingDraft,
+    replyToken: string,
+  ) {
     const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
     if (!space) {
       await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
@@ -204,19 +274,28 @@ export class LineService {
     const categories = await this.prisma.financeCategory.findMany({
       where: { spaceId: space.id, kind },
       orderBy: { sortOrder: 'asc' },
-      take: MAX_QUICK_REPLY_ITEMS - 1,
+      take: MAX_RICH_MENU_SELECTION_ITEMS,
     });
     if (categories.length === 0) {
       await this.reply(replyToken, '還沒有任何分類，請先到元序 App 記帳「分類」分頁新增。');
       return;
     }
-    await this.replyWithQuickReply(replyToken, '選分類：', [
-      ...categories.map((c) => ({ label: c.name, data: `c:${c.id}` })),
-      { label: '取消', data: 'cancel' },
-    ]);
+    await this.transitionToEphemeralMenu(
+      linkId,
+      lineUserId,
+      categories.map((c) => ({ label: c.name, data: `c:${c.id}` })),
+      `元序-分類選單-${linkId}`,
+    );
+    await this.reply(replyToken, '請用下方選單選分類。');
   }
 
-  private async promptAccount(userId: string, draft: PendingDraft, replyToken: string) {
+  private async promptAccount(
+    userId: string,
+    linkId: string,
+    lineUserId: string,
+    draft: PendingDraft,
+    replyToken: string,
+  ) {
     const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
     if (!space) {
       await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
@@ -225,16 +304,19 @@ export class LineService {
     const accounts = await this.prisma.financeAccount.findMany({
       where: { spaceId: space.id },
       orderBy: { sortOrder: 'asc' },
-      take: MAX_QUICK_REPLY_ITEMS - 1,
+      take: MAX_RICH_MENU_SELECTION_ITEMS,
     });
     if (accounts.length === 0) {
       await this.reply(replyToken, '還沒有任何帳戶，請先到元序 App 記帳「帳戶」分頁新增。');
       return;
     }
-    await this.replyWithQuickReply(replyToken, '選帳戶：', [
-      ...accounts.map((a) => ({ label: a.name, data: `a:${a.id}` })),
-      { label: '取消', data: 'cancel' },
-    ]);
+    await this.transitionToEphemeralMenu(
+      linkId,
+      lineUserId,
+      accounts.map((a) => ({ label: a.name, data: `a:${a.id}` })),
+      `元序-帳戶選單-${linkId}`,
+    );
+    await this.reply(replyToken, '請用下方選單選帳戶。');
   }
 
   // --- Free-text handling for a linked user (either finishing a draft's
@@ -247,31 +329,36 @@ export class LineService {
   private async handleTextForLinkedUser(
     linkId: string,
     userId: string,
+    lineUserId: string,
     pendingDraft: PendingDraft | null,
     activeProjectId: string | null,
     text: string,
     replyToken: string,
   ) {
     if (LineService.OVERVIEW_KEYWORDS.includes(text)) {
-      if (pendingDraft) await this.saveDraft(linkId, {});
+      await this.abandonFinanceFlowIfActive(linkId, lineUserId, pendingDraft);
       await this.sendOverview(userId, replyToken);
       return;
     }
 
     if (LineService.TODO_ENTRY_KEYWORDS.includes(text)) {
+      await this.abandonFinanceFlowIfActive(linkId, lineUserId, pendingDraft);
       await this.enterTodoFlow(linkId, userId, activeProjectId, replyToken);
       return;
     }
     if (text === '切換專案') {
+      await this.abandonFinanceFlowIfActive(linkId, lineUserId, pendingDraft);
       await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { activeProjectId: null } });
       await this.enterTodoFlow(linkId, userId, null, replyToken);
       return;
     }
     if (text.startsWith('新增')) {
+      await this.abandonFinanceFlowIfActive(linkId, lineUserId, pendingDraft);
       await this.createTodoFromText(activeProjectId, text, replyToken);
       return;
     }
     if (text.startsWith('完成')) {
+      await this.abandonFinanceFlowIfActive(linkId, lineUserId, pendingDraft);
       await this.completeTodoFromText(activeProjectId, text, replyToken);
       return;
     }
@@ -283,11 +370,12 @@ export class LineService {
 
     const command = this.parseCommand(text);
     if (command) {
+      await this.abandonFinanceFlowIfActive(linkId, lineUserId, pendingDraft);
       await this.createTransactionFromCommand(userId, command, replyToken);
       return;
     }
 
-    await this.startFlow(linkId, replyToken);
+    await this.startFlow(linkId, lineUserId, replyToken);
   }
 
   // --- 專案代辦事項 ---

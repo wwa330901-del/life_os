@@ -494,6 +494,14 @@ model LineAccountLink {
   /// created (or the flow is cancelled). Null when no flow is in progress.
   pendingDraft Json?
 
+  /// The rich-menu ID currently linked to this LINE user in place of the
+  /// channel-wide default menu, while a guided-flow stage (分類/帳戶
+  /// selection) is showing dynamically-generated buttons instead of the
+  /// static 記帳/財務總覽/代辦事項 menu. Cleared (and the menu deleted via
+  /// LINE's API) once the flow finishes, is cancelled, or moves to the next
+  /// stage — null means "showing the default menu".
+  pendingRichMenuId String?
+
   /// Which project "新增/完成/代辦" commands apply to — unlike 記帳 (always
   /// the user's own 1:1 personal space), a company-space project is
   /// ambiguous when the user belongs to more than one, so this has to be
