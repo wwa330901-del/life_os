@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api_client.dart';
 import '../../core/models/app_user.dart';
 import '../../core/theme/app_accents.dart';
 import '../../core/theme/app_theme.dart';
@@ -52,9 +53,7 @@ class SpacePickerScreen extends ConsumerWidget {
                 child: Center(
                   child: spacesAsync.when(
                     data: (spaces) {
-                      if (spaces.isEmpty) {
-                        return const Text('目前沒有可以使用的空間');
-                      }
+                      final hasCalendar = spaces.any((s) => s.type == SpaceType.calendar);
                       return Wrap(
                         alignment: WrapAlignment.center,
                         spacing: 16,
@@ -64,6 +63,24 @@ class SpacePickerScreen extends ConsumerWidget {
                             _SpaceCard(
                               space: space,
                               onTap: () => ref.read(selectedSpaceProvider.notifier).select(space),
+                            ),
+                          if (!hasCalendar)
+                            _CreateCalendarSpaceCard(
+                              onTap: () async {
+                                try {
+                                  final space = await ref
+                                      .read(apiClientProvider)
+                                      .getOrCreateCalendarSpace();
+                                  ref.invalidate(mySpacesProvider);
+                                  ref.read(selectedSpaceProvider.notifier).select(space);
+                                } on ApiException catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).showSnackBar(SnackBar(content: Text(e.message)));
+                                  }
+                                }
+                              },
                             ),
                         ],
                       );
@@ -90,9 +107,11 @@ class _SpaceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final tint = space.type == SpaceType.personal
-        ? AppAccents.personal(scheme.brightness)
-        : AppAccents.company(scheme.brightness);
+    final tint = switch (space.type) {
+      SpaceType.personal => AppAccents.personal(scheme.brightness),
+      SpaceType.calendar => AppAccents.calendar(scheme.brightness),
+      SpaceType.company => AppAccents.company(scheme.brightness),
+    };
 
     return SizedBox(
       width: 180,
@@ -112,7 +131,11 @@ class _SpaceCard extends StatelessWidget {
                   decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
                   alignment: Alignment.center,
                   child: Icon(
-                    space.type == SpaceType.personal ? Icons.person_outline : Icons.apartment,
+                    switch (space.type) {
+                      SpaceType.personal => Icons.person_outline,
+                      SpaceType.calendar => Icons.calendar_today_outlined,
+                      SpaceType.company => Icons.apartment,
+                    },
                     size: 18,
                     color: scheme.onSurface,
                   ),
@@ -126,7 +149,58 @@ class _SpaceCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  space.type == SpaceType.personal ? '個人空間' : '公司空間 · ${space.role}',
+                  switch (space.type) {
+                    SpaceType.personal => '個人空間',
+                    SpaceType.calendar => '行事曆空間',
+                    SpaceType.company => '公司空間 · ${space.role}',
+                  },
+                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateCalendarSpaceCard extends StatelessWidget {
+  const _CreateCalendarSpaceCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      width: 180,
+      height: 140,
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.add, size: 18, color: scheme.onSurface.withValues(alpha: 0.7)),
+                ),
+                const Spacer(),
+                const Text('新增行事曆', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(
+                  '建立你的行事曆空間',
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],

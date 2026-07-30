@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'models/admin_models.dart';
 import 'models/app_user.dart';
+import 'models/calendar_event.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
 import 'models/generated_document.dart';
@@ -106,6 +107,92 @@ class ApiClient {
     return body
         .map((e) => SpaceSummary.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<SpaceSummary> getOrCreateCalendarSpace() async {
+    final body = await _post('/spaces/calendar', {});
+    return SpaceSummary.fromJson(body);
+  }
+
+  Future<List<CalendarEvent>> listCalendarEvents(String spaceId, {DateTime? from, DateTime? to}) async {
+    final params = <String, String>{
+      if (from != null) 'from': from.toUtc().toIso8601String(),
+      if (to != null) 'to': to.toUtc().toIso8601String(),
+    };
+    final query = params.isEmpty
+        ? ''
+        : '?${params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
+    final body = await _getList('/spaces/$spaceId/calendar/events$query');
+    return body.map((e) => CalendarEvent.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<CalendarEvent> createCalendarEvent({
+    required String spaceId,
+    required String title,
+    required DateTime startAt,
+    DateTime? endAt,
+    bool allDay = false,
+    String? location,
+    String? notes,
+  }) async {
+    final body = await _post('/spaces/$spaceId/calendar/events', {
+      'title': title,
+      'startAt': startAt.toUtc().toIso8601String(),
+      if (endAt != null) 'endAt': endAt.toUtc().toIso8601String(),
+      'allDay': allDay,
+      if (location != null) 'location': location,
+      if (notes != null) 'notes': notes,
+    });
+    return CalendarEvent.fromJson(body);
+  }
+
+  Future<CalendarEvent> updateCalendarEvent({
+    required String spaceId,
+    required String eventId,
+    String? title,
+    DateTime? startAt,
+    DateTime? endAt,
+    bool clearEndAt = false,
+    bool? allDay,
+    String? location,
+    bool clearLocation = false,
+    String? notes,
+    bool clearNotes = false,
+  }) async {
+    final body = await _patch('/spaces/$spaceId/calendar/events/$eventId', {
+      if (title != null) 'title': title,
+      if (startAt != null) 'startAt': startAt.toUtc().toIso8601String(),
+      if (endAt != null) 'endAt': endAt.toUtc().toIso8601String() else if (clearEndAt) 'endAt': null,
+      if (allDay != null) 'allDay': allDay,
+      if (location != null) 'location': location else if (clearLocation) 'location': null,
+      if (notes != null) 'notes': notes else if (clearNotes) 'notes': null,
+    });
+    return CalendarEvent.fromJson(body);
+  }
+
+  Future<void> deleteCalendarEvent({required String spaceId, required String eventId}) async {
+    await _delete('/spaces/$spaceId/calendar/events/$eventId');
+  }
+
+  Future<GoogleCalendarConnectionStatus> getCalendarConnectionStatus(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/calendar/connection');
+    return GoogleCalendarConnectionStatus.fromJson(body);
+  }
+
+  Future<void> connectGoogleCalendar({
+    required String spaceId,
+    required String code,
+    required String redirectUri,
+  }) async {
+    await _post('/spaces/$spaceId/calendar/connect', {'code': code, 'redirectUri': redirectUri});
+  }
+
+  Future<void> disconnectGoogleCalendar(String spaceId) async {
+    await _delete('/spaces/$spaceId/calendar/connect');
+  }
+
+  Future<void> syncCalendarNow(String spaceId) async {
+    await _post('/spaces/$spaceId/calendar/sync', {});
   }
 
   Future<List<SpaceMember>> listSpaceMembers(String spaceId) async {

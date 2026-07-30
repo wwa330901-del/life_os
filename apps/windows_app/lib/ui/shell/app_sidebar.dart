@@ -163,9 +163,11 @@ class _SidebarPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final session = ref.watch(authControllerProvider).value;
-    final tint = space.type == SpaceType.personal
-        ? AppAccents.personal(scheme.brightness)
-        : AppAccents.company(scheme.brightness);
+    final tint = switch (space.type) {
+      SpaceType.personal => AppAccents.personal(scheme.brightness),
+      SpaceType.calendar => AppAccents.calendar(scheme.brightness),
+      SpaceType.company => AppAccents.company(scheme.brightness),
+    };
 
     return Container(
       decoration: BoxDecoration(
@@ -212,7 +214,11 @@ class _SidebarPanel extends ConsumerWidget {
                         decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(8)),
                         alignment: Alignment.center,
                         child: Icon(
-                          space.type == SpaceType.personal ? Icons.person_outline : Icons.apartment,
+                          switch (space.type) {
+                            SpaceType.personal => Icons.person_outline,
+                            SpaceType.calendar => Icons.calendar_today_outlined,
+                            SpaceType.company => Icons.apartment,
+                          },
                           size: 16,
                           color: scheme.onSurface,
                         ),

@@ -20,10 +20,30 @@ export class SpacesService {
     });
   }
 
-  /** All spaces a user is allowed to see: their personal space + any company they're a member of. */
+  /** Created on demand (not at signup, unlike the personal space) the first
+   * time a user wants a calendar. `calendarOwnerUserId` being `@unique`
+   * means a second call for the same user just returns their existing one
+   * rather than erroring — the "space list" screen's create button is
+   * idempotent from the user's point of view. */
+  async getOrCreateCalendarSpace(userId: string) {
+    const existing = await this.prisma.space.findUnique({ where: { calendarOwnerUserId: userId } });
+    if (existing) return existing;
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    return this.prisma.space.create({
+      data: {
+        type: SpaceType.CALENDAR,
+        name: `${user.name} 的行事曆`,
+        calendarOwnerUserId: userId,
+      },
+    });
+  }
+
+  /** All spaces a user is allowed to see: their personal space, their
+   * calendar space (if created), + any company they're a member of. */
   async listForUser(userId: string) {
-    const [personalSpace, memberships] = await Promise.all([
+    const [personalSpace, calendarSpace, memberships] = await Promise.all([
       this.prisma.space.findUnique({ where: { ownerUserId: userId } }),
+      this.prisma.space.findUnique({ where: { calendarOwnerUserId: userId } }),
       this.prisma.companyMembership.findMany({
         where: { userId },
         include: { space: true },
@@ -37,17 +57,11 @@ export class SpacesService {
       role: m.role,
     }));
 
-    const spaces = personalSpace
-      ? [
-          {
-            id: personalSpace.id,
-            type: personalSpace.type,
-            name: personalSpace.name,
-            role: null,
-          },
-          ...companySpaces,
-        ]
-      : companySpaces;
+    const spaces = [
+      ...(personalSpace ? [{ id: personalSpace.id, type: personalSpace.type, name: personalSpace.name, role: null }] : []),
+      ...(calendarSpace ? [{ id: calendarSpace.id, type: calendarSpace.type, name: calendarSpace.name, role: null }] : []),
+      ...companySpaces,
+    ];
 
     return spaces;
   }
@@ -63,6 +77,13 @@ export class SpacesService {
 
     if (space.type === SpaceType.PERSONAL) {
       if (space.ownerUserId !== userId) {
+        throw new ForbiddenException('You do not have access to this space');
+      }
+      return { ...space, role: null };
+    }
+
+    if (space.type === SpaceType.CALENDAR) {
+      if (space.calendarOwnerUserId !== userId) {
         throw new ForbiddenException('You do not have access to this space');
       }
       return { ...space, role: null };

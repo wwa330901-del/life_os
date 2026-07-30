@@ -14,6 +14,7 @@ datasource db {
 enum SpaceType {
   PERSONAL
   COMPANY
+  CALENDAR
 }
 
 enum MembershipRole {
@@ -84,11 +85,13 @@ model User {
   isPlatformAdmin Boolean @default(false)
 
   personalSpace      Space?              @relation("PersonalSpaceOwner")
+  calendarSpace      Space?              @relation("CalendarSpaceOwner")
   memberships        CompanyMembership[]
   projectMemberships ProjectMember[]
   generatedDocuments GeneratedDocument[]
   lineAccountLink    LineAccountLink?
   assignedTodos      ProjectTodo[]
+  googleCalendarConnections GoogleCalendarConnection[]
 }
 
 model Space {
@@ -101,6 +104,12 @@ model Space {
   ownerUserId String? @unique
   owner       User?   @relation("PersonalSpaceOwner", fields: [ownerUserId], references: [id])
 
+  // Only set when type = CALENDAR. Each user has at most one calendar space
+  // — a separate 1:1-per-user slot from the personal space above (a user
+  // can have both), created on demand rather than at signup.
+  calendarOwnerUserId String? @unique
+  calendarOwner       User?   @relation("CalendarSpaceOwner", fields: [calendarOwnerUserId], references: [id])
+
   memberships         CompanyMembership[]
   projects            Project[]
   propertyDefinitions ProjectPropertyDefinition[]
@@ -110,6 +119,60 @@ model Space {
   financeCategories   FinanceCategory[]
   financeTransactions FinanceTransaction[]
   financeBudgets      FinanceBudget[]
+  calendarEvents      CalendarEvent[]
+  googleCalendarConnection GoogleCalendarConnection?
+}
+
+/// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
+/// the calendar screen additionally overlays project todos' due dates
+/// read-only alongside these, but editing a todo still happens on its
+/// project's 代辦事項 tab, not here.
+model CalendarEvent {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  title    String
+  location String?
+  notes    String?
+  startAt  DateTime
+  endAt    DateTime?
+  allDay   Boolean   @default(false)
+
+  /// Google Calendar's event id, once pushed/pulled — null means either
+  /// "not yet synced" or "this space has no Google connection".
+  googleEventId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([spaceId, startAt])
+  @@unique([spaceId, googleEventId])
+}
+
+/// A CALENDAR space's link to one Google Calendar (always the connecting
+/// user's "primary" calendar for now — no per-space calendar picker yet).
+/// `refreshToken` follows this codebase's existing pattern of storing
+/// third-party secrets as plain columns (no field-level encryption anywhere
+/// else in this schema either) — Postgres access itself is the trust
+/// boundary. `syncToken` is Google's incremental-sync cursor; null forces a
+/// full resync (e.g. right after connecting, or if Google invalidates it).
+model GoogleCalendarConnection {
+  id      String @id @default(uuid())
+  spaceId String @unique
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  refreshToken         String
+  accessToken          String?
+  accessTokenExpiresAt DateTime?
+  syncToken            String?
+  lastSyncedAt         DateTime?
+
+  connectedByUserId String
+  connectedBy       User   @relation(fields: [connectedByUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// One document template a space can generate for its projects — a

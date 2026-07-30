@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
+import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { LineRichMenuService, type MenuAction } from './line-rich-menu.service';
 import {
   FinanceAccountType,
@@ -67,6 +68,7 @@ export class LineService {
     private readonly financeAccountsService: FinanceAccountsService,
     private readonly financeTransactionsService: FinanceTransactionsService,
     private readonly richMenu: LineRichMenuService,
+    private readonly calendarEventsService: CalendarEventsService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -352,6 +354,11 @@ export class LineService {
       await this.enterTodoFlow(linkId, userId, null, replyToken);
       return;
     }
+    if (text.startsWith('新增行事曆')) {
+      await this.abandonFinanceFlowIfActive(linkId, lineUserId, pendingDraft);
+      await this.createCalendarEventFromText(userId, text, replyToken);
+      return;
+    }
     if (text.startsWith('新增')) {
       await this.abandonFinanceFlowIfActive(linkId, lineUserId, pendingDraft);
       await this.createTodoFromText(activeProjectId, text, replyToken);
@@ -523,6 +530,79 @@ export class LineService {
       data: { done: true, completedAt: new Date() },
     });
     await this.reply(replyToken, `已完成「${partial[0].title}」。`);
+  }
+
+  // --- 行事曆 ---
+
+  /** "新增行事曆 日期 時間 項目 [@地點]" — date is M/D or YYYY/M/D, time is
+   * H:MM or 全天 for an all-day event, an optional trailing "@地點" token
+   * sets location. Always the caller's own 1:1 calendar space — unlike
+   * 專案代辦事項 there's no multi-space ambiguity to resolve here. */
+  private async createCalendarEventFromText(userId: string, text: string, replyToken: string) {
+    const parsed = this.parseCalendarCommand(text);
+    if (!parsed) {
+      await this.reply(
+        replyToken,
+        '看不懂格式，請用「新增行事曆 日期 時間 項目 [@地點]」，例如「新增行事曆 7/31 14:00 開會 @台北辦公室」；全天活動時間可以打「全天」。',
+      );
+      return;
+    }
+
+    const space = await this.prisma.space.findUnique({ where: { calendarOwnerUserId: userId } });
+    if (!space) {
+      await this.reply(replyToken, '你還沒有行事曆空間，請先到元序 App 建立一個。');
+      return;
+    }
+
+    await this.calendarEventsService.create(userId, space.id, {
+      title: parsed.title,
+      startAt: parsed.startAt.toISOString(),
+      allDay: parsed.allDay,
+      location: parsed.location ?? undefined,
+    });
+
+    const dateLabel = `${parsed.startAt.getMonth() + 1}/${parsed.startAt.getDate()}`;
+    const timeLabel = parsed.allDay
+      ? '全天'
+      : `${String(parsed.startAt.getHours()).padStart(2, '0')}:${String(parsed.startAt.getMinutes()).padStart(2, '0')}`;
+    await this.reply(replyToken, `已新增行事曆「${parsed.title}」（${dateLabel} ${timeLabel}）。`);
+  }
+
+  private parseCalendarCommand(
+    text: string,
+  ): { startAt: Date; allDay: boolean; title: string; location: string | null } | null {
+    const rest = text.replace(/^新增行事曆\s*/, '').trim();
+    const tokens = rest.split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) return null;
+
+    const dateParts = tokens[0].split('/').map(Number);
+    if (dateParts.length < 2 || dateParts.length > 3 || dateParts.some((n) => Number.isNaN(n))) return null;
+    const [year, month, day] =
+      dateParts.length === 3 ? dateParts : [new Date().getFullYear(), dateParts[0], dateParts[1]];
+
+    const timeToken = tokens[1];
+    const allDay = timeToken === '全天';
+    let startAt: Date;
+    if (allDay) {
+      startAt = new Date(year, month - 1, day);
+    } else {
+      const timeParts = timeToken.split(':').map(Number);
+      if (timeParts.length !== 2 || timeParts.some((n) => Number.isNaN(n))) return null;
+      startAt = new Date(year, month - 1, day, timeParts[0], timeParts[1]);
+    }
+    if (Number.isNaN(startAt.getTime())) return null;
+
+    let titleTokens = tokens.slice(2);
+    let location: string | null = null;
+    const lastToken = titleTokens[titleTokens.length - 1];
+    if (lastToken?.startsWith('@') && lastToken.length > 1) {
+      location = lastToken.slice(1);
+      titleTokens = titleTokens.slice(0, -1);
+    }
+    const title = titleTokens.join(' ');
+    if (!title) return null;
+
+    return { startAt, allDay, title, location };
   }
 
   /** 個人財務總覽：every account's current balance, today's and this

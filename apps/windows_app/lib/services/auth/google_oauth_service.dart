@@ -16,9 +16,27 @@ class GoogleOAuthResult {
 /// consent screen, catch the redirect on a one-shot local loopback server,
 /// and hand the raw authorization code back to the caller. The backend
 /// (holding the client_secret) does the actual code-for-token exchange —
-/// see `AuthService.googleLogin` — so nothing sensitive lives in this app.
+/// see `AuthService.googleLogin` / `GoogleCalendarService.connect` — so
+/// nothing sensitive lives in this app.
 class GoogleOAuthService {
-  Future<GoogleOAuthResult> signIn() async {
+  /// Plain sign-in — just enough scope to identify the user, no offline
+  /// access requested (nothing beyond this one login needs a token).
+  Future<GoogleOAuthResult> signIn() => _runFlow(scope: 'openid email profile');
+
+  /// Incremental consent for a 行事曆空間's Google Calendar connection —
+  /// `access_type=offline` + `prompt=consent` so Google actually returns a
+  /// refresh token (it's otherwise only issued on a user's *first* consent
+  /// for a given scope, which isn't reliable to depend on), and the
+  /// calendar scope on top of plain sign-in's.
+  Future<GoogleOAuthResult> connectCalendar() => _runFlow(
+    scope: 'openid email profile https://www.googleapis.com/auth/calendar',
+    extraParams: {'access_type': 'offline', 'prompt': 'consent'},
+  );
+
+  Future<GoogleOAuthResult> _runFlow({
+    required String scope,
+    Map<String, String> extraParams = const {},
+  }) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final redirectUri = 'http://127.0.0.1:${server.port}';
 
@@ -26,7 +44,8 @@ class GoogleOAuthService {
       'client_id': googleOAuthClientId,
       'redirect_uri': redirectUri,
       'response_type': 'code',
-      'scope': 'openid email profile',
+      'scope': scope,
+      ...extraParams,
     });
 
     final completer = Completer<String>();
@@ -35,14 +54,14 @@ class GoogleOAuthService {
       final error = request.uri.queryParameters['error'];
       request.response.headers.contentType = ContentType.html;
       if (code != null) {
-        request.response.write('<html><body><h2>登入完成，可以關閉這個分頁。</h2></body></html>');
+        request.response.write('<html><body><h2>授權完成，可以關閉這個分頁。</h2></body></html>');
         if (!completer.isCompleted) completer.complete(code);
       } else {
         request.response.write(
-          '<html><body><h2>登入失敗：${error ?? '未知錯誤'}</h2></body></html>',
+          '<html><body><h2>授權失敗：${error ?? '未知錯誤'}</h2></body></html>',
         );
         if (!completer.isCompleted) {
-          completer.completeError(StateError(error ?? 'Google sign-in failed'));
+          completer.completeError(StateError(error ?? 'Google OAuth failed'));
         }
       }
       await request.response.close();

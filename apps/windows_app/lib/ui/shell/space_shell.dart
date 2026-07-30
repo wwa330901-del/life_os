@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/app_user.dart';
 import '../../state/space_provider.dart';
+import '../screens/calendar/calendar_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
 import '../screens/projects/project_list_screen.dart';
 import '../screens/space/space_properties_screen.dart';
@@ -46,21 +47,24 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     // `_RootRouter` only ever builds this widget once a space is selected.
     if (space == null) return const SizedBox.shrink();
 
-    final content = space.type != SpaceType.company
-        ? DashboardView(space: space)
-        : _showPropertiesSettings
-        ? SpacePropertiesScreen(spaceId: space.id, onBack: _backToList)
-        : _openProjectId == null
-        ? ProjectListScreen(
-            spaceId: space.id,
-            spaceName: space.name,
-            onOpenProject: (id) => setState(() => _openProjectId = id),
-          )
-        : ProjectDetailScreen(
-            projectId: _openProjectId!,
-            spaceName: space.name,
-            onBackToList: _backToList,
-          );
+    final content = switch (space.type) {
+      SpaceType.personal => DashboardView(space: space),
+      SpaceType.calendar => CalendarScreen(space: space),
+      SpaceType.company when _showPropertiesSettings => SpacePropertiesScreen(
+        spaceId: space.id,
+        onBack: _backToList,
+      ),
+      SpaceType.company when _openProjectId != null => ProjectDetailScreen(
+        projectId: _openProjectId!,
+        spaceName: space.name,
+        onBackToList: _backToList,
+      ),
+      SpaceType.company => ProjectListScreen(
+        spaceId: space.id,
+        spaceName: space.name,
+        onOpenProject: (id) => setState(() => _openProjectId = id),
+      ),
+    };
 
     return Scaffold(
       body: Row(
