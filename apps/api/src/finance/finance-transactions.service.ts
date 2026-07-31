@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccessService } from './finance-access.service';
+import { FinanceBudgetsService } from './finance-budgets.service';
 import { FinanceTransactionType } from '../../generated/prisma/client.js';
 import { CreateFinanceTransactionDto } from './dto/create-finance-transaction.dto';
 import { UpdateFinanceTransactionDto } from './dto/update-finance-transaction.dto';
@@ -17,6 +18,7 @@ export class FinanceTransactionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: FinanceAccessService,
+    private readonly budgets: FinanceBudgetsService,
   ) {}
 
   /** `month` is "YYYY-MM"; omit to list everything, newest first. */
@@ -32,7 +34,7 @@ export class FinanceTransactionsService {
   async create(userId: string, spaceId: string, dto: CreateFinanceTransactionDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
     await this.validate(spaceId, dto);
-    return this.prisma.financeTransaction.create({
+    const transaction = await this.prisma.financeTransaction.create({
       data: {
         spaceId,
         type: dto.type,
@@ -44,6 +46,10 @@ export class FinanceTransactionsService {
         note: dto.note,
       },
     });
+    if (transaction.type === FinanceTransactionType.EXPENSE && transaction.categoryId) {
+      await this.budgets.notifyIfOverspent(spaceId, transaction.categoryId, transaction.date);
+    }
+    return transaction;
   }
 
   async update(userId: string, spaceId: string, id: string, dto: UpdateFinanceTransactionDto) {

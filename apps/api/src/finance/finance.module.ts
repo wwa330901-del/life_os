@@ -34,6 +34,6 @@ import { FinanceRecurringTransactionsService } from './finance-recurring-transac
   // exact same balance/summary logic as the app's own finance screens,
   // instead of a second copy of the derived-balance math drifting out of
   // sync with it.
-  exports: [FinanceAccountsService, FinanceTransactionsService],
+  exports: [FinanceAccountsService, FinanceTransactionsService, FinanceBudgetsService],
 })
 export class FinanceModule {}

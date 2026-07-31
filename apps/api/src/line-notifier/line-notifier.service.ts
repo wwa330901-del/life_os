@@ -21,7 +21,12 @@ export class LineNotifierService {
   async notifyBySpace(spaceId: string, text: string): Promise<void> {
     const space = await this.prisma.space.findUnique({ where: { id: spaceId } });
     if (!space?.ownerUserId) return;
-    const link = await this.prisma.lineAccountLink.findUnique({ where: { userId: space.ownerUserId } });
+    await this.notifyByUser(space.ownerUserId, text);
+  }
+
+  /** No-op if this user never linked a LINE account. */
+  async notifyByUser(userId: string, text: string): Promise<void> {
+    const link = await this.prisma.lineAccountLink.findUnique({ where: { userId } });
     if (!link?.lineUserId) return;
     await this.push(link.lineUserId, text);
   }

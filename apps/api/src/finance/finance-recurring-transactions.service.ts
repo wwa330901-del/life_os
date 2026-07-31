@@ -104,7 +104,7 @@ export class FinanceRecurringTransactionsService {
    * daily rather than checking "is today the day" once a month so a
    * missed run (e.g. Render's free tier asleep) still catches up the next
    * time it wakes, as long as that's still within the same month. */
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  @Cron(CronExpression.EVERY_DAY_AT_9AM, { timeZone: 'Asia/Taipei' })
   async processDueRecurringTransactions() {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;

@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
+import { FinanceBudgetsService } from '../finance/finance-budgets.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import {
   FinanceAccountType,
@@ -83,6 +84,7 @@ export class LineService {
     private readonly prisma: PrismaService,
     private readonly financeAccountsService: FinanceAccountsService,
     private readonly financeTransactionsService: FinanceTransactionsService,
+    private readonly financeBudgetsService: FinanceBudgetsService,
     private readonly calendarEventsService: CalendarEventsService,
   ) {}
 
@@ -306,6 +308,7 @@ export class LineService {
       return true;
     }
 
+    const transactionDate = new Date();
     await this.prisma.financeTransaction.create({
       data: {
         spaceId: space.id,
@@ -313,10 +316,13 @@ export class LineService {
         amount: parsed.amount,
         accountId,
         categoryId: parsed.categoryId,
-        date: new Date(),
+        date: transactionDate,
         note: parsed.note,
       },
     });
+    if (parsed.type === FinanceTransactionType.EXPENSE && parsed.categoryId) {
+      await this.financeBudgetsService.notifyIfOverspent(space.id, parsed.categoryId, transactionDate);
+    }
 
     const account = accounts.find((a) => a.id === accountId);
     const category = parsed.categoryId ? categories.find((c) => c.id === parsed.categoryId) : null;

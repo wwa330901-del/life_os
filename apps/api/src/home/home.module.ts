@@ -8,5 +8,6 @@ import { HomeService } from './home.service';
   imports: [ProjectsModule, FinanceModule],
   controllers: [HomeController],
   providers: [HomeService],
+  exports: [HomeService],
 })
 export class HomeModule {}

@@ -96,8 +96,10 @@ export class HomeService {
 
   /** One entry per project with anything relevant today — a project with
    * nothing planned and nothing actually recorded today is left out
-   * entirely rather than cluttering the dashboard with idle projects. */
-  private async getProjectSummary(userId: string) {
+   * entirely rather than cluttering the dashboard with idle projects.
+   * Public — also reused by `ProjectDigestService`'s evening LINE digest
+   * for "today's planned items with no matching actual record yet". */
+  async getProjectSummary(userId: string) {
     const memberships = await this.prisma.projectMember.findMany({
       where: { userId },
       include: { project: { include: { space: true } } },

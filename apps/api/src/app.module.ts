@@ -13,6 +13,7 @@ import { FinanceModule } from './finance/finance.module';
 import { LineModule } from './line/line.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { HomeModule } from './home/home.module';
+import { ProjectDigestModule } from './project-digest/project-digest.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { HomeModule } from './home/home.module';
     LineModule,
     CalendarModule,
     HomeModule,
+    ProjectDigestModule,
   ],
   controllers: [AppController],
   providers: [AppService],
