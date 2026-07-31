@@ -4,7 +4,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccessService } from './finance-access.service';
 import { FinanceTransactionsService } from './finance-transactions.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
-import { FinanceTransactionType } from '../../generated/prisma/client.js';
+import {
+  FinanceRecurringHolidayAdjustment,
+  FinanceTransactionType,
+} from '../../generated/prisma/client.js';
+import { effectiveTriggerDate } from './finance-recurring-schedule';
 import { CreateFinanceRecurringTransactionDto } from './dto/create-finance-recurring-transaction.dto';
 import { UpdateFinanceRecurringTransactionDto } from './dto/update-finance-recurring-transaction.dto';
 
@@ -17,6 +21,7 @@ type RecurringWithRelations = {
   accountId: string;
   toAccountId: string | null;
   categoryId: string | null;
+  holidayAdjustment: FinanceRecurringHolidayAdjustment;
   account: { name: string };
   toAccount: { name: string } | null;
   category: { name: string } | null;
@@ -53,6 +58,7 @@ export class FinanceRecurringTransactionsService {
         toAccountId: dto.type === FinanceTransactionType.TRANSFER ? dto.toAccountId : null,
         categoryId: dto.type === FinanceTransactionType.TRANSFER ? null : dto.categoryId,
         dayOfMonth: dto.dayOfMonth,
+        holidayAdjustment: dto.holidayAdjustment ?? FinanceRecurringHolidayAdjustment.NONE,
         note: dto.note,
       },
     });
@@ -77,6 +83,7 @@ export class FinanceRecurringTransactionsService {
         categoryId: merged.type === FinanceTransactionType.TRANSFER ? null : merged.categoryId,
         ...(dto.amount !== undefined && { amount: dto.amount }),
         ...(dto.dayOfMonth !== undefined && { dayOfMonth: dto.dayOfMonth }),
+        ...(dto.holidayAdjustment !== undefined && { holidayAdjustment: dto.holidayAdjustment }),
         ...(dto.note !== undefined && { note: dto.note }),
         ...(dto.active !== undefined && { active: dto.active }),
       },
@@ -97,10 +104,10 @@ export class FinanceRecurringTransactionsService {
     return row;
   }
 
-  /** Once a day: any active recurring entry whose `dayOfMonth` matches
-   * today — clamped to the month's actual last day, so "day 31" still
-   * fires in a 30-day month, and "day 31" in February fires on the 28th
-   * (or 29th) — and hasn't already fired this month gets processed. Runs
+  /** Once a day: any active recurring entry whose effective trigger date —
+   * `dayOfMonth` clamped to the month's actual last day, then shifted by
+   * `holidayAdjustment` if that date falls on a weekend or Taiwan holiday —
+   * matches today, and hasn't already fired this month, gets processed. Runs
    * daily rather than checking "is today the day" once a month so a
    * missed run (e.g. Render's free tier asleep) still catches up the next
    * time it wakes, as long as that's still within the same month. */
@@ -117,8 +124,14 @@ export class FinanceRecurringTransactionsService {
     });
 
     for (const r of due) {
-      const triggerDay = Math.min(r.dayOfMonth, lastDayOfMonth);
-      if (triggerDay !== today) continue;
+      const triggerDate = effectiveTriggerDate(
+        now.getFullYear(),
+        now.getMonth(),
+        r.dayOfMonth,
+        lastDayOfMonth,
+        r.holidayAdjustment,
+      );
+      if (triggerDate.getUTCDate() !== today) continue;
 
       try {
         await this.fire(r, currentMonth);

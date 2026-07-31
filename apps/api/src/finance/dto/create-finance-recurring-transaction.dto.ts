@@ -1,5 +1,8 @@
 import { IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { FinanceTransactionType } from '../../../generated/prisma/client.js';
+import {
+  FinanceRecurringHolidayAdjustment,
+  FinanceTransactionType,
+} from '../../../generated/prisma/client.js';
 
 export class CreateFinanceRecurringTransactionDto {
   @IsEnum(FinanceTransactionType)
@@ -29,6 +32,12 @@ export class CreateFinanceRecurringTransactionDto {
   @Min(1)
   @Max(31)
   dayOfMonth: number;
+
+  /// How to shift the trigger date when it lands on a weekend or Taiwan
+  /// government holiday. Defaults to NONE (don't adjust) if omitted.
+  @IsOptional()
+  @IsEnum(FinanceRecurringHolidayAdjustment)
+  holidayAdjustment?: FinanceRecurringHolidayAdjustment;
 
   @IsOptional()
   @IsString()

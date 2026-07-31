@@ -56,6 +56,30 @@ extension FinanceTransactionTypeJson on FinanceTransactionType {
   };
 }
 
+/// Whether a 定期交易 whose trigger date lands on a weekend or Taiwan
+/// government holiday should shift earlier/later to the nearest working day.
+enum FinanceRecurringHolidayAdjustment { none, earlier, later }
+
+extension FinanceRecurringHolidayAdjustmentJson on FinanceRecurringHolidayAdjustment {
+  static FinanceRecurringHolidayAdjustment fromJson(String value) => switch (value) {
+    'EARLIER' => FinanceRecurringHolidayAdjustment.earlier,
+    'LATER' => FinanceRecurringHolidayAdjustment.later,
+    _ => FinanceRecurringHolidayAdjustment.none,
+  };
+
+  String toJson() => switch (this) {
+    FinanceRecurringHolidayAdjustment.none => 'NONE',
+    FinanceRecurringHolidayAdjustment.earlier => 'EARLIER',
+    FinanceRecurringHolidayAdjustment.later => 'LATER',
+  };
+
+  String get label => switch (this) {
+    FinanceRecurringHolidayAdjustment.none => '不調整',
+    FinanceRecurringHolidayAdjustment.earlier => '提前到平日',
+    FinanceRecurringHolidayAdjustment.later => '延後到平日',
+  };
+}
+
 /// A 記帳 money container (現金/銀行/信用卡/其他) — `balance` is the server's
 /// derived running total (initialBalance plus every transaction against
 /// it), never computed on the client.
@@ -246,6 +270,7 @@ class FinanceRecurringTransaction {
     required this.toAccountId,
     required this.categoryId,
     required this.dayOfMonth,
+    required this.holidayAdjustment,
     required this.active,
     required this.note,
   });
@@ -257,6 +282,7 @@ class FinanceRecurringTransaction {
   final String? toAccountId;
   final String? categoryId;
   final int dayOfMonth;
+  final FinanceRecurringHolidayAdjustment holidayAdjustment;
   final bool active;
   final String? note;
 
@@ -268,6 +294,7 @@ class FinanceRecurringTransaction {
     toAccountId: json['toAccountId'] as String?,
     categoryId: json['categoryId'] as String?,
     dayOfMonth: json['dayOfMonth'] as int,
+    holidayAdjustment: FinanceRecurringHolidayAdjustmentJson.fromJson(json['holidayAdjustment'] as String),
     active: json['active'] as bool,
     note: json['note'] as String?,
   );

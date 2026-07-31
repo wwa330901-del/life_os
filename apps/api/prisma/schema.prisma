@@ -59,6 +59,15 @@ enum FinanceTransactionType {
   TRANSFER
 }
 
+/// How a 定期交易 whose trigger date lands on a holiday (weekend or Taiwan
+/// government holiday) should shift: not at all, to the nearest earlier
+/// working day, or to the nearest later working day.
+enum FinanceRecurringHolidayAdjustment {
+  NONE
+  EARLIER
+  LATER
+}
+
 model User {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -590,6 +599,11 @@ model FinanceRecurringTransaction {
   /// month's actual last day instead (e.g. 31 in February triggers on the
   /// 28th/29th).
   dayOfMonth Int
+
+  /// If the resulting date this month falls on a weekend or Taiwan
+  /// government holiday, whether to fire early/late instead — checked
+  /// against the same `isTaiwanHoliday` calendar used by 工期表 scheduling.
+  holidayAdjustment FinanceRecurringHolidayAdjustment @default(NONE)
 
   active Boolean @default(true)
 

@@ -1,5 +1,8 @@
 import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { FinanceTransactionType } from '../../../generated/prisma/client.js';
+import {
+  FinanceRecurringHolidayAdjustment,
+  FinanceTransactionType,
+} from '../../../generated/prisma/client.js';
 
 export class UpdateFinanceRecurringTransactionDto {
   @IsOptional()
@@ -30,6 +33,10 @@ export class UpdateFinanceRecurringTransactionDto {
   @Min(1)
   @Max(31)
   dayOfMonth?: number;
+
+  @IsOptional()
+  @IsEnum(FinanceRecurringHolidayAdjustment)
+  holidayAdjustment?: FinanceRecurringHolidayAdjustment;
 
   @IsOptional()
   @IsString()

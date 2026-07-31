@@ -62,6 +62,7 @@ class FinanceRecurringTab extends ConsumerWidget {
                         ),
                         subtitle: Text(
                           '每月 ${r.dayOfMonth} 日'
+                          '${r.holidayAdjustment == FinanceRecurringHolidayAdjustment.none ? '' : '（遇假日${r.holidayAdjustment.label}）'}'
                           '${r.amount == null ? '（金額不固定，到期只提醒）' : '（自動記帳 ${formatAmount(r.amount!)}）'}'
                           '${!r.active ? ' · 已停用' : ''}',
                         ),
@@ -184,6 +185,7 @@ class FinanceRecurringTab extends ConsumerWidget {
           toAccountId: result.toAccountId,
           categoryId: result.categoryId,
           dayOfMonth: result.dayOfMonth,
+          holidayAdjustment: result.holidayAdjustment,
           note: result.note,
         );
       } else {
@@ -197,6 +199,7 @@ class FinanceRecurringTab extends ConsumerWidget {
           toAccountId: result.type == FinanceTransactionType.transfer ? result.toAccountId : null,
           categoryId: result.categoryId,
           dayOfMonth: result.dayOfMonth,
+          holidayAdjustment: result.holidayAdjustment,
           note: result.note ?? '',
         );
       }
@@ -217,6 +220,7 @@ class _RecurringEditorResult {
     required this.toAccountId,
     required this.categoryId,
     required this.dayOfMonth,
+    required this.holidayAdjustment,
     required this.note,
   });
 
@@ -226,6 +230,7 @@ class _RecurringEditorResult {
   final String? toAccountId;
   final String? categoryId;
   final int dayOfMonth;
+  final FinanceRecurringHolidayAdjustment holidayAdjustment;
   final String? note;
 }
 
@@ -248,13 +253,35 @@ class _RecurringEditorDialogState extends State<_RecurringEditorDialog> {
   late final _amountController = TextEditingController(
     text: widget.existing?.amount == null ? '' : widget.existing!.amount!.toStringAsFixed(0),
   );
-  late final _dayController = TextEditingController(text: '${widget.existing?.dayOfMonth ?? 1}');
+  late DateTime _pickedDate = _initialPickedDate();
+  late FinanceRecurringHolidayAdjustment _holidayAdjustment =
+      widget.existing?.holidayAdjustment ?? FinanceRecurringHolidayAdjustment.none;
   late final _noteController = TextEditingController(text: widget.existing?.note ?? '');
+
+  /// existing.dayOfMonth is just a 1-31 number (no month attached) — pin it
+  /// to the current year/month so the date picker has something concrete to
+  /// show, clamped in case the current month is shorter than that day.
+  DateTime _initialPickedDate() {
+    final now = DateTime.now();
+    final day = widget.existing?.dayOfMonth ?? now.day;
+    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0).day;
+    return DateTime(now.year, now.month, day > lastDayOfMonth ? lastDayOfMonth : day);
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _pickedDate,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+    );
+    if (picked != null) setState(() => _pickedDate = picked);
+  }
 
   @override
   void dispose() {
     _amountController.dispose();
-    _dayController.dispose();
     _noteController.dispose();
     super.dispose();
   }
@@ -272,8 +299,6 @@ class _RecurringEditorDialogState extends State<_RecurringEditorDialog> {
   void _submit() {
     final accountId = _accountId;
     if (accountId == null) return;
-    final day = int.tryParse(_dayController.text);
-    if (day == null || day < 1 || day > 31) return;
     if (_type == FinanceTransactionType.transfer && (_toAccountId == null || _toAccountId == accountId)) {
       return;
     }
@@ -288,7 +313,8 @@ class _RecurringEditorDialogState extends State<_RecurringEditorDialog> {
         accountId: accountId,
         toAccountId: _type == FinanceTransactionType.transfer ? _toAccountId : null,
         categoryId: _type == FinanceTransactionType.transfer ? null : _categoryId,
-        dayOfMonth: day,
+        dayOfMonth: _pickedDate.day,
+        holidayAdjustment: _holidayAdjustment,
         note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
       ),
     );
@@ -318,10 +344,27 @@ class _RecurringEditorDialogState extends State<_RecurringEditorDialog> {
                 }),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _dayController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '每月第幾天', helperText: '1-31，超過當月天數會用當月最後一天'),
+              InkWell(
+                onTap: _pickDate,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: '日期',
+                    helperText: '選一天，之後每月同一天自動觸發（超過當月天數會用當月最後一天）',
+                    suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
+                  ),
+                  child: Text('${_pickedDate.year}年${_pickedDate.month}月${_pickedDate.day}日'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<FinanceRecurringHolidayAdjustment>(
+                initialValue: _holidayAdjustment,
+                decoration: const InputDecoration(labelText: '遇假日（週末或國定假日）'),
+                items: FinanceRecurringHolidayAdjustment.values
+                    .map((a) => DropdownMenuItem(value: a, child: Text(a.label)))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _holidayAdjustment = value);
+                },
               ),
               const SizedBox(height: 12),
               TextField(

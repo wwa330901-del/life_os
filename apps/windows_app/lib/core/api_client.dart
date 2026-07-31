@@ -812,6 +812,7 @@ class ApiClient {
     String? toAccountId,
     String? categoryId,
     required int dayOfMonth,
+    FinanceRecurringHolidayAdjustment holidayAdjustment = FinanceRecurringHolidayAdjustment.none,
     String? note,
   }) async {
     await _post('/spaces/$spaceId/finance/recurring-transactions', {
@@ -821,6 +822,7 @@ class ApiClient {
       if (toAccountId != null) 'toAccountId': toAccountId,
       if (categoryId != null) 'categoryId': categoryId,
       'dayOfMonth': dayOfMonth,
+      'holidayAdjustment': holidayAdjustment.toJson(),
       if (note != null && note.isNotEmpty) 'note': note,
     });
   }
@@ -838,6 +840,7 @@ class ApiClient {
     String? toAccountId,
     String? categoryId,
     int? dayOfMonth,
+    FinanceRecurringHolidayAdjustment? holidayAdjustment,
     String? note,
     bool? active,
   }) async {
@@ -851,6 +854,7 @@ class ApiClient {
       if (toAccountId != null) 'toAccountId': toAccountId,
       if (categoryId != null) 'categoryId': categoryId,
       if (dayOfMonth != null) 'dayOfMonth': dayOfMonth,
+      if (holidayAdjustment != null) 'holidayAdjustment': holidayAdjustment.toJson(),
       if (note != null) 'note': note,
       if (active != null) 'active': active,
     });
