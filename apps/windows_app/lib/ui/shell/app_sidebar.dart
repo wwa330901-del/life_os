@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -164,11 +163,6 @@ class _SidebarPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final session = ref.watch(authControllerProvider).value;
-    final tint = switch (space.type) {
-      SpaceType.personal => AppAccents.personal(scheme.brightness),
-      SpaceType.calendar => AppAccents.calendar(scheme.brightness),
-      SpaceType.company => AppAccents.company(scheme.brightness),
-    };
 
     return Container(
       decoration: BoxDecoration(
@@ -202,40 +196,18 @@ class _SidebarPanel extends ConsumerWidget {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => _openSpaceSwitcher(context, ref),
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(8)),
-                        alignment: Alignment.center,
-                        child: Icon(
-                          switch (space.type) {
-                            SpaceType.personal => Icons.person_outline,
-                            SpaceType.calendar => Icons.calendar_today_outlined,
-                            SpaceType.company => Icons.apartment,
-                          },
-                          size: 16,
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          space.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                        ),
-                      ),
-                      Icon(Icons.swap_horiz, size: 16, color: scheme.onSurface.withValues(alpha: 0.5)),
-                    ],
-                  ),
-                ),
+              child: Column(
+                children: [
+                  for (final s in ref.watch(mySpacesProvider).value ?? [space])
+                    _SpaceRow(
+                      space: s,
+                      selected: s.id == space.id,
+                      onTap: s.id == space.id
+                          ? null
+                          : () => ref.read(selectedSpaceProvider.notifier).select(s),
+                    ),
+                  _SpaceRow.home(onTap: () => ref.read(selectedSpaceProvider.notifier).clear()),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -272,71 +244,6 @@ class _SidebarPanel extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  /// Lets the user jump straight to another space (or back to 首頁)
-  /// without detouring through the full space-picker screen — anchored as
-  /// a popup menu right under the space-name row that opened it.
-  Future<void> _openSpaceSwitcher(BuildContext context, WidgetRef ref) async {
-    final spaces = ref.read(mySpacesProvider).value ?? const <SpaceSummary>[];
-    final others = spaces.where((s) => s.id != space.id).toList();
-
-    final box = context.findRenderObject()! as RenderBox;
-    final overlayBox = Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        box.localToGlobal(Offset.zero, ancestor: overlayBox),
-        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlayBox),
-      ),
-      Offset.zero & overlayBox.size,
-    );
-
-    const homeValue = '__home__';
-    final selected = await showMenu<String>(
-      context: context,
-      position: position,
-      items: [
-        for (final s in others)
-          PopupMenuItem(
-            value: s.id,
-            child: Row(
-              children: [
-                Icon(
-                  switch (s.type) {
-                    SpaceType.personal => Icons.person_outline,
-                    SpaceType.calendar => Icons.calendar_today_outlined,
-                    SpaceType.company => Icons.apartment,
-                  },
-                  size: 16,
-                ),
-                const SizedBox(width: 10),
-                Flexible(child: Text(s.name, overflow: TextOverflow.ellipsis)),
-              ],
-            ),
-          ),
-        if (others.isNotEmpty) const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: homeValue,
-          child: Row(
-            children: [
-              Icon(Icons.home_outlined, size: 16),
-              SizedBox(width: 10),
-              Text('回首頁'),
-            ],
-          ),
-        ),
-      ],
-    );
-
-    if (selected == null) return;
-    if (selected == homeValue) {
-      ref.read(selectedSpaceProvider.notifier).clear();
-      return;
-    }
-    final target = others.where((s) => s.id == selected).firstOrNull;
-    if (target != null) {
-      ref.read(selectedSpaceProvider.notifier).select(target);
-    }
   }
 
   Future<void> _editName(BuildContext context, WidgetRef ref, String currentName) async {
@@ -414,6 +321,78 @@ class _NavItem extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One row of the sidebar's flat space list (every space the user belongs
+/// to, listed directly — no popup detour) plus the trailing 回首頁 row via
+/// [_SpaceRow.home]. Mirrors the old single-row "current space" styling
+/// (colored type badge + name) so switching spaces looks the same as
+/// before, just without needing a click to reveal the other options first.
+class _SpaceRow extends StatelessWidget {
+  const _SpaceRow({required this.space, required this.selected, required this.onTap});
+
+  const _SpaceRow.home({required this.onTap})
+    : space = null,
+      selected = false;
+
+  final SpaceSummary? space;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final s = space;
+    final tint = s == null
+        ? scheme.onSurface.withValues(alpha: 0.12)
+        : switch (s.type) {
+            SpaceType.personal => AppAccents.personal(scheme.brightness),
+            SpaceType.calendar => AppAccents.calendar(scheme.brightness),
+            SpaceType.company => AppAccents.company(scheme.brightness),
+          };
+    final icon = s == null
+        ? Icons.home_outlined
+        : switch (s.type) {
+            SpaceType.personal => Icons.person_outline,
+            SpaceType.calendar => Icons.calendar_today_outlined,
+            SpaceType.company => Icons.apartment,
+          };
+
+    return Material(
+      color: selected ? scheme.primary.withValues(alpha: 0.14) : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(8)),
+                alignment: Alignment.center,
+                child: Icon(icon, size: 16, color: scheme.onSurface),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  s?.name ?? '回首頁',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    fontSize: 13,
+                    color: selected ? scheme.primary : scheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
