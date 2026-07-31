@@ -56,3 +56,8 @@ final financeBudgetStatusProvider = FutureProvider.autoDispose
           .read(apiClientProvider)
           .financeBudgetStatus(spaceId: query.spaceId, month: query.month);
     });
+
+final financeRecurringTransactionsProvider = FutureProvider.autoDispose
+    .family<List<FinanceRecurringTransaction>, String>((ref, spaceId) {
+      return ref.read(apiClientProvider).listFinanceRecurringTransactions(spaceId);
+    });

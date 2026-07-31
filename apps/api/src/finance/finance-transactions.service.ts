@@ -5,7 +5,7 @@ import { FinanceTransactionType } from '../../generated/prisma/client.js';
 import { CreateFinanceTransactionDto } from './dto/create-finance-transaction.dto';
 import { UpdateFinanceTransactionDto } from './dto/update-finance-transaction.dto';
 
-interface ValidateInput {
+export interface ValidateInput {
   type: FinanceTransactionType;
   accountId: string;
   toAccountId?: string | null;
@@ -135,7 +135,10 @@ export class FinanceTransactionsService {
     return transaction;
   }
 
-  private async validate(spaceId: string, input: ValidateInput) {
+  /** Shared with `FinanceRecurringTransactionsService` — a recurring entry
+   * needs the exact same account/category rules a one-off transaction
+   * does, just without a `date`/`amount` to check. */
+  async validate(spaceId: string, input: ValidateInput) {
     const account = await this.prisma.financeAccount.findUnique({ where: { id: input.accountId } });
     if (!account || account.spaceId !== spaceId) {
       throw new BadRequestException('帳戶不存在');

@@ -799,6 +799,67 @@ class ApiClient {
     await _delete('/spaces/$spaceId/finance/budgets/$budgetId');
   }
 
+  Future<List<FinanceRecurringTransaction>> listFinanceRecurringTransactions(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/finance/recurring-transactions');
+    return body.map((e) => FinanceRecurringTransaction.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createFinanceRecurringTransaction({
+    required String spaceId,
+    required FinanceTransactionType type,
+    double? amount,
+    required String accountId,
+    String? toAccountId,
+    String? categoryId,
+    required int dayOfMonth,
+    String? note,
+  }) async {
+    await _post('/spaces/$spaceId/finance/recurring-transactions', {
+      'type': type.toJson(),
+      if (amount != null) 'amount': amount,
+      'accountId': accountId,
+      if (toAccountId != null) 'toAccountId': toAccountId,
+      if (categoryId != null) 'categoryId': categoryId,
+      'dayOfMonth': dayOfMonth,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  /// [clearAmount] explicitly resets a fixed recurring amount back to
+  /// "variable" (reminder-only) — omitting [amount] on its own just means
+  /// "leave whatever it currently is alone".
+  Future<void> updateFinanceRecurringTransaction({
+    required String spaceId,
+    required String id,
+    FinanceTransactionType? type,
+    double? amount,
+    bool clearAmount = false,
+    String? accountId,
+    String? toAccountId,
+    String? categoryId,
+    int? dayOfMonth,
+    String? note,
+    bool? active,
+  }) async {
+    await _patchIgnoreBody('/spaces/$spaceId/finance/recurring-transactions/$id', {
+      if (type != null) 'type': type.toJson(),
+      if (clearAmount)
+        'amount': null
+      else if (amount != null)
+        'amount': amount,
+      if (accountId != null) 'accountId': accountId,
+      if (toAccountId != null) 'toAccountId': toAccountId,
+      if (categoryId != null) 'categoryId': categoryId,
+      if (dayOfMonth != null) 'dayOfMonth': dayOfMonth,
+      if (note != null) 'note': note,
+      if (active != null) 'active': active,
+    });
+  }
+
+  Future<void> deleteFinanceRecurringTransaction({required String spaceId, required String id}) async {
+    await _delete('/spaces/$spaceId/finance/recurring-transactions/$id');
+  }
+
   Future<List<ProjectTodo>> listProjectTodos(String projectId) async {
     final body = await _getList('/projects/$projectId/todos');
     return body.map((e) => ProjectTodo.fromJson(e as Map<String, dynamic>)).toList();

@@ -129,6 +129,7 @@ model Space {
   financeCategories   FinanceCategory[]
   financeTransactions FinanceTransaction[]
   financeBudgets      FinanceBudget[]
+  financeRecurringTransactions FinanceRecurringTransaction[]
   calendarEvents      CalendarEvent[]
   googleCalendarConnection GoogleCalendarConnection?
 }
@@ -486,6 +487,9 @@ model FinanceAccount {
 
   transactions FinanceTransaction[] @relation("AccountTransactions")
   transfersIn  FinanceTransaction[] @relation("TransferToAccount")
+
+  recurringAsSource FinanceRecurringTransaction[] @relation("RecurringSourceAccount")
+  recurringAsTarget FinanceRecurringTransaction[] @relation("RecurringToAccount")
 }
 
 /// A 記帳 category (收入/支出), user-managed per personal space from day
@@ -513,8 +517,9 @@ model FinanceCategory {
   parent   FinanceCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
   children FinanceCategory[] @relation("CategoryHierarchy")
 
-  transactions FinanceTransaction[]
-  budget       FinanceBudget?
+  transactions          FinanceTransaction[]
+  budget                FinanceBudget?
+  recurringTransactions FinanceRecurringTransaction[]
 
   @@unique([spaceId, name, kind, parentId])
 }
@@ -561,6 +566,47 @@ model FinanceBudget {
   monthlyAmount Float
 
   createdAt DateTime @default(now())
+}
+
+/// A recurring 記帳 entry — the credit-card-bill use case: "every month on
+/// day N, do something". `amount` is optional: set it for a fixed
+/// recurring amount (rent, subscriptions) and the due day auto-creates the
+/// FinanceTransaction plus a LINE notification saying so; leave it blank
+/// for a variable amount (a credit card bill that's a different number
+/// every month) and the due day just sends a LINE reminder — no
+/// transaction gets created, the user records the real amount themselves.
+model FinanceRecurringTransaction {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  type   FinanceTransactionType
+  amount Float?
+  note   String?
+
+  /// 1-31. If the current month has fewer days than this, triggers on the
+  /// month's actual last day instead (e.g. 31 in February triggers on the
+  /// 28th/29th).
+  dayOfMonth Int
+
+  active Boolean @default(true)
+
+  accountId String
+  account   FinanceAccount @relation("RecurringSourceAccount", fields: [accountId], references: [id], onDelete: Cascade)
+
+  /// Only set for `type = TRANSFER` — the other side of the money movement.
+  toAccountId String?
+  toAccount   FinanceAccount? @relation("RecurringToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+
+  /// Null for TRANSFER; only meaningful for INCOME/EXPENSE.
+  categoryId String?
+  category   FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  /// "YYYY-MM" of the last month this already fired in — stops the daily
+  /// cron from double-firing if it runs more than once on the trigger day.
+  lastTriggeredMonth String?
 }
 
 /// Links a life_os user to their LINE account, so a message sent to the

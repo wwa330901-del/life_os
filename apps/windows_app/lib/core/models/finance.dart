@@ -232,6 +232,47 @@ class FinanceBudget {
   );
 }
 
+/// A "every month on day N, do this" entry. [amount] left null means a
+/// variable amount (a credit card bill that's a different number every
+/// month) — the due day just sends a LINE reminder; set means a fixed
+/// amount (rent, subscriptions) — the due day auto-records the transaction
+/// and sends a LINE notification saying so.
+class FinanceRecurringTransaction {
+  const FinanceRecurringTransaction({
+    required this.id,
+    required this.type,
+    required this.amount,
+    required this.accountId,
+    required this.toAccountId,
+    required this.categoryId,
+    required this.dayOfMonth,
+    required this.active,
+    required this.note,
+  });
+
+  final String id;
+  final FinanceTransactionType type;
+  final double? amount;
+  final String accountId;
+  final String? toAccountId;
+  final String? categoryId;
+  final int dayOfMonth;
+  final bool active;
+  final String? note;
+
+  factory FinanceRecurringTransaction.fromJson(Map<String, dynamic> json) => FinanceRecurringTransaction(
+    id: json['id'] as String,
+    type: FinanceTransactionTypeJson.fromJson(json['type'] as String),
+    amount: (json['amount'] as num?)?.toDouble(),
+    accountId: json['accountId'] as String,
+    toAccountId: json['toAccountId'] as String?,
+    categoryId: json['categoryId'] as String?,
+    dayOfMonth: json['dayOfMonth'] as int,
+    active: json['active'] as bool,
+    note: json['note'] as String?,
+  );
+}
+
 class FinanceBudgetStatus {
   const FinanceBudgetStatus({
     required this.categoryId,
