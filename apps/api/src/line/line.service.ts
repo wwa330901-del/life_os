@@ -5,10 +5,14 @@ import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
 import { FinanceBudgetsService } from '../finance/finance-budgets.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
+import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
+import { StocksRecurringService } from '../stocks/stocks-recurring.service';
+import { computeSettlementDate } from '../stocks/stock-settlement-schedule';
 import {
   FinanceAccountType,
   FinanceCategoryKind,
   FinanceTransactionType,
+  StockTransactionType,
 } from '../../generated/prisma/client.js';
 
 interface LineWebhookEvent {
@@ -86,6 +90,8 @@ export class LineService {
     private readonly financeTransactionsService: FinanceTransactionsService,
     private readonly financeBudgetsService: FinanceBudgetsService,
     private readonly calendarEventsService: CalendarEventsService,
+    private readonly stocksHoldingsService: StocksHoldingsService,
+    private readonly stocksRecurringService: StocksRecurringService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -212,7 +218,18 @@ export class LineService {
       return;
     }
 
+    if (text === '股票買賣') {
+      await this.sendStockHelp(userId, replyToken);
+      return;
+    }
+    if (text === '持股總覽' || text === '持股') {
+      await this.sendStockHoldings(userId, replyToken);
+      return;
+    }
+
     if (await this.tryFinanceCommand(userId, text, replyToken)) return;
+    if (await this.tryStockCommand(userId, text, replyToken)) return;
+    if (await this.tryStockDcaReply(userId, text, replyToken)) return;
 
     await this.reply(
       replyToken,
@@ -220,6 +237,8 @@ export class LineService {
         '看不懂這個指令，可以試試：',
         '・記帳：例如「支出 300 午餐 現金」（傳「記帳」看完整格式跟你的分類/帳戶）',
         '・財務總覽',
+        '・股票買賣：例如「買股 0050 152 3000 國泰世華」（傳「股票買賣」看完整格式）',
+        '・持股總覽',
         '・代辦事項 / 代辦事項總覽',
         '・新增行事曆 7/31 14:00 開會 @地點',
       ].join('\n'),
@@ -462,6 +481,208 @@ export class LineService {
     }
 
     await this.reply(replyToken, lines.join('\n'));
+  }
+
+  // --- 股票投資 ---
+
+  private async sendStockHelp(userId: string, replyToken: string) {
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+    const accounts = await this.prisma.financeAccount.findMany({
+      where: { spaceId: space.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    await this.reply(
+      replyToken,
+      [
+        '📈 股票買賣',
+        '例如「買股 0050 152 3000 國泰世華」（代碼／成交價／投入成本／帳戶，股數自動算）',
+        '賣出用「賣股」開頭',
+        `帳戶：${accounts.length ? accounts.map((a) => a.name).join('、') : '（還沒有，請到 App 新增）'}`,
+        '',
+        '交割日（T+2）到了會自動記帳，交割前一天帳戶餘額不夠也會提醒你。',
+        '傳「持股總覽」看目前持股與損益。',
+      ].join('\n'),
+    );
+  }
+
+  private async sendStockHoldings(userId: string, replyToken: string) {
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+    const holdings = await this.stocksHoldingsService.list(userId, space.id);
+    if (holdings.length === 0) {
+      await this.reply(replyToken, '📊 持股總覽\n\n（目前沒有任何持股）');
+      return;
+    }
+    const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+    const lines = ['📊 持股總覽', ''];
+    for (const h of holdings) {
+      const priceLabel = h.currentPrice != null ? fmt(h.currentPrice) : '（無報價）';
+      const gainLossLabel = h.gainLoss != null ? `${h.gainLoss >= 0 ? '+' : ''}${fmt(h.gainLoss)}` : '（無報價）';
+      lines.push(
+        `・${h.stockName ?? h.stockCode}（${h.stockCode}）：${h.shares.toFixed(2)}股 · 均價 ${fmt(h.averageCost)} · 現價 ${priceLabel} · 損益 ${gainLossLabel}`,
+      );
+    }
+    await this.reply(replyToken, lines.join('\n'));
+  }
+
+  /** Returns true once it's decided this text *was* a 股票買賣 command
+   * attempt (even if parsing failed) — same "true means stop trying other
+   * interpretations" contract as `tryFinanceCommand`. Writes go straight
+   * through Prisma for the same LINE-trust-boundary reason 記帳 does. */
+  private async tryStockCommand(userId: string, text: string, replyToken: string): Promise<boolean> {
+    if (!text.startsWith('買股') && !text.startsWith('賣股')) return false;
+
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return true;
+    }
+    const accounts = await this.prisma.financeAccount.findMany({
+      where: { spaceId: space.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    const parsed = this.parseStockCommand(text, accounts);
+    if (!parsed) {
+      await this.reply(
+        replyToken,
+        '看不懂股票交易格式，傳「股票買賣」看範例跟目前可用的帳戶。',
+      );
+      return true;
+    }
+
+    const accountId = parsed.accountId ?? accounts[0]?.id;
+    if (!accountId) {
+      await this.reply(replyToken, '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
+      return true;
+    }
+
+    const tradeDate = new Date();
+    const shares = parsed.totalCost / parsed.pricePerShare;
+    await this.prisma.stockTransaction.create({
+      data: {
+        spaceId: space.id,
+        stockCode: parsed.stockCode,
+        type: parsed.type,
+        pricePerShare: parsed.pricePerShare,
+        totalCost: parsed.totalCost,
+        shares,
+        tradeDate,
+        settlementDate: computeSettlementDate(tradeDate),
+        accountId,
+      },
+    });
+
+    const account = accounts.find((a) => a.id === accountId);
+    const typeLabel = parsed.type === StockTransactionType.BUY ? '買入' : '賣出';
+    await this.reply(
+      replyToken,
+      `已記錄${typeLabel} ${parsed.stockCode}，約 ${shares.toFixed(2)} 股（成交價 ${parsed.pricePerShare}，投入 ${Math.round(parsed.totalCost).toLocaleString('en-US')}，帳戶 ${account?.name ?? ''}），交割日（T+2）到了會自動記帳。`,
+    );
+    return true;
+  }
+
+  /** "買股/賣股 代碼 成交價 投入成本 帳戶" — same lenient any/no-separator
+   * parsing as `parseFinanceCommand`. 股數 is never typed, only derived
+   * (totalCost / pricePerShare). Stock code is taken as a leading 4-6 digit
+   * run (covers ordinary 4-digit tickers and 5-6 digit ETF codes like
+   * 00929); 帳戶 is found the same substring-scan way accounts are in
+   * 記帳, defaulting to the first account if none matched. */
+  private parseStockCommand(
+    text: string,
+    accounts: { id: string; name: string }[],
+  ): {
+    type: StockTransactionType;
+    stockCode: string;
+    pricePerShare: number;
+    totalCost: number;
+    accountId: string | null;
+  } | null {
+    let rest = text.trim();
+    let type: StockTransactionType;
+    if (rest.startsWith('買股')) {
+      type = StockTransactionType.BUY;
+      rest = rest.slice(2);
+    } else if (rest.startsWith('賣股')) {
+      type = StockTransactionType.SELL;
+      rest = rest.slice(2);
+    } else {
+      return null;
+    }
+    rest = rest.replace(LEADING_SEPARATORS, '');
+
+    const codeMatch = rest.match(/^\d{4,6}/);
+    if (!codeMatch) return null;
+    const stockCode = codeMatch[0];
+    rest = rest.slice(codeMatch[0].length).replace(LEADING_SEPARATORS, '');
+
+    const priceMatch = rest.match(/^\d+(\.\d+)?/);
+    if (!priceMatch) return null;
+    const pricePerShare = Number(priceMatch[0]);
+    if (!(pricePerShare > 0)) return null;
+    rest = rest.slice(priceMatch[0].length).replace(LEADING_SEPARATORS, '');
+
+    const costMatch = rest.match(/^\d+(\.\d+)?/);
+    if (!costMatch) return null;
+    const totalCost = Number(costMatch[0]);
+    if (!(totalCost > 0)) return null;
+    rest = rest.slice(costMatch[0].length).replace(LEADING_SEPARATORS, '');
+
+    let accountId: string | null = null;
+    for (const a of [...accounts].sort((x, y) => y.name.length - x.name.length)) {
+      const idx = rest.indexOf(a.name);
+      if (idx !== -1) {
+        accountId = a.id;
+        break;
+      }
+    }
+
+    return { type, stockCode, pricePerShare, totalCost, accountId };
+  }
+
+  /** A bare "代碼 成交價 投入成本" with no keyword prefix (e.g. "0050 600
+   * 20000") is only ever a reply to a fired 定期定額 reminder — matched
+   * against `StockRecurringInvestment.awaitingReply` by
+   * `StocksRecurringService.fulfillPendingReply`, never by position. The
+   * whole text must match exactly three number groups (anchored), so this
+   * never fires on unrelated messages that merely start with digits. */
+  private async tryStockDcaReply(userId: string, text: string, replyToken: string): Promise<boolean> {
+    const match = text.match(/^(\d{4,6})[\s\-+*/,，、]*(\d+(?:\.\d+)?)[\s\-+*/,，、]*(\d+(?:\.\d+)?)$/);
+    if (!match) return false;
+
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return true;
+    }
+
+    const stockCode = match[1];
+    const pricePerShare = Number(match[2]);
+    const totalCost = Number(match[3]);
+    const result = await this.stocksRecurringService.fulfillPendingReply(
+      space.id,
+      stockCode,
+      pricePerShare,
+      totalCost,
+    );
+    if (!result) {
+      await this.reply(
+        replyToken,
+        `目前沒有「${stockCode}」在等待定期定額回覆，請確認代碼是否正確，或這筆是不是已經記過了。`,
+      );
+      return true;
+    }
+    await this.reply(
+      replyToken,
+      `已記錄定期定額：${stockCode} 成交價 ${pricePerShare}，投入 ${Math.round(totalCost).toLocaleString('en-US')}，約 ${result.shares.toFixed(2)} 股。`,
+    );
+    return true;
   }
 
   // --- 專案代辦事項 ---

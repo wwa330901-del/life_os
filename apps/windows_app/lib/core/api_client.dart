@@ -15,6 +15,7 @@ import 'models/project.dart';
 import 'models/project_member.dart';
 import 'models/project_property.dart';
 import 'models/schedule_result.dart';
+import 'models/stock.dart';
 import 'models/work_item.dart';
 
 class ApiException implements Exception {
@@ -862,6 +863,83 @@ class ApiClient {
 
   Future<void> deleteFinanceRecurringTransaction({required String spaceId, required String id}) async {
     await _delete('/spaces/$spaceId/finance/recurring-transactions/$id');
+  }
+
+  Future<List<StockHolding>> listStockHoldings(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/stocks/holdings');
+    return body.map((e) => StockHolding.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<StockTransaction>> listStockTransactions(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/stocks/transactions');
+    return body.map((e) => StockTransaction.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createStockTransaction({
+    required String spaceId,
+    required String stockCode,
+    required StockTransactionType type,
+    required double pricePerShare,
+    required double totalCost,
+    required DateTime tradeDate,
+    required String accountId,
+    String? note,
+  }) async {
+    await _post('/spaces/$spaceId/stocks/transactions', {
+      'stockCode': stockCode,
+      'type': type.toJson(),
+      'pricePerShare': pricePerShare,
+      'totalCost': totalCost,
+      'tradeDate': _dateOnlyIso(tradeDate),
+      'accountId': accountId,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> deleteStockTransaction({required String spaceId, required String id}) async {
+    await _delete('/spaces/$spaceId/stocks/transactions/$id');
+  }
+
+  Future<List<StockRecurringInvestment>> listStockRecurringInvestments(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/stocks/recurring');
+    return body.map((e) => StockRecurringInvestment.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createStockRecurringInvestment({
+    required String spaceId,
+    required String stockCode,
+    required int dayOfMonth,
+    FinanceRecurringHolidayAdjustment holidayAdjustment = FinanceRecurringHolidayAdjustment.none,
+    required String accountId,
+  }) async {
+    await _post('/spaces/$spaceId/stocks/recurring', {
+      'stockCode': stockCode,
+      'dayOfMonth': dayOfMonth,
+      'holidayAdjustment': holidayAdjustment.toJson(),
+      'accountId': accountId,
+    });
+  }
+
+  Future<void> updateStockRecurringInvestment({
+    required String spaceId,
+    required String id,
+    String? stockCode,
+    int? dayOfMonth,
+    FinanceRecurringHolidayAdjustment? holidayAdjustment,
+    String? accountId,
+    bool? active,
+  }) async {
+    await _patchIgnoreBody('/spaces/$spaceId/stocks/recurring/$id', {
+      if (stockCode != null) 'stockCode': stockCode,
+      if (dayOfMonth != null) 'dayOfMonth': dayOfMonth,
+      if (holidayAdjustment != null) 'holidayAdjustment': holidayAdjustment.toJson(),
+      if (accountId != null) 'accountId': accountId,
+      if (active != null) 'active': active,
+    });
+  }
+
+  Future<void> deleteStockRecurringInvestment({required String spaceId, required String id}) async {
+    await _delete('/spaces/$spaceId/stocks/recurring/$id');
   }
 
   Future<List<ProjectTodo>> listProjectTodos(String projectId) async {

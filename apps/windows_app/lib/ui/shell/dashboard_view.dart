@@ -5,17 +5,32 @@ import '../../core/models/app_user.dart';
 import '../../core/theme/app_theme.dart';
 import '../../state/auth_provider.dart';
 import '../screens/finance/finance_home_screen.dart';
+import '../screens/stocks/stocks_home_screen.dart';
 
-/// Content pane for a personal space — currently just the 記帳 module (the
-/// first of what will eventually be several 個人功能). Company spaces skip
-/// this entirely and go straight to the project list (`SpaceShell`).
-class DashboardView extends ConsumerWidget {
+/// Content pane for a personal space — 個人功能 modules, switched by a
+/// top-level tab bar: 記帳 (FinanceHomeScreen) and 投資 (StocksHomeScreen),
+/// each owning its own internal sub-tabs. Company spaces skip this entirely
+/// and go straight to the project list (`SpaceShell`).
+class DashboardView extends ConsumerStatefulWidget {
   const DashboardView({super.key, required this.space});
 
   final SpaceSummary space;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardView> createState() => _DashboardViewState();
+}
+
+class _DashboardViewState extends ConsumerState<DashboardView> with SingleTickerProviderStateMixin {
+  late final TabController _moduleTabController = TabController(length: 2, vsync: this);
+
+  @override
+  void dispose() {
+    _moduleTabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final session = ref.watch(authControllerProvider).value;
     final scheme = Theme.of(context).colorScheme;
 
@@ -29,7 +44,7 @@ class DashboardView extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(space.name, style: Theme.of(context).textTheme.headlineMedium),
+                Text(widget.space.name, style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 4),
                 Text(
                   '${session?.user.name ?? ''} 已登入',
@@ -39,7 +54,22 @@ class DashboardView extends ConsumerWidget {
             ),
           ),
         ),
-        Expanded(child: FinanceHomeScreen(spaceId: space.id)),
+        TabBar(
+          controller: _moduleTabController,
+          tabs: const [
+            Tab(text: '記帳'),
+            Tab(text: '投資'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _moduleTabController,
+            children: [
+              FinanceHomeScreen(spaceId: widget.space.id),
+              StocksHomeScreen(spaceId: widget.space.id),
+            ],
+          ),
+        ),
       ],
     );
   }

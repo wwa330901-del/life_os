@@ -141,6 +141,8 @@ model Space {
   financeRecurringTransactions FinanceRecurringTransaction[]
   calendarEvents      CalendarEvent[]
   googleCalendarConnection GoogleCalendarConnection?
+  stockTransactions         StockTransaction[]
+  stockRecurringInvestments StockRecurringInvestment[]
 }
 
 /// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
@@ -499,6 +501,9 @@ model FinanceAccount {
 
   recurringAsSource FinanceRecurringTransaction[] @relation("RecurringSourceAccount")
   recurringAsTarget FinanceRecurringTransaction[] @relation("RecurringToAccount")
+
+  stockTransactions         StockTransaction[]
+  stockRecurringInvestments StockRecurringInvestment[]
 }
 
 /// A 記帳 category (收入/支出), user-managed per personal space from day
@@ -621,6 +626,91 @@ model FinanceRecurringTransaction {
   /// "YYYY-MM" of the last month this already fired in — stops the daily
   /// cron from double-firing if it runs more than once on the trigger day.
   lastTriggeredMonth String?
+}
+
+enum StockTransactionType {
+  BUY
+  SELL
+}
+
+/// A manually-entered stock buy/sell (personal-space 投資 module). `tradeDate`
+/// is just the date it's registered on — the actual money movement doesn't
+/// happen until `settlementDate` (tradeDate + 2 trading days, matching
+/// Taiwan's real T+2 settlement), when `StockSettlementService`'s daily cron
+/// creates the real FinanceTransaction and flips `settled`. Users provide
+/// `pricePerShare` and `totalCost`; `shares` is derived (`totalCost /
+/// pricePerShare`) so nobody has to do that math themselves — same
+/// convention used by StockRecurringInvestment's DCA fill-ins.
+model StockTransaction {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  stockCode String
+  type      StockTransactionType
+
+  pricePerShare Float
+  totalCost     Float
+  shares        Float
+
+  tradeDate      DateTime @db.Date
+  settlementDate DateTime @db.Date
+  settled        Boolean  @default(false)
+
+  accountId String
+  account   FinanceAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([spaceId, stockCode])
+  @@index([settlementDate, settled])
+}
+
+/// 定期定額（DCA）計畫 — same "每月第幾天＋遇假日調整" shape as
+/// FinanceRecurringTransaction, but the amount is never fixed (a DCA fill
+/// price varies every round), so the daily cron only ever sends a LINE
+/// reminder, never auto-creates a transaction. `awaitingReply` is what lets
+/// LineService tell a plain "股票代碼 成交價 投入成本" reply apart from a
+/// regular 記帳/代辦 command — see `tryStockDcaReply`.
+model StockRecurringInvestment {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  stockCode         String
+  dayOfMonth        Int
+  holidayAdjustment FinanceRecurringHolidayAdjustment @default(NONE)
+
+  accountId String
+  account   FinanceAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  active             Boolean @default(true)
+  lastTriggeredMonth String?
+  awaitingReply      Boolean @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+/// Stock price cache — one row per stock code, shared across every space
+/// (price data is public, not user-specific). `dailyClosePrice` is updated
+/// once after market close via TWSE's official free OpenAPI
+/// (STOCK_DAY_ALL); `intradayPrice` is opportunistically refreshed every
+/// few minutes during trading hours via TWSE's unofficial realtime feed —
+/// that feed isn't a published/versioned contract, so a fetch failure just
+/// leaves the last known value in place (UI falls back to
+/// `dailyClosePrice`) rather than erroring.
+model StockPriceCache {
+  stockCode String  @id
+  stockName String?
+
+  dailyClosePrice Float?
+  dailyCloseDate  DateTime? @db.Date
+
+  intradayPrice     Float?
+  intradayUpdatedAt DateTime?
+
+  updatedAt DateTime @updatedAt
 }
 
 /// Links a life_os user to their LINE account, so a message sent to the
