@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { ProjectsModule } from './projects/projects.module';
 import { DocumentsModule } from './documents/documents.module';
+import { DocumentApprovalsModule } from './document-approvals/document-approvals.module';
 import { FinanceModule } from './finance/finance.module';
 import { StocksModule } from './stocks/stocks.module';
 import { LineModule } from './line/line.module';
@@ -26,6 +27,7 @@ import { ProjectDigestModule } from './project-digest/project-digest.module';
     AdminModule,
     ProjectsModule,
     DocumentsModule,
+    DocumentApprovalsModule,
     FinanceModule,
     StocksModule,
     LineModule,

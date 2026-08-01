@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'models/admin_models.dart';
 import 'models/app_user.dart';
 import 'models/calendar_event.dart';
+import 'models/document_approval.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
 import 'models/generated_document.dart';
@@ -360,9 +361,11 @@ class ApiClient {
     required String spaceId,
     required String templateId,
     List<String>? allowedTypeOptionIds,
+    bool? requiresApproval,
   }) async {
     await _patchIgnoreBody('/admin/spaces/$spaceId/document-templates/$templateId', {
       if (allowedTypeOptionIds != null) 'allowedTypeOptionIds': allowedTypeOptionIds,
+      if (requiresApproval != null) 'requiresApproval': requiresApproval,
     });
   }
 
@@ -421,6 +424,52 @@ class ApiClient {
       throw ApiException(res.statusCode, message);
     }
     return res.bodyBytes;
+  }
+
+  Future<List<DocumentApprovalSummary>> listDocumentApprovals({
+    required String projectId,
+    required String documentId,
+  }) async {
+    final body = await _getList('/projects/$projectId/documents/$documentId/approvals');
+    return body.map((e) => DocumentApprovalSummary.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> submitDocumentApproval({
+    required String projectId,
+    required String documentId,
+    required List<String> approverUserIds,
+  }) async {
+    await _post('/projects/$projectId/documents/$documentId/approvals', {
+      'approverUserIds': approverUserIds,
+    });
+  }
+
+  Future<List<PendingApprovalStep>> listPendingApprovals() async {
+    final body = await _getList('/document-approvals/pending');
+    return body.map((e) => PendingApprovalStep.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<DocumentApprovalSummary>> listMyApprovalSubmissions() async {
+    final body = await _getList('/document-approvals/mine');
+    return body.map((e) => DocumentApprovalSummary.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> approveDocumentApprovalStep({required String stepId, String? comment}) async {
+    await _post('/document-approvals/steps/$stepId/approve', {
+      if (comment != null && comment.isNotEmpty) 'comment': comment,
+    });
+  }
+
+  Future<void> rejectDocumentApprovalStep({required String stepId, required String comment}) async {
+    await _post('/document-approvals/steps/$stepId/reject', {'comment': comment});
+  }
+
+  Future<void> requestDocumentApprovalStepInfo({required String stepId, required String text}) async {
+    await _post('/document-approvals/steps/$stepId/request-info', {'text': text});
+  }
+
+  Future<void> replyDocumentApprovalStepNote({required String stepId, required String text}) async {
+    await _post('/document-approvals/steps/$stepId/reply', {'text': text});
   }
 
 

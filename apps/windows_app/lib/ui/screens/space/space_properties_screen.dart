@@ -286,6 +286,24 @@ class _DocumentTemplateCard extends ConsumerWidget {
                   ),
               ],
             ),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('需要簽核', style: TextStyle(fontSize: 13)),
+              subtitle: const Text('開啟後，這個範本產生的文件可以「送簽」進簽核系統', style: TextStyle(fontSize: 11)),
+              value: template.requiresApproval,
+              onChanged: (value) => _run(
+                context,
+                () => ref
+                    .read(apiClientProvider)
+                    .updateDocumentTemplate(
+                      spaceId: spaceId,
+                      templateId: template.id,
+                      requiresApproval: value,
+                    ),
+              ),
+            ),
           ],
         ),
       ),

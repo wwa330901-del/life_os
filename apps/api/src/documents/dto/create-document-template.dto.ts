@@ -1,4 +1,4 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 /**
  * Multipart upload — `code`/`name`/`category` are plain form fields, `file`
@@ -24,4 +24,11 @@ export class CreateDocumentTemplateDto {
 
   @IsString()
   allowedTypeOptionIds: string;
+
+  /// Multipart form field, so a plain "true"/"false" string — parsed in the
+  /// service. Omitted or anything other than "true" defaults to not
+  /// requiring approval.
+  @IsOptional()
+  @IsString()
+  requiresApproval?: string;
 }

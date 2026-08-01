@@ -1,4 +1,4 @@
-import { IsArray, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateDocumentTemplateDto {
   @IsOptional()
@@ -19,4 +19,8 @@ export class UpdateDocumentTemplateDto {
   @IsArray()
   @IsString({ each: true })
   allowedTypeOptionIds?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  requiresApproval?: boolean;
 }

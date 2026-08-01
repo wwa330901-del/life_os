@@ -111,6 +111,9 @@ model User {
   lineAccountLink    LineAccountLink?
   assignedTodos      ProjectTodo[]
   googleCalendarConnections GoogleCalendarConnection[]
+  documentApprovalsSubmitted DocumentApproval[]
+  documentApprovalSteps      DocumentApprovalStep[]
+  documentApprovalStepNotes  DocumentApprovalStepNote[]
 }
 
 model Space {
@@ -229,6 +232,13 @@ model DocumentTemplate {
   /// project types this template is offered for.
   allowedTypeOptionIds String[] @default([])
 
+  /// Whether a document generated from this template can be 送簽 (submitted
+  /// into the DocumentApproval workflow below). Set by hand by whoever
+  /// manages this space's templates — deliberately NOT derived from the
+  /// `code` numbering convention (e.g. this space's own "01=對外/02=對內"
+  /// scheme), since that's a human convention the system never parses.
+  requiresApproval Boolean @default(false)
+
   createdAt DateTime @default(now())
 
   generatedDocuments GeneratedDocument[]
@@ -270,7 +280,96 @@ model GeneratedDocument {
   createdByUserId String?
   createdBy       User?   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
 
+  approvals DocumentApproval[]
+
   @@index([projectId])
+}
+
+enum DocumentApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DocumentApprovalStepNoteType {
+  REQUEST_INFO
+  REPLY
+}
+
+/// One 送簽 attempt for a GeneratedDocument — a document can have several of
+/// these over time (a REJECTED one is terminal; the creator revises and
+/// submits a fresh one), but only ever one PENDING at a time (enforced in
+/// DocumentApprovalsService, not the schema). Once one reaches APPROVED,
+/// the document is locked (see GeneratedDocumentsService.removeGenerated /
+/// the docs module's delete guard) — that generated file is now the
+/// signed-off record and can't be deleted or replaced.
+model DocumentApproval {
+  id String @id @default(uuid())
+
+  generatedDocumentId String
+  generatedDocument    GeneratedDocument @relation(fields: [generatedDocumentId], references: [id], onDelete: Cascade)
+
+  submittedByUserId String
+  submittedBy       User   @relation(fields: [submittedByUserId], references: [id])
+
+  status DocumentApprovalStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+
+  steps DocumentApprovalStep[]
+
+  @@index([generatedDocumentId])
+}
+
+/// One ordered checkpoint in a DocumentApproval's chain. The "current" step
+/// is the lowest-`sequence` one still PENDING while every lower-sequence
+/// step in the same approval is APPROVED — computed in application code,
+/// not stored. A REJECTED step immediately flips the parent
+/// DocumentApproval to REJECTED and ends the chain (no "resume from here"
+/// — see 大系統 doc for why: the user explicitly chose the simpler
+/// reject-and-resubmit flow over a resumable one).
+model DocumentApprovalStep {
+  id String @id @default(uuid())
+
+  approvalId String
+  approval   DocumentApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+
+  sequence Int
+
+  approverUserId String
+  approver       User   @relation(fields: [approverUserId], references: [id])
+
+  status DocumentApprovalStatus @default(PENDING)
+
+  /// Optional on an APPROVE, required (enforced in the service) on a REJECT.
+  decisionComment String?
+  decidedAt       DateTime?
+
+  notes DocumentApprovalStepNote[]
+
+  @@unique([approvalId, sequence])
+  @@index([approverUserId, status])
+}
+
+/// A back-and-forth thread attached to one step, for "審核人有疑問但還不到
+/// 退回的地步" — a REQUEST_INFO note doesn't change the step's status; the
+/// submitter's REPLY doesn't either. The step only ever resolves via a real
+/// APPROVE or REJECT decision on DocumentApprovalStep itself.
+model DocumentApprovalStepNote {
+  id String @id @default(uuid())
+
+  stepId String
+  step   DocumentApprovalStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  authorUserId String
+  author       User   @relation(fields: [authorUserId], references: [id])
+
+  type DocumentApprovalStepNoteType
+  text String
+
+  createdAt DateTime @default(now())
+
+  @@index([stepId])
 }
 
 /// One property a space has defined for its projects — the "columns" of

@@ -60,6 +60,7 @@ class DocumentTemplate {
     required this.category,
     required this.fields,
     required this.allowedTypeOptionIds,
+    required this.requiresApproval,
   });
 
   final String id;
@@ -69,6 +70,11 @@ class DocumentTemplate {
   final String category;
   final List<DocumentField> fields;
   final List<String> allowedTypeOptionIds;
+
+  /// Whether a document generated from this template can be 送簽 into the
+  /// DocumentApproval workflow — set by hand per template, not derived from
+  /// this space's own `code` numbering convention.
+  final bool requiresApproval;
 
   factory DocumentTemplate.fromJson(Map<String, dynamic> json) => DocumentTemplate(
     id: json['id'] as String,
@@ -80,5 +86,6 @@ class DocumentTemplate {
         .map((e) => DocumentField.fromJson(e as Map<String, dynamic>))
         .toList(),
     allowedTypeOptionIds: (json['allowedTypeOptionIds'] as List<dynamic>).cast<String>(),
+    requiresApproval: json['requiresApproval'] as bool? ?? false,
   );
 }

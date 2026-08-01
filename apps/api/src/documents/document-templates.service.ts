@@ -28,6 +28,7 @@ const metadataSelect = {
   category: true,
   fields: true,
   allowedTypeOptionIds: true,
+  requiresApproval: true,
   createdAt: true,
 } as const;
 
@@ -68,6 +69,7 @@ export class DocumentTemplatesService {
           dto.allowedTypeOptionIds,
           'allowedTypeOptionIds',
         ) as string[],
+        requiresApproval: dto.requiresApproval === 'true',
       },
       select: metadataSelect,
     });
@@ -86,6 +88,7 @@ export class DocumentTemplatesService {
         ...(dto.allowedTypeOptionIds !== undefined && {
           allowedTypeOptionIds: dto.allowedTypeOptionIds,
         }),
+        ...(dto.requiresApproval !== undefined && { requiresApproval: dto.requiresApproval }),
       },
       select: metadataSelect,
     });

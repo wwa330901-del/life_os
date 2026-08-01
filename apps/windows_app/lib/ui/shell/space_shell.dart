@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/app_user.dart';
 import '../../state/space_provider.dart';
+import '../screens/approvals/approvals_home_screen.dart';
 import '../screens/calendar/calendar_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
 import '../screens/projects/project_list_screen.dart';
@@ -30,15 +31,24 @@ class SpaceShell extends ConsumerStatefulWidget {
 class _SpaceShellState extends ConsumerState<SpaceShell> {
   String? _openProjectId;
   bool _showPropertiesSettings = false;
+  bool _showApprovals = false;
 
   void _backToList() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = false;
+    _showApprovals = false;
   });
 
   void _openPropertiesSettings() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = true;
+    _showApprovals = false;
+  });
+
+  void _openApprovals() => setState(() {
+    _openProjectId = null;
+    _showPropertiesSettings = false;
+    _showApprovals = true;
   });
 
   @override
@@ -54,6 +64,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
         spaceId: space.id,
         onBack: _backToList,
       ),
+      SpaceType.company when _showApprovals => const ApprovalsHomeScreen(),
       SpaceType.company when _openProjectId != null => ProjectDetailScreen(
         projectId: _openProjectId!,
         spaceName: space.name,
@@ -74,6 +85,8 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
             onGoToProjects: _backToList,
             onOpenPropertiesSettings: _openPropertiesSettings,
             propertiesSettingsSelected: _showPropertiesSettings,
+            onOpenApprovals: _openApprovals,
+            approvalsSelected: _showApprovals,
           ),
           Expanded(child: content),
         ],

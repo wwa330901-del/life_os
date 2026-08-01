@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
+import { DocumentApprovalsService } from '../document-approvals/document-approvals.service';
 import { FillDocumentDto } from './dto/fill-document.dto';
 
 const metadataSelect = {
@@ -13,6 +14,7 @@ const metadataSelect = {
   category: true,
   fields: true,
   allowedTypeOptionIds: true,
+  requiresApproval: true,
   createdAt: true,
 } as const;
 
@@ -28,6 +30,15 @@ const generatedMetadataSelect = {
   values: true,
   createdAt: true,
   createdByUserId: true,
+  /// Just the most recent 送簽 attempt's status (if any) — enough for the
+  /// document list to show a status chip (未送簽/待審核/已核准/已退回)
+  /// without a separate round trip per document. Full step-by-step detail
+  /// still lives behind the dedicated approvals history endpoint.
+  approvals: {
+    select: { status: true },
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+  },
 } as const;
 
 /**
@@ -44,6 +55,7 @@ export class ProjectDocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectsService: ProjectsService,
+    private readonly documentApprovalsService: DocumentApprovalsService,
   ) {}
 
   async listForProject(userId: string, projectId: string) {
@@ -147,6 +159,9 @@ export class ProjectDocumentsService {
     const doc = await this.prisma.generatedDocument.findUnique({ where: { id } });
     if (!doc || doc.projectId !== projectId) {
       throw new NotFoundException('Generated document not found');
+    }
+    if (await this.documentApprovalsService.isLocked(id)) {
+      throw new BadRequestException('這份文件已經完成簽核並鎖定，不能刪除');
     }
     await this.prisma.generatedDocument.delete({ where: { id } });
   }
