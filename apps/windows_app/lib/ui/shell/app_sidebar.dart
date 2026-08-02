@@ -5,11 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api_client.dart';
 import '../../core/models/app_user.dart';
-import '../../core/theme/app_accents.dart';
 import '../../state/auth_provider.dart';
-import '../../state/space_provider.dart';
 import '../../state/ui_prefs_provider.dart';
 import '../widgets/ai_settings_dialog.dart';
+import 'space_switcher_list.dart';
 
 const _sidebarWidth = 220.0;
 const _railWidth = 14.0;
@@ -209,19 +208,7 @@ class _SidebarPanel extends ConsumerWidget {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Column(
-                children: [
-                  for (final s in ref.watch(mySpacesProvider).value ?? [space])
-                    _SpaceRow(
-                      space: s,
-                      selected: s.id == space.id,
-                      onTap: s.id == space.id
-                          ? null
-                          : () => ref.read(selectedSpaceProvider.notifier).select(s),
-                    ),
-                  _SpaceRow.home(onTap: () => ref.read(selectedSpaceProvider.notifier).clear()),
-                ],
-              ),
+              child: SpaceSwitcherList(selectedSpaceId: space.id),
             ),
             const SizedBox(height: 8),
             if (space.type == SpaceType.company)
@@ -354,74 +341,3 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-/// One row of the sidebar's flat space list (every space the user belongs
-/// to, listed directly — no popup detour) plus the trailing 回首頁 row via
-/// [_SpaceRow.home]. Mirrors the old single-row "current space" styling
-/// (colored type badge + name) so switching spaces looks the same as
-/// before, just without needing a click to reveal the other options first.
-class _SpaceRow extends StatelessWidget {
-  const _SpaceRow({required this.space, required this.selected, required this.onTap});
-
-  const _SpaceRow.home({required this.onTap})
-    : space = null,
-      selected = false;
-
-  final SpaceSummary? space;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final s = space;
-    final tint = s == null
-        ? scheme.onSurface.withValues(alpha: 0.12)
-        : switch (s.type) {
-            SpaceType.personal => AppAccents.personal(scheme.brightness),
-            SpaceType.calendar => AppAccents.calendar(scheme.brightness),
-            SpaceType.company => AppAccents.company(scheme.brightness),
-          };
-    final icon = s == null
-        ? Icons.home_outlined
-        : switch (s.type) {
-            SpaceType.personal => Icons.person_outline,
-            SpaceType.calendar => Icons.calendar_today_outlined,
-            SpaceType.company => Icons.apartment,
-          };
-
-    return Material(
-      color: selected ? scheme.primary.withValues(alpha: 0.14) : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(8)),
-                alignment: Alignment.center,
-                child: Icon(icon, size: 16, color: scheme.onSurface),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  s?.name ?? '回首頁',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                    fontSize: 13,
-                    color: selected ? scheme.primary : scheme.onSurface,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
