@@ -23,11 +23,12 @@ function toFieldType(value: string): KnowledgeFieldType {
 }
 
 /** Kept as a constant (not hardcoded inline at each call site) so bumping to
- * a newer Gemini generation later is a one-line change — see 大系統 doc for
- * why 2.5 Flash was picked over the newer 3.x Flash tiers: materially
- * cheaper, still fully GA/multimodal, and this module's outputs (short
- * summaries/tags/field extraction) don't need frontier-tier reasoning. */
-export const GEMINI_MODEL = 'gemini-2.5-flash';
+ * a newer Gemini generation later is a one-line change. 2.5 Flash was
+ * originally picked for being cheap/GA/multimodal, but Google stopped
+ * granting new API keys access to it (404 "no longer available to new
+ * users") — 3.6 Flash is the current stable successor with the same
+ * multimodal support. */
+export const GEMINI_MODEL = 'gemini-3.6-flash';
 const MODEL = GEMINI_MODEL;
 
 const RESPONSE_SCHEMA = {

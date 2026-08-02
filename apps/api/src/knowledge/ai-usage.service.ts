@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiUsageStatus } from '../../generated/prisma/client.js';
 
-/** gemini-2.5-flash pricing (see Desktop 「Gemini API 收費分析.md」) — kept
+/** gemini-3.6-flash pricing (see Desktop 「Gemini API 收費分析.md」) — kept
  * here rather than duplicated at every call site; if the model constant in
  * GeminiContentAnalysisService ever changes, update this too. */
-const INPUT_COST_PER_MILLION = 0.3;
-const OUTPUT_COST_PER_MILLION = 2.5;
+const INPUT_COST_PER_MILLION = 1.5;
+const OUTPUT_COST_PER_MILLION = 7.5;
 
 export function estimateCostUsd(
   inputTokens: number,
