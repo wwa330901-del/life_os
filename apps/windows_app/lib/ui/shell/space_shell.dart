@@ -5,6 +5,7 @@ import '../../core/models/app_user.dart';
 import '../../state/space_provider.dart';
 import '../screens/approvals/approvals_home_screen.dart';
 import '../screens/calendar/calendar_screen.dart';
+import '../screens/knowledge/knowledge_home_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
 import '../screens/projects/project_list_screen.dart';
 import '../screens/space/space_properties_screen.dart';
@@ -32,23 +33,34 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
   String? _openProjectId;
   bool _showPropertiesSettings = false;
   bool _showApprovals = false;
+  bool _showKnowledge = false;
 
   void _backToList() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = false;
     _showApprovals = false;
+    _showKnowledge = false;
   });
 
   void _openPropertiesSettings() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = true;
     _showApprovals = false;
+    _showKnowledge = false;
   });
 
   void _openApprovals() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = false;
     _showApprovals = true;
+    _showKnowledge = false;
+  });
+
+  void _openKnowledge() => setState(() {
+    _openProjectId = null;
+    _showPropertiesSettings = false;
+    _showApprovals = false;
+    _showKnowledge = true;
   });
 
   @override
@@ -57,7 +69,9 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     // `_RootRouter` only ever builds this widget once a space is selected.
     if (space == null) return const SizedBox.shrink();
 
-    final content = switch (space.type) {
+    final content = _showKnowledge
+        ? const KnowledgeHomeScreen()
+        : switch (space.type) {
       SpaceType.personal => DashboardView(space: space),
       SpaceType.calendar => CalendarScreen(space: space),
       SpaceType.company when _showPropertiesSettings => SpacePropertiesScreen(
@@ -87,6 +101,8 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
             propertiesSettingsSelected: _showPropertiesSettings,
             onOpenApprovals: _openApprovals,
             approvalsSelected: _showApprovals,
+            onOpenKnowledge: _openKnowledge,
+            knowledgeSelected: _showKnowledge,
           ),
           Expanded(child: content),
         ],

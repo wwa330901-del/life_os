@@ -8,18 +8,21 @@ import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
 import { StocksRecurringService } from '../stocks/stocks-recurring.service';
 import { computeSettlementDate } from '../stocks/stock-settlement-schedule';
+import { KnowledgeItemsService } from '../knowledge/knowledge-items.service';
+import { KnowledgeAnalysisPipeline } from '../knowledge/knowledge-analysis-pipeline.service';
 import {
   FinanceAccountType,
   FinanceCategoryKind,
   FinanceTransactionType,
   StockTransactionType,
 } from '../../generated/prisma/client.js';
+import type { LineAccountLink } from '../../generated/prisma/client.js';
 
 interface LineWebhookEvent {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
-  message?: { type: string; text?: string };
+  message?: { type: string; id?: string; text?: string };
   postback?: { data?: string };
 }
 
@@ -92,6 +95,8 @@ export class LineService {
     private readonly calendarEventsService: CalendarEventsService,
     private readonly stocksHoldingsService: StocksHoldingsService,
     private readonly stocksRecurringService: StocksRecurringService,
+    private readonly knowledgeItemsService: KnowledgeItemsService,
+    private readonly knowledgeAnalysisPipeline: KnowledgeAnalysisPipeline,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -129,12 +134,18 @@ export class LineService {
           continue;
         }
 
+        if (event.type === 'message' && event.message?.type === 'image') {
+          if (!link) continue;
+          await this.handleImageMessage(link.id, link.userId, event.message.id, replyToken);
+          continue;
+        }
+
         if (event.type !== 'message' || event.message?.type !== 'text') continue;
         const text = event.message.text?.trim();
         if (!text) continue;
 
         if (link) {
-          await this.handleTextForLinkedUser(link.id, link.userId, link.activeProjectId, text, replyToken);
+          await this.handleTextForLinkedUser(link, text, replyToken);
         } else {
           await this.tryCompleteLinking(lineUserId, text, replyToken);
         }
@@ -177,13 +188,46 @@ export class LineService {
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
   private static readonly TODO_ENTRY_KEYWORDS = ['代辦事項', '代辦', '待辦事項', '待辦'];
 
-  private async handleTextForLinkedUser(
-    linkId: string,
-    userId: string,
-    activeProjectId: string | null,
-    text: string,
-    replyToken: string,
-  ) {
+  private async handleTextForLinkedUser(link: LineAccountLink, text: string, replyToken: string) {
+    const linkId = link.id;
+    const userId = link.userId;
+    const activeProjectId = link.activeProjectId;
+
+    // --- 知識庫：任何等待中的狀態一律優先處理，因為此時使用者打的任何文字
+    // （包含剛好也是選單指令字面的內容）都是在回答那個等待中的問題，不是在
+    // 下一個新指令。
+    if (link.pendingKnowledgeItemId) {
+      await this.tryResolveKnowledgeCategoryDecision(link, text, replyToken);
+      return;
+    }
+    if (link.pendingKnowledgeLocationQueryCategory) {
+      await this.resolveKnowledgeLocationQuery(link, text, replyToken);
+      return;
+    }
+    if (link.pendingExhibitionScheduleItemId) {
+      await this.resolveExhibitionSchedule(link, text, replyToken);
+      return;
+    }
+
+    if (text === '美食' || text === '景點') {
+      await this.prisma.lineAccountLink.update({
+        where: { id: linkId },
+        data: { pendingKnowledgeLocationQueryCategory: text },
+      });
+      await this.reply(replyToken, `請輸入地點，我幫你找附近記錄過的${text}。`);
+      return;
+    }
+    if (text === '展覽') {
+      await this.sendUpcomingExhibitions(userId, replyToken);
+      return;
+    }
+
+    const url = this.extractUrl(text);
+    if (url) {
+      await this.captureKnowledgeUrl(userId, url, replyToken);
+      return;
+    }
+
     if (text === '記帳') {
       await this.sendFinanceHelp(userId, replyToken);
       return;
@@ -683,6 +727,187 @@ export class LineService {
       `已記錄定期定額：${stockCode} 成交價 ${pricePerShare}，投入 ${Math.round(totalCost).toLocaleString('en-US')}，約 ${result.shares.toFixed(2)} 股。`,
     );
     return true;
+  }
+
+  // --- 知識庫 ---
+
+  private extractUrl(text: string): string | null {
+    const match = text.match(/https?:\/\/\S+/);
+    return match ? match[0] : null;
+  }
+
+  private async captureKnowledgeUrl(userId: string, url: string, replyToken: string) {
+    const item = await this.knowledgeItemsService.createPending(userId, {
+      sourceUrl: url,
+      sourcePlatform: '', // overwritten once the fetcher actually determines it
+    });
+    await this.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
+    // Fire-and-forget — must not block the webhook's reply, and the actual
+    // completion is reported back via a LINE push once done (see
+    // KnowledgeAnalysisPipeline).
+    void this.knowledgeAnalysisPipeline.processUrlSubmission(item.id, userId, url);
+  }
+
+  /** LINE image messages carry no URL — the bytes have to be pulled from
+   * LINE's separate content-hosting API using the message id. */
+  private async handleImageMessage(linkId: string, userId: string, messageId: string | undefined, replyToken: string) {
+    if (!messageId) return;
+    try {
+      const data = await this.fetchLineImageContent(messageId);
+      const item = await this.knowledgeItemsService.createPending(userId, { sourcePlatform: '圖片' });
+      await this.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
+      void this.knowledgeAnalysisPipeline.processImageSubmission(item.id, userId, {
+        data,
+        mimeType: 'image/jpeg',
+      });
+    } catch (error) {
+      this.logger.error(`Failed to fetch LINE image content for link=${linkId}`, error as Error);
+      await this.reply(replyToken, '圖片下載失敗，請再傳一次看看。');
+    }
+  }
+
+  private async fetchLineImageContent(messageId: string): Promise<Buffer> {
+    const response = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+      headers: { Authorization: `Bearer ${this.channelAccessToken}` },
+    });
+    if (!response.ok) {
+      throw new Error(`LINE content API returned ${response.status}`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  private async tryResolveKnowledgeCategoryDecision(link: LineAccountLink, text: string, replyToken: string) {
+    const itemId = link.pendingKnowledgeItemId;
+    if (!itemId) return;
+    try {
+      const categoryName = await this.knowledgeItemsService.resolveCategoryDecision(link.userId, itemId, text);
+      await this.prisma.lineAccountLink.update({
+        where: { id: link.id },
+        data: { pendingKnowledgeItemId: null },
+      });
+      await this.reply(replyToken, `已歸類到「${categoryName}」。`);
+    } catch (error) {
+      await this.reply(replyToken, error instanceof Error ? error.message : '設定失敗，請再試一次。');
+    }
+  }
+
+  /** 美食/景點 — after the rich-menu button set
+   * `pendingKnowledgeLocationQueryCategory`, this reply's text is the
+   * location to search for, matched against the "地址" field. */
+  private async resolveKnowledgeLocationQuery(link: LineAccountLink, text: string, replyToken: string) {
+    const categoryName = link.pendingKnowledgeLocationQueryCategory!;
+    await this.prisma.lineAccountLink.update({
+      where: { id: link.id },
+      data: { pendingKnowledgeLocationQueryCategory: null },
+    });
+
+    const items = await this.knowledgeItemsService.searchByLocation(link.userId, categoryName, text.trim());
+    if (items.length === 0) {
+      await this.reply(replyToken, `附近沒有找到記錄過的${categoryName}（「${text.trim()}」）。`);
+      return;
+    }
+    const lines = [`📍 ${categoryName}搜尋結果（${text.trim()}）`, ''];
+    for (const item of items) {
+      const address = this.knowledgeItemsService.fieldTextValue(item, '地址');
+      lines.push(`・${item.title ?? '未命名'}${address ? `（${address}）` : ''}`);
+    }
+    await this.reply(replyToken, lines.join('\n'));
+  }
+
+  private async sendUpcomingExhibitions(userId: string, replyToken: string) {
+    const items = await this.knowledgeItemsService.listUpcomingExhibitions(userId);
+    if (items.length === 0) {
+      await this.reply(replyToken, '📅 展覽\n\n（目前沒有記錄中的展覽）');
+      return;
+    }
+    const lines = ['📅 展覽（依結束日期排序）', ''];
+    for (const item of items) {
+      const endDate = this.knowledgeItemsService.fieldDateValue(item, '結束日期');
+      const visited = this.knowledgeItemsService.fieldBooleanValue(item, '是否已觀展');
+      lines.push(
+        `・${item.title ?? '未命名'}${endDate ? `（至 ${endDate.getMonth() + 1}/${endDate.getDate()}）` : ''}${visited ? '（已觀展）' : ''}`,
+      );
+    }
+    await this.reply(replyToken, lines.join('\n'));
+  }
+
+  /** Two-phase conversation over the same pending slot
+   * (`pendingExhibitionScheduleItemId`), disambiguated by the item's own
+   * `exhibitionDecisionStatus`: still null means this reply is the initial
+   * 安排/不安排 answer; already SCHEDULED means this reply is the follow-up
+   * 何時 answer. Only ever writes a CalendarEvent — this app's 代辦事項
+   * system is project-scoped (ProjectTodo.projectId is required) and an
+   * exhibition isn't tied to any project, so there's no personal-todo slot
+   * to write one into; see 大系統 doc for this known gap. */
+  private async resolveExhibitionSchedule(link: LineAccountLink, text: string, replyToken: string) {
+    const itemId = link.pendingExhibitionScheduleItemId;
+    if (!itemId) return;
+    const item = await this.knowledgeItemsService.getByIdInternal(itemId);
+    const trimmed = text.trim();
+
+    if (item.exhibitionDecisionStatus === null) {
+      if (trimmed === '安排') {
+        await this.knowledgeItemsService.setExhibitionDecision(itemId, 'SCHEDULED');
+        await this.reply(replyToken, '好的，請問要安排什麼時候？例如「8/10 14:00」或「明天」。');
+        return;
+      }
+      if (trimmed === '不安排') {
+        await this.knowledgeItemsService.setExhibitionDecision(itemId, 'CANCELLED');
+        await this.prisma.lineAccountLink.update({
+          where: { id: link.id },
+          data: { pendingExhibitionScheduleItemId: null },
+        });
+        await this.reply(replyToken, '好的，已取消觀展安排。');
+        return;
+      }
+      await this.reply(replyToken, '請回覆「安排」或「不安排」。');
+      return;
+    }
+
+    const scheduledAt = this.parseExhibitionDateTimeReply(trimmed);
+    if (!scheduledAt) {
+      await this.reply(replyToken, '看不懂時間，請用「8/10 14:00」這種格式，或直接打「明天」「今天」。');
+      return;
+    }
+
+    const space = await this.prisma.space.findUnique({ where: { calendarOwnerUserId: link.userId } });
+    if (!space) {
+      await this.reply(replyToken, '你還沒有行事曆空間，請先到元序 App 建立一個，我先幫你記著這個安排。');
+      return;
+    }
+    await this.calendarEventsService.create(link.userId, space.id, {
+      title: `${item.title ?? '展覽'}`,
+      startAt: scheduledAt.toISOString(),
+      allDay: false,
+    });
+    await this.knowledgeItemsService.setExhibitionDecision(itemId, 'SCHEDULED', scheduledAt);
+    await this.prisma.lineAccountLink.update({
+      where: { id: link.id },
+      data: { pendingExhibitionScheduleItemId: null },
+    });
+    const dateLabel = `${scheduledAt.getMonth() + 1}/${scheduledAt.getDate()} ${String(scheduledAt.getHours()).padStart(2, '0')}:${String(scheduledAt.getMinutes()).padStart(2, '0')}`;
+    await this.reply(replyToken, `已安排「${item.title ?? '展覽'}」（${dateLabel}），加進你的行事曆了。`);
+  }
+
+  /** "M/D HH:MM"／"M/D"（預設10:00）／"今天"／"明天" — a small standalone
+   * parser distinct from `parseCalendarCommand` since there's no
+   * "新增行事曆" prefix to strip here, just a bare date/time reply. */
+  private parseExhibitionDateTimeReply(text: string): Date | null {
+    const now = new Date();
+    if (text === '今天') return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0);
+    if (text === '明天') {
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      return new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 10, 0);
+    }
+
+    const match = text.match(/^(\d{1,2})\/(\d{1,2})(?:[\s]+(\d{1,2}):(\d{2}))?/);
+    if (!match) return null;
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    const hour = match[3] ? Number(match[3]) : 10;
+    const minute = match[4] ? Number(match[4]) : 0;
+    const date = new Date(now.getFullYear(), month - 1, day, hour, minute);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   // --- 專案代辦事項 ---

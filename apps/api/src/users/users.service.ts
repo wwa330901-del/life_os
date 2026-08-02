@@ -17,6 +17,13 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
+  /** Used to resolve a KnowledgeCategory.blacklistedUserIds array back into
+   * display-able {id, name, email} entries — plain scalar array, no
+   * relation to join through. */
+  findManyByIds(ids: string[]) {
+    return this.prisma.user.findMany({ where: { id: { in: ids } } });
+  }
+
   findByGoogleId(googleId: string) {
     return this.prisma.user.findUnique({ where: { googleId } });
   }
@@ -32,7 +39,12 @@ export class UsersService {
     return this.prisma.user.create({ data });
   }
 
-  createFromGoogle(data: { username: string; email: string; name: string; googleId: string }) {
+  createFromGoogle(data: {
+    username: string;
+    email: string;
+    name: string;
+    googleId: string;
+  }) {
     return this.prisma.user.create({
       data: { ...data, emailVerifiedAt: new Date() },
     });
@@ -75,7 +87,11 @@ export class UsersService {
   /// Google sign-in doesn't provide a username, so derive one from the
   /// email's local part and disambiguate against existing accounts.
   async generateUniqueUsernameFromEmail(email: string): Promise<string> {
-    const base = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').slice(0, 15) || 'user';
+    const base =
+      email
+        .split('@')[0]
+        .replace(/[^a-zA-Z0-9_]/g, '')
+        .slice(0, 15) || 'user';
 
     let candidate = base;
     let suffix = 0;

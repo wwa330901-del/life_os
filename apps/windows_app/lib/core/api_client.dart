@@ -11,6 +11,7 @@ import 'models/document_template.dart';
 import 'models/finance.dart';
 import 'models/generated_document.dart';
 import 'models/home_dashboard.dart';
+import 'models/knowledge.dart';
 import 'models/project_todo.dart';
 import 'models/project.dart';
 import 'models/project_member.dart';
@@ -472,6 +473,108 @@ class ApiClient {
     await _post('/document-approvals/steps/$stepId/reply', {'text': text});
   }
 
+  // --- 知識庫 ---
+
+  Future<List<KnowledgeCategory>> listKnowledgeCategories() async {
+    final body = await _getList('/knowledge/categories');
+    return body.map((e) => KnowledgeCategory.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<KnowledgeCategory>> listPublicKnowledgeCategories() async {
+    final body = await _getList('/knowledge/categories/public');
+    return body.map((e) => KnowledgeCategory.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<KnowledgeCategory> createKnowledgeCategory({
+    required String name,
+    required bool isPublic,
+    required List<(String name, KnowledgeFieldType type)> fields,
+  }) async {
+    final body = await _post('/knowledge/categories', {
+      'name': name,
+      'isPublic': isPublic,
+      'fields': fields.map((f) => {'name': f.$1, 'type': f.$2.wireValue}).toList(),
+    });
+    return KnowledgeCategory.fromJson(body);
+  }
+
+  Future<void> updateKnowledgeCategory({required String categoryId, String? name, bool? isPublic}) async {
+    await _patch('/knowledge/categories/$categoryId', {
+      if (name != null) 'name': name,
+      if (isPublic != null) 'isPublic': isPublic,
+    });
+  }
+
+  Future<void> deleteKnowledgeCategory(String categoryId) async {
+    await _delete('/knowledge/categories/$categoryId');
+  }
+
+  Future<void> addKnowledgeField({
+    required String categoryId,
+    required String name,
+    required KnowledgeFieldType type,
+  }) async {
+    await _post('/knowledge/categories/$categoryId/fields', {'name': name, 'type': type.wireValue});
+  }
+
+  Future<void> renameKnowledgeField({
+    required String categoryId,
+    required String fieldId,
+    required String name,
+  }) async {
+    await _patch('/knowledge/categories/$categoryId/fields/$fieldId', {'name': name});
+  }
+
+  Future<void> removeKnowledgeField({required String categoryId, required String fieldId}) async {
+    await _delete('/knowledge/categories/$categoryId/fields/$fieldId');
+  }
+
+  Future<void> addKnowledgeBlacklistEntry({required String categoryId, required String email}) async {
+    await _post('/knowledge/categories/$categoryId/blacklist', {'email': email});
+  }
+
+  Future<void> removeKnowledgeBlacklistEntry({required String categoryId, required String blockedUserId}) async {
+    await _delete('/knowledge/categories/$categoryId/blacklist/$blockedUserId');
+  }
+
+  Future<List<KnowledgeItem>> listKnowledgeItems({String? categoryId, String? search}) async {
+    final query = _queryString({'categoryId': categoryId, 'search': search});
+    final body = await _getList('/knowledge/items$query');
+    return body.map((e) => KnowledgeItem.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<KnowledgeItem>> listPublicKnowledgeItems({
+    String? categoryId,
+    String? ownerUserId,
+    String? search,
+  }) async {
+    final query = _queryString({'categoryId': categoryId, 'ownerUserId': ownerUserId, 'search': search});
+    final body = await _getList('/knowledge/items/public$query');
+    return body.map((e) => KnowledgeItem.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<KnowledgeItem> getKnowledgeItem(String itemId) async {
+    final body = await _get('/knowledge/items/$itemId');
+    return KnowledgeItem.fromJson(body);
+  }
+
+  Future<void> saveKnowledgeItemCopy(String itemId) async {
+    await _post('/knowledge/items/$itemId/save-copy', {});
+  }
+
+  Future<void> shareKnowledgeItem(String itemId) async {
+    await _post('/knowledge/items/$itemId/share', {});
+  }
+
+  Future<void> deleteKnowledgeItem(String itemId) async {
+    await _delete('/knowledge/items/$itemId');
+  }
+
+  String _queryString(Map<String, String?> params) {
+    final entries = params.entries.where((e) => e.value != null && e.value!.isNotEmpty);
+    if (entries.isEmpty) return '';
+    return '?${entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value!)}').join('&')}';
+  }
 
   Future<Project> getProject(String projectId) async {
     final body = await _get('/projects/$projectId');

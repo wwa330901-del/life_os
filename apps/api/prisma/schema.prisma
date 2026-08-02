@@ -33,6 +33,7 @@ enum PropertyType {
   NUMBER
   DATE
   SELECT
+  BOOLEAN
 }
 
 enum TodoPriority {
@@ -114,6 +115,8 @@ model User {
   documentApprovalsSubmitted DocumentApproval[]
   documentApprovalSteps      DocumentApprovalStep[]
   documentApprovalStepNotes  DocumentApprovalStepNote[]
+  knowledgeCategories        KnowledgeCategory[]
+  knowledgeItems             KnowledgeItem[]
 }
 
 model Space {
@@ -841,6 +844,22 @@ model LineAccountLink {
   activeProjectId String?
   activeProject    Project? @relation(fields: [activeProjectId], references: [id], onDelete: SetNull)
 
+  /// Set while a KnowledgeItem is AWAITING_CATEGORY_DECISION and this user
+  /// has just been asked "建議新增 XX 分類" — their next plain-text reply
+  /// ("新增" or an existing category name) resolves this specific item,
+  /// same single-pending-slot pattern as StockRecurringInvestment.awaitingReply.
+  pendingKnowledgeItemId String?
+
+  /// Set to "美食"/"景點" right after the user taps that LINE rich-menu
+  /// button — their next plain-text message is treated as the location to
+  /// search, not a new command.
+  pendingKnowledgeLocationQueryCategory String?
+
+  /// Set after the user replies "安排" to an 展覽資訊 ending-soon reminder —
+  /// their next plain-text reply is parsed as the date/time to schedule,
+  /// which then creates the CalendarEvent + ProjectTodo for this item.
+  pendingExhibitionScheduleItemId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -868,4 +887,150 @@ model ProjectTodo {
   updatedAt DateTime @updatedAt
 
   @@index([projectId])
+}
+
+enum KnowledgeItemStatus {
+  PENDING
+  PROCESSING
+  AWAITING_CATEGORY_DECISION
+  DONE
+  FAILED
+}
+
+/// Only meaningful when the item's category is 展覽資訊 — tracks whether the
+/// "快結束了還沒去" LINE reminder has been answered yet, so the daily cron
+/// doesn't keep re-asking once the user has already said 安排 or 不安排.
+/// This is workflow state the automation itself manages, not a user-defined
+/// field, which is why it's a fixed column instead of living in
+/// KnowledgeFieldValue like 是否已觀展/結束日期 do.
+enum KnowledgeExhibitionDecisionStatus {
+  PENDING
+  SCHEDULED
+  CANCELLED
+}
+
+/// One knowledge-collection category a user has defined for themselves —
+/// e.g. 美食/景點/展覽資訊 — independent module, not scoped to any Space
+/// (see 大系統 doc: 知識庫 is account-level, not personal/company/calendar).
+/// Sharing is at this granularity (a whole category, not per-item): making
+/// a category public exposes every item under it — present and future — to
+/// every other account on the platform except whoever's in `blacklistedUserIds`.
+model KnowledgeCategory {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  isPublic           Boolean  @default(false)
+  blacklistedUserIds String[] @default([])
+
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  fields KnowledgeFieldDefinition[]
+  items  KnowledgeItem[]
+
+  @@unique([ownerUserId, name])
+}
+
+/// One custom field a category's owner has defined for it (e.g. 美食's
+/// 店名/地址/評價) — same "each owner defines their own columns" pattern as
+/// ProjectPropertyDefinition, just scoped to a KnowledgeCategory instead of
+/// a Space. The AI content-analysis service is given the current category's
+/// field list and asked to fill in a value per field when it analyzes new
+/// content for that category.
+model KnowledgeFieldDefinition {
+  id        String       @id @default(uuid())
+  name      String
+  type      PropertyType
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+
+  categoryId String
+  category   KnowledgeCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  options KnowledgeFieldOption[]
+  values  KnowledgeFieldValue[]
+}
+
+/// The choices for one SELECT-type field definition.
+model KnowledgeFieldOption {
+  id        String   @id @default(uuid())
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  definitionId String
+  definition   KnowledgeFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  values KnowledgeFieldValue[]
+}
+
+/// One saved thing — a URL (or a directly-sent JPG/PNG) the user dropped
+/// into LINE, plus whatever the AI made of it. `categoryId` stays null while
+/// `status` is PENDING/PROCESSING/AWAITING_CATEGORY_DECISION; once a
+/// category is resolved (matched or freshly created) it's set and `status`
+/// becomes DONE. `rawContent` is kept even after analysis (per the original
+/// design brief's "保留原始資料") so a future model upgrade can re-analyze
+/// without re-fetching the source.
+model KnowledgeItem {
+  id String @id @default(uuid())
+
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  categoryId String?
+  category   KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  status                KnowledgeItemStatus @default(PENDING)
+  /// Set when the AI couldn't match any existing category — the name it
+  /// suggested, shown to the user as "建議新增 XX 分類" while awaiting reply.
+  suggestedCategoryName String?
+  /// [{name, type}] the AI proposed for that new category — used verbatim
+  /// if the user replies "新增"; kept separate from suggestedCategoryName
+  /// since it's structured, not display text.
+  suggestedFields       Json?
+  errorMessage          String?
+
+  sourceUrl      String?
+  sourcePlatform String? // e.g. "IG", "YouTube", "網頁文章", "PDF", "圖片" — display only
+  title          String?
+  summary        String?
+  tags           String[] @default([])
+  rawContent     String?
+
+  /// Only used when category = 展覽資訊 — see KnowledgeExhibitionDecisionStatus.
+  exhibitionDecisionStatus KnowledgeExhibitionDecisionStatus?
+  exhibitionPlannedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fieldValues KnowledgeFieldValue[]
+
+  @@index([ownerUserId, categoryId])
+  @@index([status])
+}
+
+/// One item's value for one field definition. Exactly one of
+/// textValue/numberValue/dateValue/booleanValue/optionId is populated,
+/// chosen by `definition.type` — same single-table-per-type-column shape as
+/// ProjectPropertyValue.
+model KnowledgeFieldValue {
+  id String @id @default(uuid())
+
+  textValue    String?
+  numberValue  Float?
+  dateValue    DateTime?
+  booleanValue Boolean?
+
+  optionId String?
+  option   KnowledgeFieldOption? @relation(fields: [optionId], references: [id], onDelete: SetNull)
+
+  itemId String
+  item   KnowledgeItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  definitionId String
+  definition   KnowledgeFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, definitionId])
 }
