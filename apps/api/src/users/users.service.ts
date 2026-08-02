@@ -17,6 +17,23 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
+  /** null/undefined and '' are both treated as "cleared" — the App's clear
+   * button sends an empty string rather than omitting the field. */
+  async setGeminiApiKey(userId: string, apiKey: string | null): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { geminiApiKey: apiKey || null },
+    });
+  }
+
+  async hasGeminiApiKey(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { geminiApiKey: true },
+    });
+    return Boolean(user?.geminiApiKey);
+  }
+
   /** Used to resolve a KnowledgeCategory.blacklistedUserIds array back into
    * display-able {id, name, email} entries — plain scalar array, no
    * relation to join through. */

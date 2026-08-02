@@ -13,6 +13,10 @@ export interface CategoryContext {
 }
 
 export interface ContentAnalysisInput {
+  /** The calling user's own Gemini API key (aistudio.google.com) — every
+   * call bills to their own Google account, never a shared platform key.
+   * Callers must check this is set before invoking `analyze` at all. */
+  apiKey: string;
   /** Display label only, e.g. "IG"/"YouTube"/"網頁文章"/"PDF"/"圖片". */
   sourcePlatform: string;
   sourceUrl?: string;
@@ -47,6 +51,17 @@ export interface ContentAnalysisUnmatchedResult {
 export type ContentAnalysisResult =
   ContentAnalysisMatchedResult | ContentAnalysisUnmatchedResult;
 
+export interface ContentAnalysisUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface ContentAnalysisOutcome {
+  result: ContentAnalysisResult;
+  usage: ContentAnalysisUsage;
+}
+
 export const AI_CONTENT_ANALYSIS_SERVICE = Symbol(
   'AI_CONTENT_ANALYSIS_SERVICE',
 );
@@ -55,5 +70,5 @@ export const AI_CONTENT_ANALYSIS_SERVICE = Symbol(
  * implementation; a Claude/GPT/local-model one can implement this same
  * interface later without touching any caller. */
 export interface AiContentAnalysisService {
-  analyze(input: ContentAnalysisInput): Promise<ContentAnalysisResult>;
+  analyze(input: ContentAnalysisInput): Promise<ContentAnalysisOutcome>;
 }

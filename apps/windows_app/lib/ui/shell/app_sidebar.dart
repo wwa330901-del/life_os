@@ -9,6 +9,7 @@ import '../../core/theme/app_accents.dart';
 import '../../state/auth_provider.dart';
 import '../../state/space_provider.dart';
 import '../../state/ui_prefs_provider.dart';
+import '../widgets/ai_settings_dialog.dart';
 
 const _sidebarWidth = 220.0;
 const _railWidth = 14.0;
@@ -269,6 +270,12 @@ class _SidebarPanel extends ConsumerWidget {
               label: session?.user.name ?? '個人設定',
               selected: false,
               onTap: () => _editName(context, ref, session?.user.name ?? ''),
+            ),
+            _NavItem(
+              icon: Icons.smart_toy_outlined,
+              label: 'AI 設定',
+              selected: false,
+              onTap: () => showDialog(context: context, builder: (_) => const AiSettingsDialog()),
             ),
             _NavItem(
               icon: Icons.logout,

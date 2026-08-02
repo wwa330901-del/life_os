@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import {
   AiContentAnalysisService,
   ContentAnalysisInput,
+  ContentAnalysisOutcome,
   ContentAnalysisResult,
   KnowledgeFieldType,
 } from './ai-content-analysis.interface';
@@ -26,7 +27,8 @@ function toFieldType(value: string): KnowledgeFieldType {
  * why 2.5 Flash was picked over the newer 3.x Flash tiers: materially
  * cheaper, still fully GA/multimodal, and this module's outputs (short
  * summaries/tags/field extraction) don't need frontier-tier reasoning. */
-const MODEL = 'gemini-2.5-flash';
+export const GEMINI_MODEL = 'gemini-2.5-flash';
+const MODEL = GEMINI_MODEL;
 
 const RESPONSE_SCHEMA = {
   type: 'object',
@@ -88,16 +90,16 @@ interface RawGeminiOutput {
 @Injectable()
 export class GeminiContentAnalysisService implements AiContentAnalysisService {
   private readonly logger = new Logger(GeminiContentAnalysisService.name);
-  private readonly client = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY ?? '',
-  });
 
-  async analyze(input: ContentAnalysisInput): Promise<ContentAnalysisResult> {
+  async analyze(input: ContentAnalysisInput): Promise<ContentAnalysisOutcome> {
+    const client = new GoogleGenAI({ apiKey: input.apiKey });
     const parts = this.buildInputParts(input);
 
     let outputText: string | undefined;
+    let inputTokens = 0;
+    let outputTokens = 0;
     try {
-      const interaction = await this.client.interactions.create({
+      const interaction = await client.interactions.create({
         model: MODEL,
         input: parts,
         response_format: {
@@ -107,6 +109,8 @@ export class GeminiContentAnalysisService implements AiContentAnalysisService {
         },
       });
       outputText = interaction.output_text;
+      inputTokens = interaction.usage?.total_input_tokens ?? 0;
+      outputTokens = interaction.usage?.total_output_tokens ?? 0;
     } catch (error) {
       this.logger.error(
         `Gemini interaction failed for ${input.sourcePlatform} content`,
@@ -119,7 +123,10 @@ export class GeminiContentAnalysisService implements AiContentAnalysisService {
       throw new Error('Gemini interaction returned no output_text');
     }
     const raw = JSON.parse(outputText) as RawGeminiOutput;
-    return this.toResult(raw);
+    return {
+      result: this.toResult(raw),
+      usage: { model: MODEL, inputTokens, outputTokens },
+    };
   }
 
   private buildInputParts(input: ContentAnalysisInput): GeminiInputPart[] {

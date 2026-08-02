@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import 'tabs/ai_usage_tab.dart';
 import 'tabs/private_knowledge_tab.dart';
 import 'tabs/public_knowledge_tab.dart';
 
 /// 知識庫 — account-level module, independent of any Space (see 大系統 doc).
-/// 私人區 (everything the caller owns) and 公開區 (other users' public
-/// categories the caller isn't blacklisted from).
+/// 私人區 (everything the caller owns)、公開區 (other users' public
+/// categories the caller isn't blacklisted from)、用量記錄 (this user's own
+/// Gemini usage/cost history only).
 class KnowledgeHomeScreen extends StatefulWidget {
   const KnowledgeHomeScreen({super.key});
 
@@ -14,7 +16,7 @@ class KnowledgeHomeScreen extends StatefulWidget {
 }
 
 class _KnowledgeHomeScreenState extends State<KnowledgeHomeScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 2, vsync: this);
+  late final TabController _tabController = TabController(length: 3, vsync: this);
 
   @override
   void dispose() {
@@ -32,6 +34,7 @@ class _KnowledgeHomeScreenState extends State<KnowledgeHomeScreen> with SingleTi
           tabs: const [
             Tab(text: '私人區'),
             Tab(text: '公開區'),
+            Tab(text: '用量記錄'),
           ],
         ),
         Expanded(
@@ -40,6 +43,7 @@ class _KnowledgeHomeScreenState extends State<KnowledgeHomeScreen> with SingleTi
             children: const [
               PrivateKnowledgeTab(),
               PublicKnowledgeTab(),
+              AiUsageTab(),
             ],
           ),
         ),

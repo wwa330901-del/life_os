@@ -59,7 +59,10 @@ export class KnowledgeItemsController {
   /// 分享 — LINE 沒有開放第三方桌面軟體指定分享給某個朋友的能力，退而求其次
   /// 傳一則含連結的訊息給自己的 LINE，自己再用 LINE 內建轉發功能傳給朋友。
   @Post(':itemId/share')
-  share(@CurrentUser() user: AuthenticatedUser, @Param('itemId') itemId: string) {
+  share(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('itemId') itemId: string,
+  ) {
     return this.itemsService.shareToOwnLine(user.id, itemId);
   }
 

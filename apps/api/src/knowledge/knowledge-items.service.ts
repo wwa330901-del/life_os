@@ -35,7 +35,11 @@ export class KnowledgeItemsService {
    * message, not a flex/notification card). */
   async shareToOwnLine(userId: string, itemId: string) {
     const item = await this.getDetail(userId, itemId);
-    const lines = [item.title ?? '未命名', item.summary ?? '', item.sourceUrl ?? ''].filter(Boolean);
+    const lines = [
+      item.title ?? '未命名',
+      item.summary ?? '',
+      item.sourceUrl ?? '',
+    ].filter(Boolean);
     await this.lineNotifier.notifyByUser(userId, lines.join('\n'));
   }
 

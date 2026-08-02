@@ -6,8 +6,15 @@ import {
   FetchedContent,
 } from './content-fetcher.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
+import { UsersService } from '../users/users.service';
+import { AiUsageService } from './ai-usage.service';
+import { GEMINI_MODEL } from './ai/gemini-content-analysis.service';
 import { AI_CONTENT_ANALYSIS_SERVICE } from './ai/ai-content-analysis.interface';
 import type { AiContentAnalysisService } from './ai/ai-content-analysis.interface';
+import { AiUsageStatus } from '../../generated/prisma/client.js';
+
+const NO_API_KEY_MESSAGE =
+  '你還沒有設定自己的 Gemini API 金鑰，請先到 App 的「AI 設定」貼上你自己的金鑰才能使用知識庫分析功能。';
 
 /** Ties fetch -> AI analysis -> persistence together, run fire-and-forget
  * from the LINE webhook handler (which has already replied "收到，分析中"
@@ -18,7 +25,11 @@ import type { AiContentAnalysisService } from './ai/ai-content-analysis.interfac
  * `markFailed` — nothing here ever throws back to a caller that isn't
  * already inside a try/catch of its own. Completion (success, needs a
  * category decision, or failure) is always reported back via a LINE PUSH
- * (not reply — the original replyToken is long since consumed). */
+ * (not reply — the original replyToken is long since consumed).
+ *
+ * Every user brings their own Gemini API key (billed to their own Google
+ * account, by explicit design — no shared/fallback key) — `requireApiKey`
+ * fails fast before any fetch/AI work happens if one isn't set. */
 @Injectable()
 export class KnowledgeAnalysisPipeline {
   private readonly logger = new Logger(KnowledgeAnalysisPipeline.name);
@@ -28,6 +39,8 @@ export class KnowledgeAnalysisPipeline {
     private readonly categoriesService: KnowledgeCategoriesService,
     private readonly contentFetcher: ContentFetcherService,
     private readonly lineNotifier: LineNotifierService,
+    private readonly usersService: UsersService,
+    private readonly aiUsageService: AiUsageService,
     @Inject(AI_CONTENT_ANALYSIS_SERVICE)
     private readonly aiService: AiContentAnalysisService,
   ) {}
@@ -38,15 +51,16 @@ export class KnowledgeAnalysisPipeline {
     url: string,
   ): Promise<void> {
     try {
+      const apiKey = await this.requireApiKey(ownerUserId);
       await this.itemsService.markProcessing(itemId);
       const fetched = await this.contentFetcher.fetchFromUrl(url);
-      await this.runAnalysis(itemId, ownerUserId, fetched);
+      await this.runAnalysis(itemId, ownerUserId, apiKey, fetched);
     } catch (error) {
       this.logger.error(`知識庫網址分析失敗 item=${itemId}`, error as Error);
       await this.itemsService.markFailed(itemId, this.errorMessage(error));
       await this.lineNotifier.notifyByUser(
         ownerUserId,
-        `這則知識庫內容分析失敗了：${this.errorMessage(error)}`,
+        this.userFacingMessage(error),
       );
     }
   }
@@ -57,8 +71,9 @@ export class KnowledgeAnalysisPipeline {
     image: { data: Buffer; mimeType: string },
   ): Promise<void> {
     try {
+      const apiKey = await this.requireApiKey(ownerUserId);
       await this.itemsService.markProcessing(itemId);
-      await this.runAnalysis(itemId, ownerUserId, {
+      await this.runAnalysis(itemId, ownerUserId, apiKey, {
         sourcePlatform: '圖片',
         image,
       });
@@ -67,14 +82,33 @@ export class KnowledgeAnalysisPipeline {
       await this.itemsService.markFailed(itemId, this.errorMessage(error));
       await this.lineNotifier.notifyByUser(
         ownerUserId,
-        `這則知識庫內容分析失敗了：${this.errorMessage(error)}`,
+        this.userFacingMessage(error),
       );
     }
+  }
+
+  /** The "no API key" error is already a complete, friendly instruction —
+   * everything else gets a generic wrapper so a raw technical message
+   * (e.g. "Fetch failed with status 404") doesn't show up unexplained. */
+  private userFacingMessage(error: unknown): string {
+    const message = this.errorMessage(error);
+    return message === NO_API_KEY_MESSAGE
+      ? message
+      : `這則知識庫內容分析失敗了：${message}`;
+  }
+
+  private async requireApiKey(userId: string): Promise<string> {
+    const user = await this.usersService.findById(userId);
+    if (!user?.geminiApiKey) {
+      throw new Error(NO_API_KEY_MESSAGE);
+    }
+    return user.geminiApiKey;
   }
 
   private async runAnalysis(
     itemId: string,
     ownerUserId: string,
+    apiKey: string,
     fetched: FetchedContent,
   ): Promise<void> {
     await this.itemsService.updateSourcePlatform(
@@ -85,29 +119,56 @@ export class KnowledgeAnalysisPipeline {
     const item = await this.itemsService.getByIdInternal(itemId);
     const existingCategories =
       await this.categoriesService.getCategoriesForAi(ownerUserId);
-    const result = await this.aiService.analyze({
-      sourcePlatform: fetched.sourcePlatform,
-      sourceUrl: item.sourceUrl ?? undefined,
-      extractedText: fetched.extractedText,
-      youtubeUrl: fetched.youtubeUrl,
-      image: fetched.image,
-      existingCategories,
+
+    const startedAt = Date.now();
+    const outcome = await this.aiService
+      .analyze({
+        apiKey,
+        sourcePlatform: fetched.sourcePlatform,
+        sourceUrl: item.sourceUrl ?? undefined,
+        extractedText: fetched.extractedText,
+        youtubeUrl: fetched.youtubeUrl,
+        image: fetched.image,
+        existingCategories,
+      })
+      .catch(async (error: unknown) => {
+        await this.aiUsageService.record({
+          userId: ownerUserId,
+          feature: 'knowledge',
+          model: GEMINI_MODEL,
+          inputTokens: 0,
+          outputTokens: 0,
+          durationMs: Date.now() - startedAt,
+          status: AiUsageStatus.FAILED,
+          errorMessage: this.errorMessage(error),
+        });
+        throw error;
+      });
+
+    await this.aiUsageService.record({
+      userId: ownerUserId,
+      feature: 'knowledge',
+      model: outcome.usage.model,
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+      durationMs: Date.now() - startedAt,
+      status: AiUsageStatus.SUCCESS,
     });
 
-    const outcome = await this.itemsService.applyAnalysisResult(
+    const applyOutcome = await this.itemsService.applyAnalysisResult(
       itemId,
       fetched.extractedText,
-      result,
+      outcome.result,
     );
-    if (outcome.status === 'DONE') {
+    if (applyOutcome.status === 'DONE') {
       await this.lineNotifier.notifyByUser(
         ownerUserId,
-        `已建立資料，分類為 ${outcome.categoryName}`,
+        `已建立資料，分類為 ${applyOutcome.categoryName}`,
       );
     } else {
       await this.lineNotifier.notifyByUser(
         ownerUserId,
-        `這則內容好像沒有適合的分類，建議新增「${outcome.suggestedCategoryName}」分類。\n回覆「新增」建立，或回覆一個你現有的分類名稱來歸類到那裡。`,
+        `這則內容好像沒有適合的分類，建議新增「${applyOutcome.suggestedCategoryName}」分類。\n回覆「新增」建立，或回覆一個你現有的分類名稱來歸類到那裡。`,
       );
     }
   }

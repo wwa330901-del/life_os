@@ -94,6 +94,15 @@ model User {
   // one company space.
   isPlatformAdmin Boolean @default(false)
 
+  /// This user's own Gemini API key (aistudio.google.com), used for their
+  /// own 知識庫 AI analysis so usage bills to their own Google account, not
+  /// a shared platform-wide key. Null = feature unusable for them (no
+  /// fallback to any shared key, by explicit design). Plain column, same
+  /// as this schema's other third-party secrets (e.g.
+  /// GoogleCalendarConnection.refreshToken) — Postgres access itself is
+  /// the trust boundary.
+  geminiApiKey String?
+
   /// This user's 首頁 widget layout — which widgets are shown and in what
   /// order, e.g. `{ widgets: [{ type: "personalFinance", visible: true },
   /// ...] }`. Null means "use the default layout" (all widgets, default
@@ -117,6 +126,7 @@ model User {
   documentApprovalStepNotes  DocumentApprovalStepNote[]
   knowledgeCategories        KnowledgeCategory[]
   knowledgeItems             KnowledgeItem[]
+  aiUsageLogs                AiUsageLog[]
 }
 
 model Space {
@@ -1033,4 +1043,36 @@ model KnowledgeFieldValue {
   definition   KnowledgeFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
 
   @@unique([itemId, definitionId])
+}
+
+enum AiUsageStatus {
+  SUCCESS
+  FAILED
+}
+
+/// One AI call's usage/cost — currently only 知識庫's Gemini calls log here,
+/// but `feature` is a plain string (not an enum) so any future AI feature
+/// can reuse this same table instead of growing a parallel one. Visible
+/// only to the user themselves (see AiUsageService) — this is personal
+/// spend tracking, not a platform-wide admin report.
+model AiUsageLog {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  feature String // e.g. "knowledge"
+  model   String // e.g. "gemini-2.5-flash"
+
+  inputTokens  Int
+  outputTokens Int
+  costUsd      Float
+  durationMs   Int
+
+  status       AiUsageStatus
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

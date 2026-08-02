@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'models/admin_models.dart';
+import 'models/ai_usage.dart';
 import 'models/app_user.dart';
 import 'models/calendar_event.dart';
 import 'models/document_approval.dart';
@@ -568,6 +569,24 @@ class ApiClient {
 
   Future<void> deleteKnowledgeItem(String itemId) async {
     await _delete('/knowledge/items/$itemId');
+  }
+
+  Future<bool> hasGeminiApiKey() async {
+    final body = await _get('/users/me/gemini-key');
+    return body['hasKey'] as bool;
+  }
+
+  Future<void> setGeminiApiKey(String apiKey) async {
+    await _patch('/users/me/gemini-key', {'apiKey': apiKey});
+  }
+
+  Future<void> clearGeminiApiKey() async {
+    await _delete('/users/me/gemini-key');
+  }
+
+  Future<AiUsageHistory> getAiUsageHistory() async {
+    final body = await _get('/knowledge/ai-usage');
+    return AiUsageHistory.fromJson(body);
   }
 
   String _queryString(Map<String, String?> params) {
