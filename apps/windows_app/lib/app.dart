@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
 import 'state/auth_provider.dart';
+import 'state/knowledge_provider.dart';
 import 'state/space_provider.dart';
 import 'state/update_provider.dart';
 import 'ui/screens/login_screen.dart';
 import 'ui/screens/space_picker_screen.dart';
+import 'ui/shell/knowledge_shell.dart';
 import 'ui/shell/space_shell.dart';
 import 'ui/widgets/update_dialog.dart';
 
@@ -69,6 +71,10 @@ class _RootRouter extends ConsumerWidget {
     final session = authState.value;
     if (session == null) {
       return const LoginScreen();
+    }
+
+    if (ref.watch(showKnowledgeLibraryProvider)) {
+      return const KnowledgeShell();
     }
 
     final selectedSpace = ref.watch(selectedSpaceProvider);

@@ -8,6 +8,7 @@ import '../../core/theme/app_accents.dart';
 import '../../core/theme/app_theme.dart';
 import '../../state/auth_provider.dart';
 import '../../state/home_provider.dart';
+import '../../state/knowledge_provider.dart';
 import '../../state/space_provider.dart';
 import 'admin/admin_home_screen.dart';
 import 'home/home_dashboard_widgets.dart';
@@ -68,6 +69,9 @@ class SpacePickerScreen extends ConsumerWidget {
                               spacing: 16,
                               runSpacing: 16,
                               children: [
+                                _KnowledgeLibraryCard(
+                                  onTap: () => ref.read(showKnowledgeLibraryProvider.notifier).open(),
+                                ),
                                 for (final space in spaces)
                                   _SpaceCard(
                                     space: space,
@@ -207,6 +211,55 @@ class _HomeDashboardSection extends ConsumerWidget {
         child: Center(child: CircularProgressIndicator()),
       ),
       error: (error, _) => Text('讀取版面設定失敗：$error'),
+    );
+  }
+}
+
+/// 知識庫 isn't a Space (it's account-level, see 大系統 doc), so it gets its
+/// own card here rather than being folded into the `spaces` list — tapping
+/// it goes straight to `KnowledgeShell` via `showKnowledgeLibraryProvider`,
+/// bypassing `SpaceShell`/`AppSidebar` entirely.
+class _KnowledgeLibraryCard extends StatelessWidget {
+  const _KnowledgeLibraryCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = AppAccents.knowledge(scheme.brightness);
+
+    return SizedBox(
+      width: 180,
+      height: 140,
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.auto_stories_outlined, size: 18, color: scheme.onSurface),
+                ),
+                const Spacer(),
+                const Text('知識庫', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(
+                  '知識蒐集中心',
+                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

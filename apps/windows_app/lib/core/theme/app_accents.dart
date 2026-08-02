@@ -13,6 +13,8 @@ abstract final class AppAccents {
   static const _companyDark = Color(0xFF3F3120);
   static const _calendarLight = Color(0xFFD6E8DE);
   static const _calendarDark = Color(0xFF25382E);
+  static const _knowledgeLight = Color(0xFFEADCC8);
+  static const _knowledgeDark = Color(0xFF3D3323);
 
   static Color personal(Brightness brightness) =>
       brightness == Brightness.dark ? _personalDark : _personalLight;
@@ -22,4 +24,7 @@ abstract final class AppAccents {
 
   static Color calendar(Brightness brightness) =>
       brightness == Brightness.dark ? _calendarDark : _calendarLight;
+
+  static Color knowledge(Brightness brightness) =>
+      brightness == Brightness.dark ? _knowledgeDark : _knowledgeLight;
 }

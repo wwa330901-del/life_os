@@ -30,8 +30,6 @@ class AppSidebar extends ConsumerStatefulWidget {
     required this.propertiesSettingsSelected,
     required this.onOpenApprovals,
     required this.approvalsSelected,
-    required this.onOpenKnowledge,
-    required this.knowledgeSelected,
   });
 
   final SpaceSummary space;
@@ -40,8 +38,6 @@ class AppSidebar extends ConsumerStatefulWidget {
   final bool propertiesSettingsSelected;
   final VoidCallback onOpenApprovals;
   final bool approvalsSelected;
-  final VoidCallback onOpenKnowledge;
-  final bool knowledgeSelected;
 
   @override
   ConsumerState<AppSidebar> createState() => _AppSidebarState();
@@ -99,8 +95,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                 propertiesSettingsSelected: widget.propertiesSettingsSelected,
                 onOpenApprovals: widget.onOpenApprovals,
                 approvalsSelected: widget.approvalsSelected,
-                onOpenKnowledge: widget.onOpenKnowledge,
-                knowledgeSelected: widget.knowledgeSelected,
                 collapsed: true,
                 onTogglePin: _pin,
               ),
@@ -126,8 +120,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
           propertiesSettingsSelected: widget.propertiesSettingsSelected,
           onOpenApprovals: widget.onOpenApprovals,
           approvalsSelected: widget.approvalsSelected,
-          onOpenKnowledge: widget.onOpenKnowledge,
-          knowledgeSelected: widget.knowledgeSelected,
           collapsed: false,
           onTogglePin: () => ref.read(sidebarCollapsedProvider.notifier).toggle(),
         ),
@@ -163,8 +155,6 @@ class _SidebarPanel extends ConsumerWidget {
     required this.propertiesSettingsSelected,
     required this.onOpenApprovals,
     required this.approvalsSelected,
-    required this.onOpenKnowledge,
-    required this.knowledgeSelected,
     required this.collapsed,
     required this.onTogglePin,
   });
@@ -175,8 +165,6 @@ class _SidebarPanel extends ConsumerWidget {
   final bool propertiesSettingsSelected;
   final VoidCallback onOpenApprovals;
   final bool approvalsSelected;
-  final VoidCallback onOpenKnowledge;
-  final bool knowledgeSelected;
 
   /// Whether this panel is currently rendering as the hover flyout (vs.
   /// pinned open in the normal layout) — only changes the pin button's
@@ -240,7 +228,7 @@ class _SidebarPanel extends ConsumerWidget {
               _NavItem(
                 icon: Icons.view_timeline_outlined,
                 label: '專案管理',
-                selected: !propertiesSettingsSelected && !approvalsSelected && !knowledgeSelected,
+                selected: !propertiesSettingsSelected && !approvalsSelected,
                 onTap: onGoToProjects,
               ),
             if (space.type == SpaceType.company)
@@ -250,12 +238,6 @@ class _SidebarPanel extends ConsumerWidget {
                 selected: approvalsSelected,
                 onTap: onOpenApprovals,
               ),
-            _NavItem(
-              icon: Icons.auto_stories_outlined,
-              label: '知識庫',
-              selected: knowledgeSelected,
-              onTap: onOpenKnowledge,
-            ),
             if (space.type == SpaceType.company && (session?.user.isPlatformAdmin ?? false))
               _NavItem(
                 icon: Icons.tune,

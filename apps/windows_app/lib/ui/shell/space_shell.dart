@@ -5,7 +5,6 @@ import '../../core/models/app_user.dart';
 import '../../state/space_provider.dart';
 import '../screens/approvals/approvals_home_screen.dart';
 import '../screens/calendar/calendar_screen.dart';
-import '../screens/knowledge/knowledge_home_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
 import '../screens/projects/project_list_screen.dart';
 import '../screens/space/space_properties_screen.dart';
@@ -17,6 +16,10 @@ import 'dashboard_view.dart';
 /// between project list / project detail via plain local state — no
 /// `Navigator.push`, matching the state-driven pattern `_RootRouter`
 /// (`app.dart`) already uses one level up for login/space-picker/here.
+///
+/// 知識庫 is NOT reachable from here — it's account-level, not scoped to any
+/// Space, so it's a sibling top-level destination (`KnowledgeShell`) reached
+/// directly from the space picker instead of nested in this sidebar.
 ///
 /// A company space goes straight to its project list — with only one real
 /// module so far, a dashboard step in between was just an extra click to
@@ -33,34 +36,23 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
   String? _openProjectId;
   bool _showPropertiesSettings = false;
   bool _showApprovals = false;
-  bool _showKnowledge = false;
 
   void _backToList() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = false;
     _showApprovals = false;
-    _showKnowledge = false;
   });
 
   void _openPropertiesSettings() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = true;
     _showApprovals = false;
-    _showKnowledge = false;
   });
 
   void _openApprovals() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = false;
     _showApprovals = true;
-    _showKnowledge = false;
-  });
-
-  void _openKnowledge() => setState(() {
-    _openProjectId = null;
-    _showPropertiesSettings = false;
-    _showApprovals = false;
-    _showKnowledge = true;
   });
 
   @override
@@ -69,9 +61,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     // `_RootRouter` only ever builds this widget once a space is selected.
     if (space == null) return const SizedBox.shrink();
 
-    final content = _showKnowledge
-        ? const KnowledgeHomeScreen()
-        : switch (space.type) {
+    final content = switch (space.type) {
       SpaceType.personal => DashboardView(space: space),
       SpaceType.calendar => CalendarScreen(space: space),
       SpaceType.company when _showPropertiesSettings => SpacePropertiesScreen(
@@ -101,8 +91,6 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
             propertiesSettingsSelected: _showPropertiesSettings,
             onOpenApprovals: _openApprovals,
             approvalsSelected: _showApprovals,
-            onOpenKnowledge: _openKnowledge,
-            knowledgeSelected: _showKnowledge,
           ),
           Expanded(child: content),
         ],
