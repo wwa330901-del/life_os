@@ -1,21 +1,28 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { KnowledgeItemsService } from './knowledge-items.service';
+import { KnowledgeAnalysisPipeline } from './knowledge-analysis-pipeline.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload';
+import { AssignKnowledgeItemCategoryDto } from './dto/assign-knowledge-item-category.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('knowledge/items')
 export class KnowledgeItemsController {
-  constructor(private readonly itemsService: KnowledgeItemsService) {}
+  constructor(
+    private readonly itemsService: KnowledgeItemsService,
+    private readonly analysisPipeline: KnowledgeAnalysisPipeline,
+  ) {}
 
   @Get()
   listOwn(
@@ -49,11 +56,19 @@ export class KnowledgeItemsController {
   }
 
   @Post(':itemId/save-copy')
-  saveCopy(
+  async saveCopy(
     @CurrentUser() user: AuthenticatedUser,
     @Param('itemId') itemId: string,
   ) {
-    return this.itemsService.saveCopy(user.id, itemId);
+    const pending = await this.itemsService.saveCopy(user.id, itemId);
+    // Fire-and-forget, same as the LINE entry point — completion comes back
+    // via a LINE push, not this HTTP response.
+    void this.analysisPipeline.processUrlSubmission(
+      pending.id,
+      user.id,
+      pending.sourceUrl!,
+    );
+    return pending;
   }
 
   /// 分享 — LINE 沒有開放第三方桌面軟體指定分享給某個朋友的能力，退而求其次
@@ -64,6 +79,17 @@ export class KnowledgeItemsController {
     @Param('itemId') itemId: string,
   ) {
     return this.itemsService.shareToOwnLine(user.id, itemId);
+  }
+
+  /// 手動指定分類 — AI 判斷不出來、或內容根本抓不到（例如 Instagram 連結）
+  /// 時的備援，不論目前狀態為何都可以呼叫，也可以拿來重新歸類已完成的項目。
+  @Patch(':itemId/category')
+  assignCategory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('itemId') itemId: string,
+    @Body() dto: AssignKnowledgeItemCategoryDto,
+  ) {
+    return this.itemsService.assignCategory(user.id, itemId, dto.categoryId);
   }
 
   @Delete(':itemId')

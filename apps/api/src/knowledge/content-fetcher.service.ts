@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import * as cheerio from 'cheerio';
 import { PDFParse } from 'pdf-parse';
 
@@ -16,18 +16,34 @@ export interface FetchedContent {
   image?: { data: Buffer; mimeType: string };
 }
 
+/** Confirmed by direct testing (2026-08-03): a logged-out fetch of an
+ * Instagram reel/post — even Instagram's own "public embed" page, meant for
+ * third-party embedding — comes back as an empty shell with no caption,
+ * video, or thumbnail at all. This isn't a "scrape harder" problem, it's a
+ * platform-level block with no unauthenticated way around it, so don't
+ * bother trying — tell the user to send a screenshot instead (the image
+ * pipeline actually sees real content). */
+export const INSTAGRAM_UNSUPPORTED_MESSAGE =
+  'Instagram 連結沒辦法自動分析（Instagram 擋掉了沒有登入的存取），麻煩改成把畫面截圖傳給我，我可以直接看截圖分析。';
+
+export function isInstagramUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname.includes('instagram.com');
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class ContentFetcherService {
-  private readonly logger = new Logger(ContentFetcherService.name);
-
   async fetchFromUrl(url: string): Promise<FetchedContent> {
     const host = this.safeHost(url);
 
     if (host && (host.includes('youtube.com') || host.includes('youtu.be'))) {
       return { sourcePlatform: 'YouTube', youtubeUrl: url };
     }
-    if (host && host.includes('instagram.com')) {
-      return this.fetchInstagramPreview(url);
+    if (isInstagramUrl(url)) {
+      throw new Error(INSTAGRAM_UNSUPPORTED_MESSAGE);
     }
 
     const response = await this.get(url);
@@ -53,41 +69,6 @@ export class ContentFetcherService {
     }
 
     return this.extractArticle(await response.text());
-  }
-
-  private async fetchInstagramPreview(url: string): Promise<FetchedContent> {
-    const response = await this.get(url);
-    const html = await response.text();
-    const $ = cheerio.load(html);
-
-    const title = $('meta[property="og:title"]').attr('content') ?? '';
-    const description =
-      $('meta[property="og:description"]').attr('content') ?? '';
-    const imageUrl = $('meta[property="og:image"]').attr('content');
-
-    const textParts = [title, description].filter(Boolean);
-    let image: FetchedContent['image'];
-    if (imageUrl) {
-      try {
-        const imageResponse = await this.get(imageUrl);
-        const contentType =
-          imageResponse.headers.get('content-type') ?? 'image/jpeg';
-        image = {
-          data: Buffer.from(await imageResponse.arrayBuffer()),
-          mimeType: contentType,
-        };
-      } catch (error) {
-        this.logger.warn(
-          `Failed to fetch IG preview image, continuing with text only: ${String(error)}`,
-        );
-      }
-    }
-
-    return {
-      sourcePlatform: 'IG',
-      extractedText: textParts.length > 0 ? textParts.join('\n') : undefined,
-      image,
-    };
   }
 
   private async extractPdf(bytes: ArrayBuffer): Promise<FetchedContent> {

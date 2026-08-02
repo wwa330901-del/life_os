@@ -4,8 +4,10 @@ import { KnowledgeCategoriesService } from './knowledge-categories.service';
 import {
   ContentFetcherService,
   FetchedContent,
+  INSTAGRAM_UNSUPPORTED_MESSAGE,
 } from './content-fetcher.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AiUsageService } from './ai-usage.service';
 import { GEMINI_MODEL } from './ai/gemini-content-analysis.service';
@@ -39,6 +41,7 @@ export class KnowledgeAnalysisPipeline {
     private readonly categoriesService: KnowledgeCategoriesService,
     private readonly contentFetcher: ContentFetcherService,
     private readonly lineNotifier: LineNotifierService,
+    private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
     private readonly aiUsageService: AiUsageService,
     @Inject(AI_CONTENT_ANALYSIS_SERVICE)
@@ -92,7 +95,8 @@ export class KnowledgeAnalysisPipeline {
    * (e.g. "Fetch failed with status 404") doesn't show up unexplained. */
   private userFacingMessage(error: unknown): string {
     const message = this.errorMessage(error);
-    return message === NO_API_KEY_MESSAGE
+    return message === NO_API_KEY_MESSAGE ||
+      message === INSTAGRAM_UNSUPPORTED_MESSAGE
       ? message
       : `這則知識庫內容分析失敗了：${message}`;
   }
@@ -166,6 +170,12 @@ export class KnowledgeAnalysisPipeline {
         `已建立資料，分類為 ${applyOutcome.categoryName}`,
       );
     } else {
+      // 記錄「這個帳號正在等你回覆分類」——沒有這一步，使用者接下來回覆的
+      // 分類名稱只會被當成一般指令解析，永遠對不到這則資料上。
+      await this.prisma.lineAccountLink.updateMany({
+        where: { userId: ownerUserId },
+        data: { pendingKnowledgeItemId: itemId },
+      });
       await this.lineNotifier.notifyByUser(
         ownerUserId,
         `這則內容好像沒有適合的分類，建議新增「${applyOutcome.suggestedCategoryName}」分類。\n回覆「新增」建立，或回覆一個你現有的分類名稱來歸類到那裡。`,

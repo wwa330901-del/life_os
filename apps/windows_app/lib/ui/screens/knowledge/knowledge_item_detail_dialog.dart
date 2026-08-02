@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/api_client.dart';
 import '../../../core/models/knowledge.dart';
 import '../../../state/auth_provider.dart';
+import '../../../state/knowledge_provider.dart';
 
 /// Full detail view for one knowledge item — works for both the caller's
 /// own items and a public one browsed from someone else (in which case
@@ -40,6 +41,41 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
     }
+  }
+
+  /// 手動指定分類 — AI 判斷不出來（例如 Instagram 連結抓不到內容）時的備援，也
+  /// 可以用來把已完成的項目重新歸到別的分類。跟其餘動作一樣，成功後關閉整個
+  /// 詳細畫面，讓外層列表下次重新開啟時看到新分類。
+  Future<void> _pickCategory(BuildContext context, WidgetRef ref) async {
+    final categories = await ref.read(knowledgeCategoriesProvider.future);
+    if (!context.mounted) return;
+    if (categories.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('你還沒有任何分類，先到「管理分類」新增一個。')));
+      return;
+    }
+
+    final chosen = await showDialog<KnowledgeCategory>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('指定分類'),
+        children: [
+          for (final category in categories)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(dialogContext).pop(category),
+              child: Text(category.name),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null || !context.mounted) return;
+
+    await _run(
+      context,
+      ref,
+      () => ref.read(apiClientProvider).assignKnowledgeItemCategory(item.id, chosen.id),
+      '已歸類到「${chosen.name}」。',
+    );
+    ref.invalidate(knowledgeItemsProvider);
   }
 
   @override
@@ -100,6 +136,11 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉')),
+        if (isOwn)
+          TextButton(
+            onPressed: () => _pickCategory(context, ref),
+            child: const Text('指定分類'),
+          ),
         if (isOwn)
           TextButton(
             onPressed: () => _run(

@@ -9,6 +9,10 @@ import { KnowledgeItemStatus, Prisma } from '../../generated/prisma/client.js';
 import { KnowledgeCategoriesService } from './knowledge-categories.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { ContentAnalysisResult } from './ai/ai-content-analysis.interface';
+import {
+  isInstagramUrl,
+  INSTAGRAM_UNSUPPORTED_MESSAGE,
+} from './content-fetcher.service';
 
 const itemInclude = {
   category: true,
@@ -206,6 +210,31 @@ export class KnowledgeItemsService {
     return existing.name;
   }
 
+  /** Manual override — lets the user pick a category themselves regardless
+   * of current status, for whenever the AI couldn't decide (or a fetch
+   * failed entirely, e.g. Instagram blocking unauthenticated access) and
+   * there's nothing to wait on. Also usable to just re-file an already-DONE
+   * item into a different category. */
+  async assignCategory(userId: string, itemId: string, categoryId: string) {
+    const item = await this.prisma.knowledgeItem.findUnique({
+      where: { id: itemId },
+    });
+    if (!item || item.ownerUserId !== userId) {
+      throw new NotFoundException('Knowledge item not found');
+    }
+    const category = await this.prisma.knowledgeCategory.findUnique({
+      where: { id: categoryId },
+    });
+    if (!category || category.ownerUserId !== userId) {
+      throw new NotFoundException('Category not found');
+    }
+    await this.prisma.knowledgeItem.update({
+      where: { id: itemId },
+      data: { categoryId, status: KnowledgeItemStatus.DONE },
+    });
+    return category.name;
+  }
+
   async listOwn(
     userId: string,
     filter: { categoryId?: string; search?: string } = {},
@@ -294,6 +323,9 @@ export class KnowledgeItemsService {
     const item = await this.getDetail(viewerUserId, itemId);
     if (!item.sourceUrl) {
       throw new BadRequestException('這筆資料沒有原始連結，無法另存');
+    }
+    if (isInstagramUrl(item.sourceUrl)) {
+      throw new BadRequestException(INSTAGRAM_UNSUPPORTED_MESSAGE);
     }
     return this.createPending(viewerUserId, {
       sourceUrl: item.sourceUrl,

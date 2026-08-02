@@ -11,6 +11,10 @@ import { computeSettlementDate } from '../stocks/stock-settlement-schedule';
 import { KnowledgeItemsService } from '../knowledge/knowledge-items.service';
 import { KnowledgeAnalysisPipeline } from '../knowledge/knowledge-analysis-pipeline.service';
 import {
+  isInstagramUrl,
+  INSTAGRAM_UNSUPPORTED_MESSAGE,
+} from '../knowledge/content-fetcher.service';
+import {
   FinanceAccountType,
   FinanceCategoryKind,
   FinanceTransactionType,
@@ -38,7 +42,10 @@ interface QuickReplyItem {
  * instead of splitting on them. */
 const SEPARATORS = /[\s\-+*/,，、]+/;
 const LEADING_SEPARATORS = new RegExp(`^${SEPARATORS.source}`);
-const EDGE_SEPARATORS = new RegExp(`^${SEPARATORS.source}|${SEPARATORS.source}$`, 'g');
+const EDGE_SEPARATORS = new RegExp(
+  `^${SEPARATORS.source}|${SEPARATORS.source}$`,
+  'g',
+);
 
 const LINK_CODE_TTL_MINUTES = 10;
 /** LINE caps a message's quickReply.items at 13. */
@@ -85,7 +92,8 @@ const MAX_QUICK_REPLY_ITEMS = 13;
 export class LineService {
   private readonly logger = new Logger(LineService.name);
   private readonly channelSecret = process.env.LINE_CHANNEL_SECRET ?? '';
-  private readonly channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? '';
+  private readonly channelAccessToken =
+    process.env.LINE_CHANNEL_ACCESS_TOKEN ?? '';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -101,14 +109,19 @@ export class LineService {
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
     if (!signature || !this.channelSecret) return false;
-    const expected = crypto.createHmac('sha256', this.channelSecret).update(rawBody).digest('base64');
+    const expected = crypto
+      .createHmac('sha256', this.channelSecret)
+      .update(rawBody)
+      .digest('base64');
     const expectedBuf = Buffer.from(expected);
     const actualBuf = Buffer.from(signature);
     if (expectedBuf.length !== actualBuf.length) return false;
     return crypto.timingSafeEqual(expectedBuf, actualBuf);
   }
 
-  async generateLinkCode(userId: string): Promise<{ code: string; expiresAt: Date }> {
+  async generateLinkCode(
+    userId: string,
+  ): Promise<{ code: string; expiresAt: Date }> {
     const code = crypto.randomInt(100000, 999999).toString();
     const expiresAt = new Date(Date.now() + LINK_CODE_TTL_MINUTES * 60 * 1000);
     await this.prisma.lineAccountLink.upsert({
@@ -126,7 +139,9 @@ export class LineService {
       if (!lineUserId || !replyToken) continue;
 
       try {
-        const link = await this.prisma.lineAccountLink.findUnique({ where: { lineUserId } });
+        const link = await this.prisma.lineAccountLink.findUnique({
+          where: { lineUserId },
+        });
 
         if (event.type === 'postback' && event.postback?.data) {
           if (!link) continue;
@@ -136,11 +151,17 @@ export class LineService {
 
         if (event.type === 'message' && event.message?.type === 'image') {
           if (!link) continue;
-          await this.handleImageMessage(link.id, link.userId, event.message.id, replyToken);
+          await this.handleImageMessage(
+            link.id,
+            link.userId,
+            event.message.id,
+            replyToken,
+          );
           continue;
         }
 
-        if (event.type !== 'message' || event.message?.type !== 'text') continue;
+        if (event.type !== 'message' || event.message?.type !== 'text')
+          continue;
         const text = event.message.text?.trim();
         if (!text) continue;
 
@@ -155,10 +176,23 @@ export class LineService {
     }
   }
 
-  private async tryCompleteLinking(lineUserId: string, code: string, replyToken: string) {
-    const pending = await this.prisma.lineAccountLink.findUnique({ where: { linkCode: code } });
-    if (!pending || !pending.linkCodeExpiresAt || pending.linkCodeExpiresAt < new Date()) {
-      await this.reply(replyToken, '綁定碼無效或已過期，請到元序 App 的記帳頁重新產生一組綁定碼。');
+  private async tryCompleteLinking(
+    lineUserId: string,
+    code: string,
+    replyToken: string,
+  ) {
+    const pending = await this.prisma.lineAccountLink.findUnique({
+      where: { linkCode: code },
+    });
+    if (
+      !pending ||
+      !pending.linkCodeExpiresAt ||
+      pending.linkCodeExpiresAt < new Date()
+    ) {
+      await this.reply(
+        replyToken,
+        '綁定碼無效或已過期，請到元序 App 的記帳頁重新產生一組綁定碼。',
+      );
       return;
     }
     await this.prisma.lineAccountLink.update({
@@ -175,10 +209,17 @@ export class LineService {
    * (LINE's own quick-reply buttons — plain text UI, not a rendered image,
    * so it never hit the CJK-font rendering problem the old rich-menu flow
    * had). */
-  private async handlePostback(linkId: string, data: string, replyToken: string) {
+  private async handlePostback(
+    linkId: string,
+    data: string,
+    replyToken: string,
+  ) {
     const [key, value] = data.split(':');
     if (key === 'proj') {
-      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { activeProjectId: value } });
+      await this.prisma.lineAccountLink.update({
+        where: { id: linkId },
+        data: { activeProjectId: value },
+      });
       await this.sendTodoHelp(linkId, value, replyToken);
     }
   }
@@ -186,9 +227,18 @@ export class LineService {
   // --- Routing ---
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
-  private static readonly TODO_ENTRY_KEYWORDS = ['代辦事項', '代辦', '待辦事項', '待辦'];
+  private static readonly TODO_ENTRY_KEYWORDS = [
+    '代辦事項',
+    '代辦',
+    '待辦事項',
+    '待辦',
+  ];
 
-  private async handleTextForLinkedUser(link: LineAccountLink, text: string, replyToken: string) {
+  private async handleTextForLinkedUser(
+    link: LineAccountLink,
+    text: string,
+    replyToken: string,
+  ) {
     const linkId = link.id;
     const userId = link.userId;
     const activeProjectId = link.activeProjectId;
@@ -245,7 +295,10 @@ export class LineService {
       return;
     }
     if (text === '切換專案') {
-      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { activeProjectId: null } });
+      await this.prisma.lineAccountLink.update({
+        where: { id: linkId },
+        data: { activeProjectId: null },
+      });
       await this.enterTodoFlow(linkId, userId, null, replyToken);
       return;
     }
@@ -292,17 +345,34 @@ export class LineService {
   // --- 記帳 ---
 
   private async sendFinanceHelp(userId: string, replyToken: string) {
-    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      await this.reply(
+        replyToken,
+        '找不到你的個人空間，請先到元序 App 登入一次。',
+      );
       return;
     }
     const [categories, accounts] = await Promise.all([
-      this.prisma.financeCategory.findMany({ where: { spaceId: space.id }, orderBy: { sortOrder: 'asc' } }),
-      this.prisma.financeAccount.findMany({ where: { spaceId: space.id }, orderBy: { sortOrder: 'asc' } }),
+      this.prisma.financeCategory.findMany({
+        where: { spaceId: space.id },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      this.prisma.financeAccount.findMany({
+        where: { spaceId: space.id },
+        orderBy: { sortOrder: 'asc' },
+      }),
     ]);
-    const expenseCats = this.formatCategoryOptions(categories, FinanceCategoryKind.EXPENSE);
-    const incomeCats = this.formatCategoryOptions(categories, FinanceCategoryKind.INCOME);
+    const expenseCats = this.formatCategoryOptions(
+      categories,
+      FinanceCategoryKind.EXPENSE,
+    );
+    const incomeCats = this.formatCategoryOptions(
+      categories,
+      FinanceCategoryKind.INCOME,
+    );
 
     await this.reply(
       replyToken,
@@ -321,8 +391,12 @@ export class LineService {
    * with children can't (the child is the real classification), so it's
    * excluded; everything else (a childless top-level category, or a
    * 子分類 itself) is a leaf. */
-  private leafCategories<T extends { id: string; parentId: string | null }>(categories: T[]): T[] {
-    const parentIds = new Set(categories.filter((c) => c.parentId).map((c) => c.parentId!));
+  private leafCategories<T extends { id: string; parentId: string | null }>(
+    categories: T[],
+  ): T[] {
+    const parentIds = new Set(
+      categories.filter((c) => c.parentId).map((c) => c.parentId!),
+    );
     return categories.filter((c) => !parentIds.has(c.id));
   }
 
@@ -331,13 +405,20 @@ export class LineService {
    * hierarchy as the app, instead of a flat list of leaf names that hides
    * which children belong under which parent. */
   private formatCategoryOptions(
-    categories: { id: string; name: string; kind: FinanceCategoryKind; parentId: string | null }[],
+    categories: {
+      id: string;
+      name: string;
+      kind: FinanceCategoryKind;
+      parentId: string | null;
+    }[],
     kind: FinanceCategoryKind,
   ): string {
     const ofKind = categories.filter((c) => c.kind === kind);
     const topLevel = ofKind.filter((c) => !c.parentId);
     const parts = topLevel.map((c) => {
-      const children = ofKind.filter((child) => child.parentId === c.id).map((child) => child.name);
+      const children = ofKind
+        .filter((child) => child.parentId === c.id)
+        .map((child) => child.name);
       return children.length ? `${c.name}（${children.join('、')}）` : c.name;
     });
     return parts.length ? parts.join('、') : '（還沒有，請到 App 新增）';
@@ -347,27 +428,49 @@ export class LineService {
    * (even if parsing failed, in which case it already sent an error reply)
    * — false only means "not a 記帳 command at all", so the caller can keep
    * trying other interpretations. */
-  private async tryFinanceCommand(userId: string, text: string, replyToken: string): Promise<boolean> {
+  private async tryFinanceCommand(
+    userId: string,
+    text: string,
+    replyToken: string,
+  ): Promise<boolean> {
     if (!text.startsWith('支出') && !text.startsWith('收入')) return false;
 
-    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      await this.reply(
+        replyToken,
+        '找不到你的個人空間，請先到元序 App 登入一次。',
+      );
       return true;
     }
     const [categories, accounts] = await Promise.all([
       this.prisma.financeCategory.findMany({ where: { spaceId: space.id } }),
-      this.prisma.financeAccount.findMany({ where: { spaceId: space.id }, orderBy: { sortOrder: 'asc' } }),
+      this.prisma.financeAccount.findMany({
+        where: { spaceId: space.id },
+        orderBy: { sortOrder: 'asc' },
+      }),
     ]);
-    const parsed = this.parseFinanceCommand(text, this.leafCategories(categories), accounts);
+    const parsed = this.parseFinanceCommand(
+      text,
+      this.leafCategories(categories),
+      accounts,
+    );
     if (!parsed) {
-      await this.reply(replyToken, '看不懂記帳格式，傳「記帳」看範例跟目前可用的分類/帳戶。');
+      await this.reply(
+        replyToken,
+        '看不懂記帳格式，傳「記帳」看範例跟目前可用的分類/帳戶。',
+      );
       return true;
     }
 
     const accountId = parsed.accountId ?? accounts[0]?.id;
     if (!accountId) {
-      await this.reply(replyToken, '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
+      await this.reply(
+        replyToken,
+        '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。',
+      );
       return true;
     }
 
@@ -384,12 +487,19 @@ export class LineService {
       },
     });
     if (parsed.type === FinanceTransactionType.EXPENSE && parsed.categoryId) {
-      await this.financeBudgetsService.notifyIfOverspent(space.id, parsed.categoryId, transactionDate);
+      await this.financeBudgetsService.notifyIfOverspent(
+        space.id,
+        parsed.categoryId,
+        transactionDate,
+      );
     }
 
     const account = accounts.find((a) => a.id === accountId);
-    const category = parsed.categoryId ? categories.find((c) => c.id === parsed.categoryId) : null;
-    const typeLabel = parsed.type === FinanceTransactionType.INCOME ? '收入' : '支出';
+    const category = parsed.categoryId
+      ? categories.find((c) => c.id === parsed.categoryId)
+      : null;
+    const typeLabel =
+      parsed.type === FinanceTransactionType.INCOME ? '收入' : '支出';
     await this.reply(
       replyToken,
       `已記錄${typeLabel} ${parsed.amount.toLocaleString('en-US')}（${category?.name ?? '未分類'} · ${account?.name ?? ''}）${parsed.note ? ' · ' + parsed.note : ''}`,
@@ -436,9 +546,14 @@ export class LineService {
     if (!(amount > 0)) return null;
     rest = rest.slice(amountMatch[0].length).replace(LEADING_SEPARATORS, '');
 
-    const kind = type === FinanceTransactionType.INCOME ? FinanceCategoryKind.INCOME : FinanceCategoryKind.EXPENSE;
+    const kind =
+      type === FinanceTransactionType.INCOME
+        ? FinanceCategoryKind.INCOME
+        : FinanceCategoryKind.EXPENSE;
     let categoryId: string | null = null;
-    for (const c of categories.filter((c) => c.kind === kind).sort((a, b) => b.name.length - a.name.length)) {
+    for (const c of categories
+      .filter((c) => c.kind === kind)
+      .sort((a, b) => b.name.length - a.name.length)) {
       const idx = rest.indexOf(c.name);
       if (idx !== -1) {
         categoryId = c.id;
@@ -448,7 +563,9 @@ export class LineService {
     }
 
     let accountId: string | null = null;
-    for (const a of [...accounts].sort((x, y) => y.name.length - x.name.length)) {
+    for (const a of [...accounts].sort(
+      (x, y) => y.name.length - x.name.length,
+    )) {
       const idx = rest.indexOf(a.name);
       if (idx !== -1) {
         accountId = a.id;
@@ -466,15 +583,24 @@ export class LineService {
    * category — everything reused from the same services the app's own
    * finance screens call, just formatted as one text reply. */
   private async sendOverview(userId: string, replyToken: string) {
-    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      await this.reply(
+        replyToken,
+        '找不到你的個人空間，請先到元序 App 登入一次。',
+      );
       return;
     }
 
     const now = new Date();
     const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
 
     const [accounts, monthSummary, todayTransactions] = await Promise.all([
@@ -484,7 +610,9 @@ export class LineService {
         where: {
           spaceId: space.id,
           date: { gte: todayStart, lt: todayEnd },
-          type: { in: [FinanceTransactionType.INCOME, FinanceTransactionType.EXPENSE] },
+          type: {
+            in: [FinanceTransactionType.INCOME, FinanceTransactionType.EXPENSE],
+          },
         },
       }),
     ]);
@@ -504,13 +632,21 @@ export class LineService {
       lines.push('（還沒有任何帳戶）');
     } else {
       for (const a of accounts) {
-        const isDebt = a.type === FinanceAccountType.CREDIT_CARD && a.balance < 0;
-        lines.push(`・${a.name}：${isDebt ? `欠款 ${fmt(-a.balance)}` : fmt(a.balance)}`);
+        const isDebt =
+          a.type === FinanceAccountType.CREDIT_CARD && a.balance < 0;
+        lines.push(
+          `・${a.name}：${isDebt ? `欠款 ${fmt(-a.balance)}` : fmt(a.balance)}`,
+        );
       }
     }
 
-    lines.push('', `今日：收入 ${fmt(todayIncome)} · 支出 ${fmt(todayExpense)}`);
-    lines.push(`本月：收入 ${fmt(monthSummary.totalIncome)} · 支出 ${fmt(monthSummary.totalExpense)}`);
+    lines.push(
+      '',
+      `今日：收入 ${fmt(todayIncome)} · 支出 ${fmt(todayExpense)}`,
+    );
+    lines.push(
+      `本月：收入 ${fmt(monthSummary.totalIncome)} · 支出 ${fmt(monthSummary.totalExpense)}`,
+    );
 
     const expenseCategories = monthSummary.byCategory
       .filter((c) => c.kind === FinanceTransactionType.EXPENSE)
@@ -519,7 +655,9 @@ export class LineService {
       lines.push('', '本月支出分類佔比：');
       for (const c of expenseCategories) {
         const pct =
-          monthSummary.totalExpense > 0 ? Math.round((c.total / monthSummary.totalExpense) * 100) : 0;
+          monthSummary.totalExpense > 0
+            ? Math.round((c.total / monthSummary.totalExpense) * 100)
+            : 0;
         lines.push(`・${c.name} ${pct}%（${fmt(c.total)}）`);
       }
     }
@@ -530,9 +668,14 @@ export class LineService {
   // --- 股票投資 ---
 
   private async sendStockHelp(userId: string, replyToken: string) {
-    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      await this.reply(
+        replyToken,
+        '找不到你的個人空間，請先到元序 App 登入一次。',
+      );
       return;
     }
     const accounts = await this.prisma.financeAccount.findMany({
@@ -554,9 +697,14 @@ export class LineService {
   }
 
   private async sendStockHoldings(userId: string, replyToken: string) {
-    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      await this.reply(
+        replyToken,
+        '找不到你的個人空間，請先到元序 App 登入一次。',
+      );
       return;
     }
     const holdings = await this.stocksHoldingsService.list(userId, space.id);
@@ -567,8 +715,12 @@ export class LineService {
     const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
     const lines = ['📊 持股總覽', ''];
     for (const h of holdings) {
-      const priceLabel = h.currentPrice != null ? fmt(h.currentPrice) : '（無報價）';
-      const gainLossLabel = h.gainLoss != null ? `${h.gainLoss >= 0 ? '+' : ''}${fmt(h.gainLoss)}` : '（無報價）';
+      const priceLabel =
+        h.currentPrice != null ? fmt(h.currentPrice) : '（無報價）';
+      const gainLossLabel =
+        h.gainLoss != null
+          ? `${h.gainLoss >= 0 ? '+' : ''}${fmt(h.gainLoss)}`
+          : '（無報價）';
       lines.push(
         `・${h.stockName ?? h.stockCode}（${h.stockCode}）：${h.shares.toFixed(2)}股 · 均價 ${fmt(h.averageCost)} · 現價 ${priceLabel} · 損益 ${gainLossLabel}`,
       );
@@ -580,12 +732,21 @@ export class LineService {
    * attempt (even if parsing failed) — same "true means stop trying other
    * interpretations" contract as `tryFinanceCommand`. Writes go straight
    * through Prisma for the same LINE-trust-boundary reason 記帳 does. */
-  private async tryStockCommand(userId: string, text: string, replyToken: string): Promise<boolean> {
+  private async tryStockCommand(
+    userId: string,
+    text: string,
+    replyToken: string,
+  ): Promise<boolean> {
     if (!text.startsWith('買股') && !text.startsWith('賣股')) return false;
 
-    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      await this.reply(
+        replyToken,
+        '找不到你的個人空間，請先到元序 App 登入一次。',
+      );
       return true;
     }
     const accounts = await this.prisma.financeAccount.findMany({
@@ -603,7 +764,10 @@ export class LineService {
 
     const accountId = parsed.accountId ?? accounts[0]?.id;
     if (!accountId) {
-      await this.reply(replyToken, '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
+      await this.reply(
+        replyToken,
+        '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。',
+      );
       return true;
     }
 
@@ -624,7 +788,8 @@ export class LineService {
     });
 
     const account = accounts.find((a) => a.id === accountId);
-    const typeLabel = parsed.type === StockTransactionType.BUY ? '買入' : '賣出';
+    const typeLabel =
+      parsed.type === StockTransactionType.BUY ? '買入' : '賣出';
     await this.reply(
       replyToken,
       `已記錄${typeLabel} ${parsed.stockCode}，約 ${shares.toFixed(2)} 股（成交價 ${parsed.pricePerShare}，投入 ${Math.round(parsed.totalCost).toLocaleString('en-US')}，帳戶 ${account?.name ?? ''}），交割日（T+2）到了會自動記帳。`,
@@ -679,7 +844,9 @@ export class LineService {
     rest = rest.slice(costMatch[0].length).replace(LEADING_SEPARATORS, '');
 
     let accountId: string | null = null;
-    for (const a of [...accounts].sort((x, y) => y.name.length - x.name.length)) {
+    for (const a of [...accounts].sort(
+      (x, y) => y.name.length - x.name.length,
+    )) {
       const idx = rest.indexOf(a.name);
       if (idx !== -1) {
         accountId = a.id;
@@ -696,13 +863,24 @@ export class LineService {
    * `StocksRecurringService.fulfillPendingReply`, never by position. The
    * whole text must match exactly three number groups (anchored), so this
    * never fires on unrelated messages that merely start with digits. */
-  private async tryStockDcaReply(userId: string, text: string, replyToken: string): Promise<boolean> {
-    const match = text.match(/^(\d{4,6})[\s\-+*/,，、]*(\d+(?:\.\d+)?)[\s\-+*/,，、]*(\d+(?:\.\d+)?)$/);
+  private async tryStockDcaReply(
+    userId: string,
+    text: string,
+    replyToken: string,
+  ): Promise<boolean> {
+    const match = text.match(
+      /^(\d{4,6})[\s\-+*/,，、]*(\d+(?:\.\d+)?)[\s\-+*/,，、]*(\d+(?:\.\d+)?)$/,
+    );
     if (!match) return false;
 
-    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      await this.reply(
+        replyToken,
+        '找不到你的個人空間，請先到元序 App 登入一次。',
+      );
       return true;
     }
 
@@ -736,7 +914,16 @@ export class LineService {
     return match ? match[0] : null;
   }
 
-  private async captureKnowledgeUrl(userId: string, url: string, replyToken: string) {
+  private async captureKnowledgeUrl(
+    userId: string,
+    url: string,
+    replyToken: string,
+  ) {
+    if (isInstagramUrl(url)) {
+      await this.reply(replyToken, INSTAGRAM_UNSUPPORTED_MESSAGE);
+      return;
+    }
+
     const item = await this.knowledgeItemsService.createPending(userId, {
       sourceUrl: url,
       sourcePlatform: '', // overwritten once the fetcher actually determines it
@@ -745,85 +932,138 @@ export class LineService {
     // Fire-and-forget — must not block the webhook's reply, and the actual
     // completion is reported back via a LINE push once done (see
     // KnowledgeAnalysisPipeline).
-    void this.knowledgeAnalysisPipeline.processUrlSubmission(item.id, userId, url);
+    void this.knowledgeAnalysisPipeline.processUrlSubmission(
+      item.id,
+      userId,
+      url,
+    );
   }
 
   /** LINE image messages carry no URL — the bytes have to be pulled from
    * LINE's separate content-hosting API using the message id. */
-  private async handleImageMessage(linkId: string, userId: string, messageId: string | undefined, replyToken: string) {
+  private async handleImageMessage(
+    linkId: string,
+    userId: string,
+    messageId: string | undefined,
+    replyToken: string,
+  ) {
     if (!messageId) return;
     try {
       const data = await this.fetchLineImageContent(messageId);
-      const item = await this.knowledgeItemsService.createPending(userId, { sourcePlatform: '圖片' });
-      await this.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
-      void this.knowledgeAnalysisPipeline.processImageSubmission(item.id, userId, {
-        data,
-        mimeType: 'image/jpeg',
+      const item = await this.knowledgeItemsService.createPending(userId, {
+        sourcePlatform: '圖片',
       });
+      await this.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
+      void this.knowledgeAnalysisPipeline.processImageSubmission(
+        item.id,
+        userId,
+        {
+          data,
+          mimeType: 'image/jpeg',
+        },
+      );
     } catch (error) {
-      this.logger.error(`Failed to fetch LINE image content for link=${linkId}`, error as Error);
+      this.logger.error(
+        `Failed to fetch LINE image content for link=${linkId}`,
+        error as Error,
+      );
       await this.reply(replyToken, '圖片下載失敗，請再傳一次看看。');
     }
   }
 
   private async fetchLineImageContent(messageId: string): Promise<Buffer> {
-    const response = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
-      headers: { Authorization: `Bearer ${this.channelAccessToken}` },
-    });
+    const response = await fetch(
+      `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+      {
+        headers: { Authorization: `Bearer ${this.channelAccessToken}` },
+      },
+    );
     if (!response.ok) {
       throw new Error(`LINE content API returned ${response.status}`);
     }
     return Buffer.from(await response.arrayBuffer());
   }
 
-  private async tryResolveKnowledgeCategoryDecision(link: LineAccountLink, text: string, replyToken: string) {
+  private async tryResolveKnowledgeCategoryDecision(
+    link: LineAccountLink,
+    text: string,
+    replyToken: string,
+  ) {
     const itemId = link.pendingKnowledgeItemId;
     if (!itemId) return;
     try {
-      const categoryName = await this.knowledgeItemsService.resolveCategoryDecision(link.userId, itemId, text);
+      const categoryName =
+        await this.knowledgeItemsService.resolveCategoryDecision(
+          link.userId,
+          itemId,
+          text,
+        );
       await this.prisma.lineAccountLink.update({
         where: { id: link.id },
         data: { pendingKnowledgeItemId: null },
       });
       await this.reply(replyToken, `已歸類到「${categoryName}」。`);
     } catch (error) {
-      await this.reply(replyToken, error instanceof Error ? error.message : '設定失敗，請再試一次。');
+      await this.reply(
+        replyToken,
+        error instanceof Error ? error.message : '設定失敗，請再試一次。',
+      );
     }
   }
 
   /** 美食/景點 — after the rich-menu button set
    * `pendingKnowledgeLocationQueryCategory`, this reply's text is the
    * location to search for, matched against the "地址" field. */
-  private async resolveKnowledgeLocationQuery(link: LineAccountLink, text: string, replyToken: string) {
+  private async resolveKnowledgeLocationQuery(
+    link: LineAccountLink,
+    text: string,
+    replyToken: string,
+  ) {
     const categoryName = link.pendingKnowledgeLocationQueryCategory!;
     await this.prisma.lineAccountLink.update({
       where: { id: link.id },
       data: { pendingKnowledgeLocationQueryCategory: null },
     });
 
-    const items = await this.knowledgeItemsService.searchByLocation(link.userId, categoryName, text.trim());
+    const items = await this.knowledgeItemsService.searchByLocation(
+      link.userId,
+      categoryName,
+      text.trim(),
+    );
     if (items.length === 0) {
-      await this.reply(replyToken, `附近沒有找到記錄過的${categoryName}（「${text.trim()}」）。`);
+      await this.reply(
+        replyToken,
+        `附近沒有找到記錄過的${categoryName}（「${text.trim()}」）。`,
+      );
       return;
     }
     const lines = [`📍 ${categoryName}搜尋結果（${text.trim()}）`, ''];
     for (const item of items) {
       const address = this.knowledgeItemsService.fieldTextValue(item, '地址');
-      lines.push(`・${item.title ?? '未命名'}${address ? `（${address}）` : ''}`);
+      lines.push(
+        `・${item.title ?? '未命名'}${address ? `（${address}）` : ''}`,
+      );
     }
     await this.reply(replyToken, lines.join('\n'));
   }
 
   private async sendUpcomingExhibitions(userId: string, replyToken: string) {
-    const items = await this.knowledgeItemsService.listUpcomingExhibitions(userId);
+    const items =
+      await this.knowledgeItemsService.listUpcomingExhibitions(userId);
     if (items.length === 0) {
       await this.reply(replyToken, '📅 展覽\n\n（目前沒有記錄中的展覽）');
       return;
     }
     const lines = ['📅 展覽（依結束日期排序）', ''];
     for (const item of items) {
-      const endDate = this.knowledgeItemsService.fieldDateValue(item, '結束日期');
-      const visited = this.knowledgeItemsService.fieldBooleanValue(item, '是否已觀展');
+      const endDate = this.knowledgeItemsService.fieldDateValue(
+        item,
+        '結束日期',
+      );
+      const visited = this.knowledgeItemsService.fieldBooleanValue(
+        item,
+        '是否已觀展',
+      );
       lines.push(
         `・${item.title ?? '未命名'}${endDate ? `（至 ${endDate.getMonth() + 1}/${endDate.getDate()}）` : ''}${visited ? '（已觀展）' : ''}`,
       );
@@ -839,7 +1079,11 @@ export class LineService {
    * system is project-scoped (ProjectTodo.projectId is required) and an
    * exhibition isn't tied to any project, so there's no personal-todo slot
    * to write one into; see 大系統 doc for this known gap. */
-  private async resolveExhibitionSchedule(link: LineAccountLink, text: string, replyToken: string) {
+  private async resolveExhibitionSchedule(
+    link: LineAccountLink,
+    text: string,
+    replyToken: string,
+  ) {
     const itemId = link.pendingExhibitionScheduleItemId;
     if (!itemId) return;
     const item = await this.knowledgeItemsService.getByIdInternal(itemId);
@@ -847,12 +1091,21 @@ export class LineService {
 
     if (item.exhibitionDecisionStatus === null) {
       if (trimmed === '安排') {
-        await this.knowledgeItemsService.setExhibitionDecision(itemId, 'SCHEDULED');
-        await this.reply(replyToken, '好的，請問要安排什麼時候？例如「8/10 14:00」或「明天」。');
+        await this.knowledgeItemsService.setExhibitionDecision(
+          itemId,
+          'SCHEDULED',
+        );
+        await this.reply(
+          replyToken,
+          '好的，請問要安排什麼時候？例如「8/10 14:00」或「明天」。',
+        );
         return;
       }
       if (trimmed === '不安排') {
-        await this.knowledgeItemsService.setExhibitionDecision(itemId, 'CANCELLED');
+        await this.knowledgeItemsService.setExhibitionDecision(
+          itemId,
+          'CANCELLED',
+        );
         await this.prisma.lineAccountLink.update({
           where: { id: link.id },
           data: { pendingExhibitionScheduleItemId: null },
@@ -866,13 +1119,21 @@ export class LineService {
 
     const scheduledAt = this.parseExhibitionDateTimeReply(trimmed);
     if (!scheduledAt) {
-      await this.reply(replyToken, '看不懂時間，請用「8/10 14:00」這種格式，或直接打「明天」「今天」。');
+      await this.reply(
+        replyToken,
+        '看不懂時間，請用「8/10 14:00」這種格式，或直接打「明天」「今天」。',
+      );
       return;
     }
 
-    const space = await this.prisma.space.findUnique({ where: { calendarOwnerUserId: link.userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { calendarOwnerUserId: link.userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '你還沒有行事曆空間，請先到元序 App 建立一個，我先幫你記著這個安排。');
+      await this.reply(
+        replyToken,
+        '你還沒有行事曆空間，請先到元序 App 建立一個，我先幫你記著這個安排。',
+      );
       return;
     }
     await this.calendarEventsService.create(link.userId, space.id, {
@@ -880,13 +1141,20 @@ export class LineService {
       startAt: scheduledAt.toISOString(),
       allDay: false,
     });
-    await this.knowledgeItemsService.setExhibitionDecision(itemId, 'SCHEDULED', scheduledAt);
+    await this.knowledgeItemsService.setExhibitionDecision(
+      itemId,
+      'SCHEDULED',
+      scheduledAt,
+    );
     await this.prisma.lineAccountLink.update({
       where: { id: link.id },
       data: { pendingExhibitionScheduleItemId: null },
     });
     const dateLabel = `${scheduledAt.getMonth() + 1}/${scheduledAt.getDate()} ${String(scheduledAt.getHours()).padStart(2, '0')}:${String(scheduledAt.getMinutes()).padStart(2, '0')}`;
-    await this.reply(replyToken, `已安排「${item.title ?? '展覽'}」（${dateLabel}），加進你的行事曆了。`);
+    await this.reply(
+      replyToken,
+      `已安排「${item.title ?? '展覽'}」（${dateLabel}），加進你的行事曆了。`,
+    );
   }
 
   /** "M/D HH:MM"／"M/D"（預設10:00）／"今天"／"明天" — a small standalone
@@ -894,13 +1162,26 @@ export class LineService {
    * "新增行事曆" prefix to strip here, just a bare date/time reply. */
   private parseExhibitionDateTimeReply(text: string): Date | null {
     const now = new Date();
-    if (text === '今天') return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0);
+    if (text === '今天')
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0);
     if (text === '明天') {
-      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      return new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 10, 0);
+      const tomorrow = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+      );
+      return new Date(
+        tomorrow.getFullYear(),
+        tomorrow.getMonth(),
+        tomorrow.getDate(),
+        10,
+        0,
+      );
     }
 
-    const match = text.match(/^(\d{1,2})\/(\d{1,2})(?:[\s]+(\d{1,2}):(\d{2}))?/);
+    const match = text.match(
+      /^(\d{1,2})\/(\d{1,2})(?:[\s]+(\d{1,2}):(\d{2}))?/,
+    );
     if (!match) return null;
     const month = Number(match[1]);
     const day = Number(match[2]);
@@ -933,28 +1214,46 @@ export class LineService {
       take: MAX_QUICK_REPLY_ITEMS - 1,
     });
     if (memberships.length === 0) {
-      await this.reply(replyToken, '你目前不是任何專案的成員，代辦事項功能需要先加入一個專案。');
+      await this.reply(
+        replyToken,
+        '你目前不是任何專案的成員，代辦事項功能需要先加入一個專案。',
+      );
       return;
     }
     if (memberships.length === 1) {
       const projectId = memberships[0].project.id;
-      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { activeProjectId: projectId } });
+      await this.prisma.lineAccountLink.update({
+        where: { id: linkId },
+        data: { activeProjectId: projectId },
+      });
       await this.sendTodoHelp(linkId, projectId, replyToken);
       return;
     }
     await this.replyWithQuickReply(
       replyToken,
       '要記哪個專案的代辦事項？',
-      memberships.map((m) => ({ label: m.project.name.slice(0, 20), data: `proj:${m.project.id}` })),
+      memberships.map((m) => ({
+        label: m.project.name.slice(0, 20),
+        data: `proj:${m.project.id}`,
+      })),
     );
   }
 
   /** Format reminder + the active project's incomplete todos, numbered —
    * those numbers are what "完成 N" resolves against next. */
-  private async sendTodoHelp(linkId: string, projectId: string, replyToken: string) {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+  private async sendTodoHelp(
+    linkId: string,
+    projectId: string,
+    replyToken: string,
+  ) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+    });
     if (!project) {
-      await this.reply(replyToken, '這個專案好像不存在了，傳「切換專案」重新選一個。');
+      await this.reply(
+        replyToken,
+        '這個專案好像不存在了，傳「切換專案」重新選一個。',
+      );
       return;
     }
     const incomplete = await this.prisma.projectTodo.findMany({
@@ -977,28 +1276,41 @@ export class LineService {
     lines.push(
       ...(incomplete.length
         ? incomplete.map(
-            (t, i) => `${i + 1}. ${t.title}${t.dueDate ? `（${t.dueDate.getMonth() + 1}/${t.dueDate.getDate()}）` : ''}`,
+            (t, i) =>
+              `${i + 1}. ${t.title}${t.dueDate ? `（${t.dueDate.getMonth() + 1}/${t.dueDate.getDate()}）` : ''}`,
           )
         : ['（目前沒有未完成的代辦事項）']),
     );
-    lines.push('', '傳「代辦事項總覽」看所有專案今天的狀況，傳「切換專案」換專案。');
+    lines.push(
+      '',
+      '傳「代辦事項總覽」看所有專案今天的狀況，傳「切換專案」換專案。',
+    );
     await this.reply(replyToken, lines.join('\n'));
   }
 
   /** 今日已完成（所有專案合併顯示，不用選）、今日到期還沒完成、未來 7 天內到
    * 期 —— 未完成的兩組會連續編號，供「完成 N」使用；已完成的只是列出來看，
    * 沒有編號（沒有可以「完成」的動作）。 */
-  private async sendTodoOverviewAllProjects(linkId: string, userId: string, replyToken: string) {
+  private async sendTodoOverviewAllProjects(
+    linkId: string,
+    userId: string,
+    replyToken: string,
+  ) {
     const memberships = await this.prisma.projectMember.findMany({
       where: { userId },
       include: { project: true },
     });
     if (memberships.length === 0) {
-      await this.reply(replyToken, '你目前不是任何專案的成員，代辦事項功能需要先加入一個專案。');
+      await this.reply(
+        replyToken,
+        '你目前不是任何專案的成員，代辦事項功能需要先加入一個專案。',
+      );
       return;
     }
     const projectIds = memberships.map((m) => m.projectId);
-    const projectNameOf = new Map(memberships.map((m) => [m.projectId, m.project.name]));
+    const projectNameOf = new Map(
+      memberships.map((m) => [m.projectId, m.project.name]),
+    );
 
     const todos = await this.prisma.projectTodo.findMany({
       where: { projectId: { in: projectIds } },
@@ -1006,37 +1318,58 @@ export class LineService {
     });
 
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     const todayEnd = new Date(todayStart.getTime() + 86400000);
     const weekEnd = new Date(todayStart.getTime() + 7 * 86400000);
     const isSameDay = (d: Date) => d >= todayStart && d < todayEnd;
 
-    const completedToday = todos.filter((t) => t.completedAt && isSameDay(t.completedAt));
-    const overdueToday = todos.filter((t) => !t.done && t.dueDate && isSameDay(t.dueDate));
-    const restOfWeek = todos.filter((t) => !t.done && t.dueDate && t.dueDate >= todayEnd && t.dueDate < weekEnd);
+    const completedToday = todos.filter(
+      (t) => t.completedAt && isSameDay(t.completedAt),
+    );
+    const overdueToday = todos.filter(
+      (t) => !t.done && t.dueDate && isSameDay(t.dueDate),
+    );
+    const restOfWeek = todos.filter(
+      (t) =>
+        !t.done && t.dueDate && t.dueDate >= todayEnd && t.dueDate < weekEnd,
+    );
 
     await this.prisma.lineAccountLink.update({
       where: { id: linkId },
-      data: { lastTodoListIds: [...overdueToday, ...restOfWeek].map((t) => t.id) },
+      data: {
+        lastTodoListIds: [...overdueToday, ...restOfWeek].map((t) => t.id),
+      },
     });
 
-    const labelOf = (t: (typeof todos)[number]) => `${t.title}（${projectNameOf.get(t.projectId)}）`;
+    const labelOf = (t: (typeof todos)[number]) =>
+      `${t.title}（${projectNameOf.get(t.projectId)}）`;
 
     const lines: string[] = ['✅ 代辦事項總覽（所有專案）', ''];
 
     lines.push(`今日已完成（${completedToday.length}）：`);
-    lines.push(...(completedToday.length ? completedToday.map((t) => `・${labelOf(t)}`) : ['（沒有）']));
+    lines.push(
+      ...(completedToday.length
+        ? completedToday.map((t) => `・${labelOf(t)}`)
+        : ['（沒有）']),
+    );
 
     lines.push('', `今日到期但還沒完成（${overdueToday.length}）：`);
     lines.push(
-      ...(overdueToday.length ? overdueToday.map((t, i) => `${i + 1}. ${labelOf(t)}`) : ['（沒有）']),
+      ...(overdueToday.length
+        ? overdueToday.map((t, i) => `${i + 1}. ${labelOf(t)}`)
+        : ['（沒有）']),
     );
 
     lines.push('', `未來 7 天內到期（${restOfWeek.length}）：`);
     lines.push(
       ...(restOfWeek.length
         ? restOfWeek.map(
-            (t, i) => `${overdueToday.length + i + 1}. ${labelOf(t)}（${t.dueDate!.getMonth() + 1}/${t.dueDate!.getDate()}）`,
+            (t, i) =>
+              `${overdueToday.length + i + 1}. ${labelOf(t)}（${t.dueDate!.getMonth() + 1}/${t.dueDate!.getDate()}）`,
           )
         : ['（沒有）']),
     );
@@ -1045,19 +1378,34 @@ export class LineService {
     await this.reply(replyToken, lines.join('\n'));
   }
 
-  private async createTodoFromText(activeProjectId: string | null, text: string, replyToken: string) {
+  private async createTodoFromText(
+    activeProjectId: string | null,
+    text: string,
+    replyToken: string,
+  ) {
     if (!activeProjectId) {
       await this.reply(replyToken, '請先傳「代辦事項」選擇要記錄的專案。');
       return;
     }
-    const title = text.replace(/^新增(代辦|待辦)?/, '').replace(LEADING_SEPARATORS, '').trim();
+    const title = text
+      .replace(/^新增(代辦|待辦)?/, '')
+      .replace(LEADING_SEPARATORS, '')
+      .trim();
     if (!title) {
-      await this.reply(replyToken, '請在「新增」後面接代辦事項的內容，例如「新增 買材料」。');
+      await this.reply(
+        replyToken,
+        '請在「新增」後面接代辦事項的內容，例如「新增 買材料」。',
+      );
       return;
     }
-    const project = await this.prisma.project.findUnique({ where: { id: activeProjectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: activeProjectId },
+    });
     if (!project) {
-      await this.reply(replyToken, '這個專案好像不存在了，傳「切換專案」重新選一個。');
+      await this.reply(
+        replyToken,
+        '這個專案好像不存在了，傳「切換專案」重新選一個。',
+      );
       return;
     }
     const maxSortOrder = await this.prisma.projectTodo.aggregate({
@@ -1071,7 +1419,10 @@ export class LineService {
         sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
       },
     });
-    await this.reply(replyToken, `已新增代辦事項「${title}」（${project.name}）。`);
+    await this.reply(
+      replyToken,
+      `已新增代辦事項「${title}」（${project.name}）。`,
+    );
   }
 
   /** "完成 N" references the Nth item of whichever list (代辦事項 or
@@ -1079,20 +1430,35 @@ export class LineService {
    * `LineAccountLink.lastTodoListIds`. Numbers don't shift after a
    * completion within the same shown list; completing the same number
    * twice just reports it's already done. */
-  private async completeTodoByNumber(linkId: string, text: string, replyToken: string) {
+  private async completeTodoByNumber(
+    linkId: string,
+    text: string,
+    replyToken: string,
+  ) {
     const match = text.match(/\d+/);
     if (!match) {
-      await this.reply(replyToken, '請在「完成」後面接編號，例如「完成 2」，編號請先看「代辦事項」或「代辦事項總覽」。');
+      await this.reply(
+        replyToken,
+        '請在「完成」後面接編號，例如「完成 2」，編號請先看「代辦事項」或「代辦事項總覽」。',
+      );
       return;
     }
     const n = Number(match[0]);
-    const link = await this.prisma.lineAccountLink.findUnique({ where: { id: linkId } });
+    const link = await this.prisma.lineAccountLink.findUnique({
+      where: { id: linkId },
+    });
     const todoId = link?.lastTodoListIds[n - 1];
     if (!todoId) {
-      await this.reply(replyToken, `找不到編號 ${n}，請先傳「代辦事項」或「代辦事項總覽」看目前的編號。`);
+      await this.reply(
+        replyToken,
+        `找不到編號 ${n}，請先傳「代辦事項」或「代辦事項總覽」看目前的編號。`,
+      );
       return;
     }
-    const todo = await this.prisma.projectTodo.findUnique({ where: { id: todoId }, include: { project: true } });
+    const todo = await this.prisma.projectTodo.findUnique({
+      where: { id: todoId },
+      include: { project: true },
+    });
     if (!todo) {
       await this.reply(replyToken, '這筆代辦事項好像已經被刪除了。');
       return;
@@ -1101,8 +1467,14 @@ export class LineService {
       await this.reply(replyToken, `「${todo.title}」已經是完成狀態了。`);
       return;
     }
-    await this.prisma.projectTodo.update({ where: { id: todo.id }, data: { done: true, completedAt: new Date() } });
-    await this.reply(replyToken, `已完成「${todo.title}」（${todo.project.name}）。`);
+    await this.prisma.projectTodo.update({
+      where: { id: todo.id },
+      data: { done: true, completedAt: new Date() },
+    });
+    await this.reply(
+      replyToken,
+      `已完成「${todo.title}」（${todo.project.name}）。`,
+    );
   }
 
   // --- 行事曆 ---
@@ -1114,7 +1486,11 @@ export class LineService {
    * so they can still be pulled out of glued-together text; @地點 is
    * self-delimiting too. Always the caller's own 1:1 calendar space —
    * unlike 專案代辦事項 there's no multi-space ambiguity to resolve here. */
-  private async createCalendarEventFromText(userId: string, text: string, replyToken: string) {
+  private async createCalendarEventFromText(
+    userId: string,
+    text: string,
+    replyToken: string,
+  ) {
     const parsed = this.parseCalendarCommand(text);
     if (!parsed) {
       await this.reply(
@@ -1124,9 +1500,14 @@ export class LineService {
       return;
     }
 
-    const space = await this.prisma.space.findUnique({ where: { calendarOwnerUserId: userId } });
+    const space = await this.prisma.space.findUnique({
+      where: { calendarOwnerUserId: userId },
+    });
     if (!space) {
-      await this.reply(replyToken, '你還沒有行事曆空間，請先到元序 App 建立一個。');
+      await this.reply(
+        replyToken,
+        '你還沒有行事曆空間，請先到元序 App 建立一個。',
+      );
       return;
     }
 
@@ -1141,12 +1522,18 @@ export class LineService {
     const timeLabel = parsed.allDay
       ? '全天'
       : `${String(parsed.startAt.getHours()).padStart(2, '0')}:${String(parsed.startAt.getMinutes()).padStart(2, '0')}`;
-    await this.reply(replyToken, `已新增行事曆「${parsed.title}」（${dateLabel} ${timeLabel}）。`);
+    await this.reply(
+      replyToken,
+      `已新增行事曆「${parsed.title}」（${dateLabel} ${timeLabel}）。`,
+    );
   }
 
-  private parseCalendarCommand(
-    text: string,
-  ): { startAt: Date; allDay: boolean; title: string; location: string | null } | null {
+  private parseCalendarCommand(text: string): {
+    startAt: Date;
+    allDay: boolean;
+    title: string;
+    location: string | null;
+  } | null {
     let rest = text.replace(/^新增行事曆/, '').replace(LEADING_SEPARATORS, '');
 
     const dateMatch = rest.match(/^(\d{1,4})\/(\d{1,2})(?:\/(\d{1,2}))?/);
@@ -1171,7 +1558,9 @@ export class LineService {
     }
     rest = rest.replace(LEADING_SEPARATORS, '');
 
-    const startAt = allDay ? new Date(year, month - 1, day) : new Date(year, month - 1, day, hour, minute);
+    const startAt = allDay
+      ? new Date(year, month - 1, day)
+      : new Date(year, month - 1, day, hour, minute);
     if (Number.isNaN(startAt.getTime())) return null;
 
     let location: string | null = null;
@@ -1191,7 +1580,11 @@ export class LineService {
     await this.callReplyApi({ replyToken, messages: [{ type: 'text', text }] });
   }
 
-  private async replyWithQuickReply(replyToken: string, text: string, items: QuickReplyItem[]): Promise<void> {
+  private async replyWithQuickReply(
+    replyToken: string,
+    text: string,
+    items: QuickReplyItem[],
+  ): Promise<void> {
     await this.callReplyApi({
       replyToken,
       messages: [
@@ -1201,7 +1594,12 @@ export class LineService {
           quickReply: {
             items: items.slice(0, MAX_QUICK_REPLY_ITEMS).map((item) => ({
               type: 'action',
-              action: { type: 'postback', label: item.label, data: item.data, displayText: item.label },
+              action: {
+                type: 'postback',
+                label: item.label,
+                data: item.data,
+                displayText: item.label,
+              },
             })),
           },
         },

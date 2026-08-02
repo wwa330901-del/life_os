@@ -572,6 +572,10 @@ class ApiClient {
     await _post('/knowledge/items/$itemId/share', {});
   }
 
+  Future<void> assignKnowledgeItemCategory(String itemId, String categoryId) async {
+    await _patchIgnoreBody('/knowledge/items/$itemId/category', {'categoryId': categoryId});
+  }
+
   Future<void> deleteKnowledgeItem(String itemId) async {
     await _delete('/knowledge/items/$itemId');
   }
