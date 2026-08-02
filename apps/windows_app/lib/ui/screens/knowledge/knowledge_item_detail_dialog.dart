@@ -16,6 +16,9 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
   final KnowledgeItem item;
   final bool isOwn;
 
+  String _formatCreatedAt(DateTime dt) =>
+      '${dt.year}/${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
   Future<void> _openLink(BuildContext context) async {
     final url = item.sourceUrl;
     if (url == null) return;
@@ -58,6 +61,11 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
                     Chip(label: Text(item.sourcePlatform!)),
                   if (!isOwn && item.ownerName != null) Chip(label: Text('分享自 ${item.ownerName}')),
                 ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '建立時間：${_formatCreatedAt(item.createdAt)}',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
               ),
               if (item.summary != null && item.summary!.isNotEmpty) ...[
                 const SizedBox(height: 12),

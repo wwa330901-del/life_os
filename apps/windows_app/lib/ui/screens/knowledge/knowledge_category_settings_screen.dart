@@ -36,6 +36,22 @@ class KnowledgeCategorySettingsScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _seedDefaults(BuildContext context, WidgetRef ref) async {
+    try {
+      final created = await ref.read(apiClientProvider).seedDefaultKnowledgeCategories();
+      ref.invalidate(knowledgeCategoriesProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(created > 0 ? '已建立 $created 個建議分類' : '建議分類都已經存在了')));
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categoriesAsync = ref.watch(knowledgeCategoriesProvider);
@@ -60,10 +76,20 @@ class KnowledgeCategorySettingsScreen extends ConsumerWidget {
                 child: _CategoryCard(category: category),
               ),
             const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => _createCategory(context, ref),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('新增分類'),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _createCategory(context, ref),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('新增分類'),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: () => _seedDefaults(context, ref),
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                  label: const Text('一鍵套用建議分類'),
+                ),
+              ],
             ),
           ],
         ),

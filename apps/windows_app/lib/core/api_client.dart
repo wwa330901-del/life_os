@@ -499,6 +499,11 @@ class ApiClient {
     return KnowledgeCategory.fromJson(body);
   }
 
+  Future<int> seedDefaultKnowledgeCategories() async {
+    final body = await _post('/knowledge/categories/seed-defaults', {});
+    return body['created'] as int;
+  }
+
   Future<void> updateKnowledgeCategory({required String categoryId, String? name, bool? isPublic}) async {
     await _patch('/knowledge/categories/$categoryId', {
       if (name != null) 'name': name,

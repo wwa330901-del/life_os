@@ -9,6 +9,9 @@ class KnowledgeItemCard extends StatelessWidget {
   final KnowledgeItem item;
   final bool isOwn;
 
+  String _formatCreatedAt(DateTime dt) =>
+      '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -23,7 +26,18 @@ class KnowledgeItemCard extends StatelessWidget {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: item.status != KnowledgeItemStatus.done ? Chip(label: Text(item.status.label)) : null,
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (item.status != KnowledgeItemStatus.done) Chip(label: Text(item.status.label)),
+            Text(
+              _formatCreatedAt(item.createdAt),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+            ),
+          ],
+        ),
         onTap: () => showDialog(context: context, builder: (_) => KnowledgeItemDetailDialog(item: item, isOwn: isOwn)),
       ),
     );

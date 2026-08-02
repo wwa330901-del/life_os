@@ -16,6 +16,7 @@ import {
   CategoryContext,
   KnowledgeFieldType,
 } from './ai/ai-content-analysis.interface';
+import { DEFAULT_CATEGORY_TEMPLATES } from './default-category-templates';
 
 /** 知識庫 categories/fields — account-level, not scoped to any Space, and
  * each owner defines their own (same "each owner owns their own columns"
@@ -152,6 +153,41 @@ export class KnowledgeCategoriesService {
       },
       include: { fields: true },
     });
+  }
+
+  /** "一鍵套用建議分類" — opt-in only (a button the user presses), never
+   * run automatically for a new account. Idempotent: skips any template
+   * whose name the user already has (their own category, if one exists,
+   * wins untouched — this never overwrites/duplicates). */
+  async seedDefaults(userId: string): Promise<number> {
+    const existingNames = new Set(
+      (
+        await this.prisma.knowledgeCategory.findMany({
+          where: { ownerUserId: userId },
+          select: { name: true },
+        })
+      ).map((c) => c.name),
+    );
+
+    const toCreate = DEFAULT_CATEGORY_TEMPLATES.filter(
+      (template) => !existingNames.has(template.name),
+    );
+    for (const template of toCreate) {
+      await this.prisma.knowledgeCategory.create({
+        data: {
+          ownerUserId: userId,
+          name: template.name,
+          fields: {
+            create: template.fields.map((field, index) => ({
+              name: field.name,
+              type: field.type,
+              sortOrder: index,
+            })),
+          },
+        },
+      });
+    }
+    return toCreate.length;
   }
 
   async findByNameForUser(userId: string, name: string) {

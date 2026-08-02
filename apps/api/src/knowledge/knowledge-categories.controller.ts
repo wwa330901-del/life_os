@@ -43,6 +43,14 @@ export class KnowledgeCategoriesController {
     return this.categoriesService.create(user.id, dto);
   }
 
+  /// 一鍵套用建議分類 — opt-in only, idempotent (skips any name the user
+  /// already has). Returns how many were actually created.
+  @Post('seed-defaults')
+  async seedDefaults(@CurrentUser() user: AuthenticatedUser) {
+    const created = await this.categoriesService.seedDefaults(user.id);
+    return { created };
+  }
+
   @Patch(':categoryId')
   update(
     @CurrentUser() user: AuthenticatedUser,
