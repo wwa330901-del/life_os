@@ -148,7 +148,8 @@ export class HomeService {
     return results;
   }
 
-  private async getTodosToday(userId: string) {
+  /** Public — also reused by `TodoDigestService`'s morning/evening LINE digests. */
+  async getTodosToday(userId: string) {
     const memberships = await this.prisma.projectMember.findMany({
       where: { userId },
       include: { project: true },
