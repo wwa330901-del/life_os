@@ -119,7 +119,8 @@ model User {
   projectMemberships ProjectMember[]
   generatedDocuments GeneratedDocument[]
   lineAccountLink    LineAccountLink?
-  assignedTodos      ProjectTodo[]
+  assignedTodos      ProjectTodo[] @relation("TodoAssignee")
+  personalTodos      ProjectTodo[] @relation("TodoPersonalOwner")
   googleCalendarConnections GoogleCalendarConnection[]
   documentApprovalsSubmitted DocumentApproval[]
   documentApprovalSteps      DocumentApprovalStep[]
@@ -854,6 +855,12 @@ model LineAccountLink {
   activeProjectId String?
   activeProject    Project? @relation(fields: [activeProjectId], references: [id], onDelete: SetNull)
 
+  /// Set when the user picked "個人" (not a project) as their 代辦事項
+  /// target — takes priority over activeProjectId when true. Mutually
+  /// exclusive with a meaningful activeProjectId by construction (picking
+  /// one always clears the other), never both true/set at once.
+  activeTodoPersonal Boolean @default(false)
+
   /// Set while a KnowledgeItem is AWAITING_CATEGORY_DECISION and this user
   /// has just been asked "建議新增 XX 分類" — their next plain-text reply
   /// ("新增" or an existing category name) resolves this specific item,
@@ -874,13 +881,22 @@ model LineAccountLink {
   updatedAt DateTime @updatedAt
 }
 
-/// A project-level to-do item — distinct from 工項 (WorkItem, which is
-/// schedule/duration-bearing and feeds the Gantt engine); a todo is a plain
-/// task with no duration, optionally assigned to a project member.
+/// A to-do item — distinct from 工項 (WorkItem, which is schedule/duration-
+/// bearing and feeds the Gantt engine); a todo is a plain task with no
+/// duration. Exactly one of projectId/personalOwnerUserId is set (enforced
+/// by a DB check constraint in the migration, not just app code) — a 工作
+/// todo belongs to a company-space project (optionally assigned to a
+/// project member), a 個人 todo belongs directly to its owner with no
+/// project at all. Model name kept as ProjectTodo (not renamed) even after
+/// this split to avoid a wider rename across services/app for a cosmetic
+/// gain — see 大系統V1.31.0.md.
 model ProjectTodo {
-  id        String @id @default(uuid())
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  personalOwnerUserId String?
+  personalOwner       User?   @relation("TodoPersonalOwner", fields: [personalOwnerUserId], references: [id], onDelete: Cascade)
 
   title    String
   done     Boolean   @default(false)
@@ -890,13 +906,14 @@ model ProjectTodo {
   notes    String?
 
   assigneeUserId String?
-  assignee       User?   @relation(fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  assignee       User?   @relation("TodoAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
 
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([projectId])
+  @@index([personalOwnerUserId])
 }
 
 enum KnowledgeItemStatus {

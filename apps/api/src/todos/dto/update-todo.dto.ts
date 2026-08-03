@@ -2,9 +2,9 @@ import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, MinLength } from
 import { TodoPriority } from '../../../generated/prisma/client.js';
 
 // Every field optional; nullable fields (dueDate/notes/assigneeUserId)
-// accept an explicit `null` to clear them, same "not sent vs. sent as
-// null" convention as UpdateWorkItemDto.
-export class UpdateProjectTodoDto {
+// accept an explicit `null` to clear them. A todo can't change between
+// 個人/工作 after creation — not requested, not supported.
+export class UpdateTodoDto {
   @IsOptional()
   @IsString()
   @MinLength(1)

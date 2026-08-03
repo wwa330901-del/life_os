@@ -148,7 +148,10 @@ export class HomeService {
     return results;
   }
 
-  /** Public — also reused by `TodoDigestService`'s morning/evening LINE digests. */
+  /** Public — also reused by `TodoDigestService`'s morning/evening LINE
+   * digests. Covers both 個人 (personalOwnerUserId = this user) and 工作
+   * (any project this user belongs to) todos, combined — `projectName` is
+   * `'個人'` for the former. */
   async getTodosToday(userId: string) {
     const memberships = await this.prisma.projectMember.findMany({
       where: { userId },
@@ -159,7 +162,7 @@ export class HomeService {
 
     const { start: todayStart, end: todayEnd } = todayRange();
     const todos = await this.prisma.projectTodo.findMany({
-      where: { projectId: { in: projectIds } },
+      where: { OR: [{ projectId: { in: projectIds } }, { personalOwnerUserId: userId }] },
     });
 
     const isSameDay = (d: Date) => d >= todayStart && d < todayEnd;
@@ -169,7 +172,7 @@ export class HomeService {
     const label = (t: (typeof todos)[number]) => ({
       id: t.id,
       title: t.title,
-      projectName: projectNameOf.get(t.projectId) ?? '',
+      projectName: t.projectId ? (projectNameOf.get(t.projectId) ?? '') : '個人',
     });
 
     return {

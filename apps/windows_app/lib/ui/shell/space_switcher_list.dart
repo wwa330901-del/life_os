@@ -5,19 +5,27 @@ import '../../core/models/app_user.dart';
 import '../../core/theme/app_accents.dart';
 import '../../state/knowledge_provider.dart';
 import '../../state/space_provider.dart';
+import '../../state/todo_provider.dart';
 
 /// The flat list of "places you can jump straight to" — every space the
-/// user belongs to, 知識庫 (account-level, not a Space), and 回首頁 — shown
-/// identically in [AppSidebar] (inside a space) and [KnowledgeShell]'s own
-/// sidebar, so switching between any of them never requires detouring back
-/// through the home screen first. Exactly one of [selectedSpaceId] /
-/// [knowledgeSelected] should reflect the current screen; both can be
+/// user belongs to, 知識庫 and 代辦事項 (both account-level, not a Space),
+/// and 回首頁 — shown identically in [AppSidebar] (inside a space),
+/// [KnowledgeShell]'s own sidebar, and [TodoShell]'s own sidebar, so
+/// switching between any of them never requires detouring back through the
+/// home screen first. Exactly one of [selectedSpaceId] / [knowledgeSelected]
+/// / [todoSelected] should reflect the current screen; all can be
 /// false/null while on the home screen itself.
 class SpaceSwitcherList extends ConsumerWidget {
-  const SpaceSwitcherList({super.key, this.selectedSpaceId, this.knowledgeSelected = false});
+  const SpaceSwitcherList({
+    super.key,
+    this.selectedSpaceId,
+    this.knowledgeSelected = false,
+    this.todoSelected = false,
+  });
 
   final String? selectedSpaceId;
   final bool knowledgeSelected;
+  final bool todoSelected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,6 +33,7 @@ class SpaceSwitcherList extends ConsumerWidget {
 
     void goToSpace(SpaceSummary target) {
       ref.read(showKnowledgeLibraryProvider.notifier).close();
+      ref.read(showTodoSpaceProvider.notifier).close();
       ref.read(selectedSpaceProvider.notifier).select(target);
     }
 
@@ -34,11 +43,28 @@ class SpaceSwitcherList extends ConsumerWidget {
           _SpaceRow(space: s, selected: s.id == selectedSpaceId, onTap: s.id == selectedSpaceId ? null : () => goToSpace(s)),
         _SpaceRow.knowledge(
           selected: knowledgeSelected,
-          onTap: knowledgeSelected ? null : () => ref.read(showKnowledgeLibraryProvider.notifier).open(),
+          onTap: knowledgeSelected
+              ? null
+              : () {
+                  ref.read(showTodoSpaceProvider.notifier).close();
+                  ref.read(selectedSpaceProvider.notifier).clear();
+                  ref.read(showKnowledgeLibraryProvider.notifier).open();
+                },
+        ),
+        _SpaceRow.todo(
+          selected: todoSelected,
+          onTap: todoSelected
+              ? null
+              : () {
+                  ref.read(showKnowledgeLibraryProvider.notifier).close();
+                  ref.read(selectedSpaceProvider.notifier).clear();
+                  ref.read(showTodoSpaceProvider.notifier).open();
+                },
         ),
         _SpaceRow.home(
           onTap: () {
             ref.read(showKnowledgeLibraryProvider.notifier).close();
+            ref.read(showTodoSpaceProvider.notifier).close();
             ref.read(selectedSpaceProvider.notifier).clear();
           },
         ),
@@ -51,22 +77,29 @@ class SpaceSwitcherList extends ConsumerWidget {
 /// space" styling (colored type badge + name) so switching spaces looks the
 /// same as before, just without needing a click to reveal the other options
 /// first.
+enum _NonSpaceKind { none, knowledge, todo }
+
 class _SpaceRow extends StatelessWidget {
-  const _SpaceRow({required this.space, required this.selected, required this.onTap}) : _isKnowledge = false;
+  const _SpaceRow({required this.space, required this.selected, required this.onTap})
+    : _kind = _NonSpaceKind.none;
 
   const _SpaceRow.home({required this.onTap})
     : space = null,
       selected = false,
-      _isKnowledge = false;
+      _kind = _NonSpaceKind.none;
 
   const _SpaceRow.knowledge({required this.selected, required this.onTap})
     : space = null,
-      _isKnowledge = true;
+      _kind = _NonSpaceKind.knowledge;
+
+  const _SpaceRow.todo({required this.selected, required this.onTap})
+    : space = null,
+      _kind = _NonSpaceKind.todo;
 
   final SpaceSummary? space;
   final bool selected;
   final VoidCallback? onTap;
-  final bool _isKnowledge;
+  final _NonSpaceKind _kind;
 
   @override
   Widget build(BuildContext context) {
@@ -78,19 +111,29 @@ class _SpaceRow extends StatelessWidget {
             SpaceType.calendar => AppAccents.calendar(scheme.brightness),
             SpaceType.company => AppAccents.company(scheme.brightness),
           }
-        : _isKnowledge
-        ? AppAccents.knowledge(scheme.brightness)
-        : scheme.onSurface.withValues(alpha: 0.12);
+        : switch (_kind) {
+            _NonSpaceKind.knowledge => AppAccents.knowledge(scheme.brightness),
+            _NonSpaceKind.todo => AppAccents.todo(scheme.brightness),
+            _NonSpaceKind.none => scheme.onSurface.withValues(alpha: 0.12),
+          };
     final icon = s != null
         ? switch (s.type) {
             SpaceType.personal => Icons.person_outline,
             SpaceType.calendar => Icons.calendar_today_outlined,
             SpaceType.company => Icons.apartment,
           }
-        : _isKnowledge
-        ? Icons.auto_stories_outlined
-        : Icons.home_outlined;
-    final label = s?.name ?? (_isKnowledge ? '知識庫' : '回首頁');
+        : switch (_kind) {
+            _NonSpaceKind.knowledge => Icons.auto_stories_outlined,
+            _NonSpaceKind.todo => Icons.checklist_outlined,
+            _NonSpaceKind.none => Icons.home_outlined,
+          };
+    final label =
+        s?.name ??
+        switch (_kind) {
+          _NonSpaceKind.knowledge => '知識庫',
+          _NonSpaceKind.todo => '代辦事項',
+          _NonSpaceKind.none => '回首頁',
+        };
 
     return Material(
       color: selected ? scheme.primary.withValues(alpha: 0.14) : Colors.transparent,

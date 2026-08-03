@@ -1122,20 +1122,25 @@ class ApiClient {
     await _delete('/spaces/$spaceId/stocks/recurring/$id');
   }
 
-  Future<List<ProjectTodo>> listProjectTodos(String projectId) async {
-    final body = await _getList('/projects/$projectId/todos');
-    return body.map((e) => ProjectTodo.fromJson(e as Map<String, dynamic>)).toList();
+  /// 代辦事項 is its own top-level space now (not nested under a project) —
+  /// this returns 個人 + 工作（每個專案分組）合併的畫面資料一次拿齊。
+  Future<TodoOverview> listAllTodos() async {
+    final body = await _get('/todos');
+    return TodoOverview.fromJson(body);
   }
 
-  Future<void> createProjectTodo({
-    required String projectId,
+  /// projectId 留空 = 個人事項（歸屬呼叫者本人）；有填 = 工作事項（歸屬該專
+  /// 案，呼叫者需有該專案的存取權）。
+  Future<void> createTodo({
+    String? projectId,
     required String title,
     DateTime? dueDate,
     TodoPriority? priority,
     String? notes,
     String? assigneeUserId,
   }) async {
-    await _post('/projects/$projectId/todos', {
+    await _post('/todos', {
+      if (projectId != null) 'projectId': projectId,
       'title': title,
       if (dueDate != null) 'dueDate': _dateOnly(dueDate),
       if (priority != null) 'priority': priority.toJson(),
@@ -1144,8 +1149,7 @@ class ApiClient {
     });
   }
 
-  Future<void> updateProjectTodo({
-    required String projectId,
+  Future<void> updateTodo({
     required String todoId,
     String? title,
     bool? done,
@@ -1157,7 +1161,7 @@ class ApiClient {
     String? assigneeUserId,
     bool clearAssignee = false,
   }) async {
-    await _patchIgnoreBody('/projects/$projectId/todos/$todoId', {
+    await _patchIgnoreBody('/todos/$todoId', {
       if (title != null) 'title': title,
       if (done != null) 'done': done,
       if (clearDueDate)
@@ -1176,8 +1180,8 @@ class ApiClient {
     });
   }
 
-  Future<void> deleteProjectTodo({required String projectId, required String todoId}) async {
-    await _delete('/projects/$projectId/todos/$todoId');
+  Future<void> deleteTodo(String todoId) async {
+    await _delete('/todos/$todoId');
   }
 
   /// Generates (or replaces) a short-lived code the user sends as a LINE

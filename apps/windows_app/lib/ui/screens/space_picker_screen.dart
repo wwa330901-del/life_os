@@ -10,6 +10,7 @@ import '../../state/auth_provider.dart';
 import '../../state/home_provider.dart';
 import '../../state/knowledge_provider.dart';
 import '../../state/space_provider.dart';
+import '../../state/todo_provider.dart';
 import 'admin/admin_home_screen.dart';
 import 'home/home_dashboard_widgets.dart';
 
@@ -71,6 +72,9 @@ class SpacePickerScreen extends ConsumerWidget {
                               children: [
                                 _KnowledgeLibraryCard(
                                   onTap: () => ref.read(showKnowledgeLibraryProvider.notifier).open(),
+                                ),
+                                _TodoSpaceCard(
+                                  onTap: () => ref.read(showTodoSpaceProvider.notifier).open(),
                                 ),
                                 for (final space in spaces)
                                   _SpaceCard(
@@ -253,6 +257,54 @@ class _KnowledgeLibraryCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '知識蒐集中心',
+                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 代辦事項 isn't a Space either (account-level, same reasoning as 知識庫) —
+/// tapping it goes straight to `TodoShell` via `showTodoSpaceProvider`,
+/// bypassing `SpaceShell`/`AppSidebar` entirely.
+class _TodoSpaceCard extends StatelessWidget {
+  const _TodoSpaceCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = AppAccents.todo(scheme.brightness);
+
+    return SizedBox(
+      width: 180,
+      height: 140,
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.checklist_outlined, size: 18, color: scheme.onSurface),
+                ),
+                const Spacer(),
+                const Text('代辦事項', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(
+                  '個人 + 工作代辦',
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],

@@ -17,6 +17,7 @@ import { CalendarModule } from './calendar/calendar.module';
 import { HomeModule } from './home/home.module';
 import { ProjectDigestModule } from './project-digest/project-digest.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
+import { TodosModule } from './todos/todos.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
     HomeModule,
     ProjectDigestModule,
     KnowledgeModule,
+    TodosModule,
   ],
   controllers: [AppController],
   providers: [AppService],

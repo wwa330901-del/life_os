@@ -58,3 +58,45 @@ class ProjectTodo {
     sortOrder: json['sortOrder'] as int,
   );
 }
+
+/// One project's worth of 工作代辦事項, as grouped by `GET /todos`.
+class WorkProjectTodos {
+  const WorkProjectTodos({
+    required this.projectId,
+    required this.projectName,
+    required this.spaceName,
+    required this.todos,
+  });
+
+  final String projectId;
+  final String projectName;
+  final String spaceName;
+  final List<ProjectTodo> todos;
+
+  factory WorkProjectTodos.fromJson(Map<String, dynamic> json) => WorkProjectTodos(
+    projectId: json['projectId'] as String,
+    projectName: json['projectName'] as String,
+    spaceName: json['spaceName'] as String,
+    todos: (json['todos'] as List)
+        .map((e) => ProjectTodo.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+/// The unified 代辦事項 screen's data — 個人 as a flat list, 工作 grouped by
+/// project (one entry per project the caller belongs to).
+class TodoOverview {
+  const TodoOverview({required this.personal, required this.work});
+
+  final List<ProjectTodo> personal;
+  final List<WorkProjectTodos> work;
+
+  factory TodoOverview.fromJson(Map<String, dynamic> json) => TodoOverview(
+    personal: (json['personal'] as List)
+        .map((e) => ProjectTodo.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    work: (json['work'] as List)
+        .map((e) => WorkProjectTodos.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+}

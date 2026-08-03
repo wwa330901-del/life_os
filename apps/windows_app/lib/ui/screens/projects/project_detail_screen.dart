@@ -6,13 +6,14 @@ import '../../shell/breadcrumb_bar.dart';
 import 'tabs/members_tab.dart';
 import 'tabs/project_documents_tab.dart';
 import 'tabs/project_info_tab.dart';
-import 'tabs/project_todos_tab.dart';
 import 'tabs/schedule_tab.dart';
 
-/// Project detail content — lives inside `SpaceShell`'s content pane.
-/// Five tabs, all with real functionality: 工期 (schedule), 專案資料
-/// (per-space custom properties), 專案成員, 相關文件 (document templates the
-/// project's 類型 allows), 代辦事項 (plain tasks, no duration).
+/// Project detail content — lives inside `SpaceShell`'s content pane. Four
+/// tabs: 工期 (schedule), 專案資料 (per-space custom properties), 專案成員,
+/// 相關文件 (document templates the project's 類型 allows). 代辦事項 used to
+/// be a fifth tab here — moved out entirely into its own top-level 代辦事項
+/// space (see `TodoShell`), since a todo can now be 個人 (no project at all)
+/// as well as 工作 (this project).
 class ProjectDetailScreen extends ConsumerWidget {
   const ProjectDetailScreen({
     super.key,
@@ -30,7 +31,6 @@ class ProjectDetailScreen extends ConsumerWidget {
     Tab(text: '專案資料'),
     Tab(text: '專案成員'),
     Tab(text: '相關文件'),
-    Tab(text: '代辦事項'),
   ];
 
   @override
@@ -68,7 +68,6 @@ class ProjectDetailScreen extends ConsumerWidget {
                   ProjectInfoTab(projectId: projectId),
                   MembersTab(projectId: projectId),
                   ProjectDocumentsTab(projectId: projectId),
-                  ProjectTodosTab(projectId: projectId),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),

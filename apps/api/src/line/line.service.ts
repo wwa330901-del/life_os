@@ -35,6 +35,8 @@ interface QuickReplyItem {
   data: string;
 }
 
+type TodoTarget = { kind: 'personal'; userId: string } | { kind: 'project'; projectId: string };
+
 /** A LINE-command separator can be whitespace, common punctuation, or
  * nothing at all (fields typed glued together) — this app's users wanted
  * the parser to be lenient rather than making them remember an exact
@@ -145,7 +147,7 @@ export class LineService {
 
         if (event.type === 'postback' && event.postback?.data) {
           if (!link) continue;
-          await this.handlePostback(link.id, event.postback.data, replyToken);
+          await this.handlePostback(link, event.postback.data, replyToken);
           continue;
         }
 
@@ -205,22 +207,29 @@ export class LineService {
     );
   }
 
-  /** The only postback left in use is the project picker for 代辦事項
+  /** The only postback left in use is the 個人/專案 picker for 代辦事項
    * (LINE's own quick-reply buttons — plain text UI, not a rendered image,
    * so it never hit the CJK-font rendering problem the old rich-menu flow
    * had). */
   private async handlePostback(
-    linkId: string,
+    link: LineAccountLink,
     data: string,
     replyToken: string,
   ) {
     const [key, value] = data.split(':');
     if (key === 'proj') {
       await this.prisma.lineAccountLink.update({
-        where: { id: linkId },
-        data: { activeProjectId: value },
+        where: { id: link.id },
+        data: { activeProjectId: value, activeTodoPersonal: false },
       });
-      await this.sendTodoHelp(linkId, value, replyToken);
+      await this.sendTodoHelp(link.id, { kind: 'project', projectId: value }, replyToken);
+    }
+    if (key === 'todo' && value === 'personal') {
+      await this.prisma.lineAccountLink.update({
+        where: { id: link.id },
+        data: { activeProjectId: null, activeTodoPersonal: true },
+      });
+      await this.sendTodoHelp(link.id, { kind: 'personal', userId: link.userId }, replyToken);
     }
   }
 
@@ -291,15 +300,15 @@ export class LineService {
       return;
     }
     if (LineService.TODO_ENTRY_KEYWORDS.includes(text)) {
-      await this.enterTodoFlow(linkId, userId, activeProjectId, replyToken);
+      await this.enterTodoFlow(linkId, userId, link.activeTodoPersonal, activeProjectId, replyToken);
       return;
     }
     if (text === '切換專案') {
       await this.prisma.lineAccountLink.update({
         where: { id: linkId },
-        data: { activeProjectId: null },
+        data: { activeProjectId: null, activeTodoPersonal: false },
       });
-      await this.enterTodoFlow(linkId, userId, null, replyToken);
+      await this.enterTodoFlow(linkId, userId, false, null, replyToken);
       return;
     }
     if (text.startsWith('新增行事曆')) {
@@ -307,7 +316,7 @@ export class LineService {
       return;
     }
     if (text.startsWith('新增')) {
-      await this.createTodoFromText(activeProjectId, text, replyToken);
+      await this.createTodoFromText(link, text, replyToken);
       return;
     }
     if (text.startsWith('完成')) {
@@ -1075,10 +1084,12 @@ export class LineService {
    * (`pendingExhibitionScheduleItemId`), disambiguated by the item's own
    * `exhibitionDecisionStatus`: still null means this reply is the initial
    * 安排/不安排 answer; already SCHEDULED means this reply is the follow-up
-   * 何時 answer. Only ever writes a CalendarEvent — this app's 代辦事項
-   * system is project-scoped (ProjectTodo.projectId is required) and an
-   * exhibition isn't tied to any project, so there's no personal-todo slot
-   * to write one into; see 大系統 doc for this known gap. */
+   * 何時 answer. Only ever writes a CalendarEvent, not a todo — this was
+   * originally because ProjectTodo.projectId was required and an
+   * exhibition isn't tied to any project; now that 個人 todos exist
+   * (personalOwnerUserId, no project needed) that blocker is gone, but
+   * adding a todo here wasn't part of the 個人/工作 split's scope — revisit
+   * if the user asks for it. */
   private async resolveExhibitionSchedule(
     link: LineAccountLink,
     text: string,
@@ -1191,19 +1202,31 @@ export class LineService {
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  // --- 專案代辦事項 ---
+  // --- 代辦事項（個人 / 工作）---
 
-  /** No active project yet → list the user's projects as quick-reply
-   * buttons to pick one (auto-picks if there's only one); otherwise shows
-   * that project's 代辦事項 format reminder + numbered list directly. */
+  private todoTargetWhere(target: TodoTarget) {
+    return target.kind === 'personal'
+      ? { personalOwnerUserId: target.userId, done: false }
+      : { projectId: target.projectId, done: false };
+  }
+
+  /** No active target yet → quick-reply buttons: 個人 + every project the
+   * user belongs to (auto-picks 個人 if they belong to zero projects,
+   * since that's the only option left); otherwise shows that target's
+   * 代辦事項 format reminder + numbered list directly. */
   private async enterTodoFlow(
     linkId: string,
     userId: string,
+    activeTodoPersonal: boolean,
     activeProjectId: string | null,
     replyToken: string,
   ) {
+    if (activeTodoPersonal) {
+      await this.sendTodoHelp(linkId, { kind: 'personal', userId }, replyToken);
+      return;
+    }
     if (activeProjectId) {
-      await this.sendTodoHelp(linkId, activeProjectId, replyToken);
+      await this.sendTodoHelp(linkId, { kind: 'project', projectId: activeProjectId }, replyToken);
       return;
     }
 
@@ -1214,50 +1237,52 @@ export class LineService {
       take: MAX_QUICK_REPLY_ITEMS - 1,
     });
     if (memberships.length === 0) {
-      await this.reply(
-        replyToken,
-        '你目前不是任何專案的成員，代辦事項功能需要先加入一個專案。',
-      );
-      return;
-    }
-    if (memberships.length === 1) {
-      const projectId = memberships[0].project.id;
       await this.prisma.lineAccountLink.update({
         where: { id: linkId },
-        data: { activeProjectId: projectId },
+        data: { activeTodoPersonal: true },
       });
-      await this.sendTodoHelp(linkId, projectId, replyToken);
+      await this.sendTodoHelp(linkId, { kind: 'personal', userId }, replyToken);
       return;
     }
     await this.replyWithQuickReply(
       replyToken,
-      '要記哪個專案的代辦事項？',
-      memberships.map((m) => ({
-        label: m.project.name.slice(0, 20),
-        data: `proj:${m.project.id}`,
-      })),
+      '要記個人事項，還是哪個專案的代辦事項？',
+      [
+        { label: '個人事項', data: 'todo:personal' },
+        ...memberships.map((m) => ({
+          label: m.project.name.slice(0, 20),
+          data: `proj:${m.project.id}`,
+        })),
+      ],
     );
   }
 
-  /** Format reminder + the active project's incomplete todos, numbered —
-   * those numbers are what "完成 N" resolves against next. */
+  /** Format reminder + the target's incomplete todos, numbered — those
+   * numbers are what "完成 N" resolves against next. */
   private async sendTodoHelp(
     linkId: string,
-    projectId: string,
+    target: TodoTarget,
     replyToken: string,
   ) {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-    });
-    if (!project) {
-      await this.reply(
-        replyToken,
-        '這個專案好像不存在了，傳「切換專案」重新選一個。',
-      );
-      return;
+    let title: string;
+    if (target.kind === 'project') {
+      const project = await this.prisma.project.findUnique({
+        where: { id: target.projectId },
+      });
+      if (!project) {
+        await this.reply(
+          replyToken,
+          '這個專案好像不存在了，傳「切換專案」重新選一個。',
+        );
+        return;
+      }
+      title = project.name;
+    } else {
+      title = '個人';
     }
+
     const incomplete = await this.prisma.projectTodo.findMany({
-      where: { projectId, done: false },
+      where: this.todoTargetWhere(target),
       orderBy: [{ dueDate: 'asc' }, { sortOrder: 'asc' }],
     });
     await this.prisma.lineAccountLink.update({
@@ -1266,7 +1291,7 @@ export class LineService {
     });
 
     const lines = [
-      `✅ 代辦事項（${project.name}）`,
+      `✅ 代辦事項（${title}）`,
       '',
       '新增：新增 項目內容　例如「新增 買材料」',
       '完成：完成 編號　例如「完成 2」',
@@ -1283,14 +1308,15 @@ export class LineService {
     );
     lines.push(
       '',
-      '傳「代辦事項總覽」看所有專案今天的狀況，傳「切換專案」換專案。',
+      '傳「代辦事項總覽」看個人+所有專案今天的狀況，傳「切換專案」重新選擇個人或專案。',
     );
     await this.reply(replyToken, lines.join('\n'));
   }
 
-  /** 今日已完成（所有專案合併顯示，不用選）、今日到期還沒完成、未來 7 天內到
-   * 期 —— 未完成的兩組會連續編號，供「完成 N」使用；已完成的只是列出來看，
-   * 沒有編號（沒有可以「完成」的動作）。 */
+  /** 今日已完成（個人+所有專案合併顯示，不用選）、今日到期還沒完成、未來 7
+   * 天內到期 —— 未完成的兩組會連續編號，供「完成 N」使用；已完成的只是列出
+   * 來看，沒有編號（沒有可以「完成」的動作）。個人事項不受專案成員身份限
+   * 制，即使使用者不屬於任何專案，個人事項一樣會顯示。 */
   private async sendTodoOverviewAllProjects(
     linkId: string,
     userId: string,
@@ -1300,20 +1326,13 @@ export class LineService {
       where: { userId },
       include: { project: true },
     });
-    if (memberships.length === 0) {
-      await this.reply(
-        replyToken,
-        '你目前不是任何專案的成員，代辦事項功能需要先加入一個專案。',
-      );
-      return;
-    }
     const projectIds = memberships.map((m) => m.projectId);
     const projectNameOf = new Map(
       memberships.map((m) => [m.projectId, m.project.name]),
     );
 
     const todos = await this.prisma.projectTodo.findMany({
-      where: { projectId: { in: projectIds } },
+      where: { OR: [{ projectId: { in: projectIds } }, { personalOwnerUserId: userId }] },
       orderBy: [{ dueDate: 'asc' }, { sortOrder: 'asc' }],
     });
 
@@ -1346,9 +1365,9 @@ export class LineService {
     });
 
     const labelOf = (t: (typeof todos)[number]) =>
-      `${t.title}（${projectNameOf.get(t.projectId)}）`;
+      `${t.title}（${t.projectId ? projectNameOf.get(t.projectId) : '個人'}）`;
 
-    const lines: string[] = ['✅ 代辦事項總覽（所有專案）', ''];
+    const lines: string[] = ['✅ 代辦事項總覽（個人+所有專案）', ''];
 
     lines.push(`今日已完成（${completedToday.length}）：`);
     lines.push(
@@ -1379,12 +1398,12 @@ export class LineService {
   }
 
   private async createTodoFromText(
-    activeProjectId: string | null,
+    link: LineAccountLink,
     text: string,
     replyToken: string,
   ) {
-    if (!activeProjectId) {
-      await this.reply(replyToken, '請先傳「代辦事項」選擇要記錄的專案。');
+    if (!link.activeTodoPersonal && !link.activeProjectId) {
+      await this.reply(replyToken, '請先傳「代辦事項」選擇要記錄的個人事項或專案。');
       return;
     }
     const title = text
@@ -1398,8 +1417,25 @@ export class LineService {
       );
       return;
     }
+
+    if (link.activeTodoPersonal) {
+      const maxSortOrder = await this.prisma.projectTodo.aggregate({
+        where: { personalOwnerUserId: link.userId },
+        _max: { sortOrder: true },
+      });
+      await this.prisma.projectTodo.create({
+        data: {
+          personalOwnerUserId: link.userId,
+          title,
+          sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
+        },
+      });
+      await this.reply(replyToken, `已新增個人代辦事項「${title}」。`);
+      return;
+    }
+
     const project = await this.prisma.project.findUnique({
-      where: { id: activeProjectId },
+      where: { id: link.activeProjectId! },
     });
     if (!project) {
       await this.reply(
@@ -1409,12 +1445,12 @@ export class LineService {
       return;
     }
     const maxSortOrder = await this.prisma.projectTodo.aggregate({
-      where: { projectId: activeProjectId },
+      where: { projectId: link.activeProjectId },
       _max: { sortOrder: true },
     });
     await this.prisma.projectTodo.create({
       data: {
-        projectId: activeProjectId,
+        projectId: link.activeProjectId,
         title,
         sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
       },
@@ -1473,7 +1509,7 @@ export class LineService {
     });
     await this.reply(
       replyToken,
-      `已完成「${todo.title}」（${todo.project.name}）。`,
+      `已完成「${todo.title}」（${todo.project?.name ?? '個人'}）。`,
     );
   }
 
