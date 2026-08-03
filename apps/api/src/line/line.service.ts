@@ -37,6 +37,15 @@ interface QuickReplyItem {
 
 type TodoTarget = { kind: 'personal'; userId: string } | { kind: 'project'; projectId: string };
 
+/** A handler's one output message, decoupled from *how* it gets to the
+ * user — a single-line command replies via this straight to LINE
+ * (`(text) => this.reply(replyToken, text)`); a line inside a 條列式批次
+ * message instead pushes into an array to fold into one combined reply
+ * (see `tryBatchLine`). Every 登陸-style command (記帳/代辦新增/股票買賣/
+ * 新增行事曆) takes one of these instead of a bare `replyToken` so it works
+ * unchanged in both contexts. */
+type Responder = (text: string) => Promise<void>;
+
 /** A LINE-command separator can be whitespace, common punctuation, or
  * nothing at all (fields typed glued together) — this app's users wanted
  * the parser to be lenient rather than making them remember an exact
@@ -298,6 +307,26 @@ export class LineService {
       return;
     }
 
+    // --- 條列式一次登陸多筆（2026-08-04）：貼多行文字，每行各自當一筆獨立
+    // 的記帳／代辦／股票交易／行事曆指令處理，不用一則訊息只能記一筆。編
+    // 號（「1.」「2、」...）是選用的，有就自動剝掉。只有這四種「登陸」指
+    // 令適用，選單類指令（代辦事項、記帳說明...）在多行模式下就是看不懂。
+    // 放在網址擷取之後，避免「連結+說明文字」分兩行貼過來時被誤判成批次
+    // 而漏掉知識庫分析。
+    const batchLines = text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (batchLines.length >= 2) {
+      const summaries: string[] = [];
+      for (let i = 0; i < batchLines.length; i++) {
+        const result = await this.tryBatchLine(link, batchLines[i]);
+        summaries.push(`${i + 1}. ${result}`);
+      }
+      await this.reply(replyToken, summaries.join('\n'));
+      return;
+    }
+
     if (text === '記帳') {
       await this.sendFinanceHelp(userId, replyToken);
       return;
@@ -323,11 +352,11 @@ export class LineService {
       return;
     }
     if (text.startsWith('新增行事曆')) {
-      await this.createCalendarEventFromText(userId, text, replyToken);
+      await this.createCalendarEventFromText(userId, text, (msg) => this.reply(replyToken, msg));
       return;
     }
     if (text.startsWith('新增')) {
-      await this.createTodoFromText(link, text, replyToken);
+      await this.createTodoFromText(link, text, (msg) => this.reply(replyToken, msg));
       return;
     }
     if (text.startsWith('完成')) {
@@ -348,8 +377,9 @@ export class LineService {
       return;
     }
 
-    if (await this.tryFinanceCommand(userId, text, replyToken)) return;
-    if (await this.tryStockCommand(userId, text, replyToken)) return;
+    const replyOnce: Responder = (msg) => this.reply(replyToken, msg);
+    if (await this.tryFinanceCommand(userId, text, replyOnce)) return;
+    if (await this.tryStockCommand(userId, text, replyOnce)) return;
     if (await this.tryStockDcaReply(userId, text, replyToken)) return;
 
     await this.reply(
@@ -362,8 +392,45 @@ export class LineService {
         '・持股總覽',
         '・代辦事項 / 代辦事項總覽',
         '・新增行事曆 7/31 14:00 開會 @地點',
+        '',
+        '想一次記多筆，貼多行文字（一行一筆）就會逐行處理，例如：',
+        '支出300午餐現金\n買股0050 152 3000 國泰世華',
       ].join('\n'),
     );
+  }
+
+  private static readonly LEADING_LINE_NUMBER = /^\d+[.\)、\-]\s*/;
+
+  /** One line of a 條列式批次訊息 (see the batch check in
+   * `handleTextForLinkedUser`) — tries each 登陸-style command in turn
+   * (行事曆/代辦/股票/記帳, same order the single-line router tries them)
+   * with a capturing `Responder` instead of a real LINE reply, and returns
+   * whatever that command would have said. A line matching no known
+   * command shape gets a plain "看不懂" rather than the full menu (the
+   * batch reply is already one line per item; repeating the whole command
+   * list for every unrecognized line would bury the ones that worked). */
+  private async tryBatchLine(link: LineAccountLink, rawLine: string): Promise<string> {
+    const line = rawLine.replace(LineService.LEADING_LINE_NUMBER, '').trim();
+    if (!line) return '（空白，略過）';
+
+    const results: string[] = [];
+    const capture: Responder = async (msg) => {
+      results.push(msg);
+    };
+
+    if (line.startsWith('新增行事曆')) {
+      await this.createCalendarEventFromText(link.userId, line, capture);
+    } else if (line.startsWith('新增')) {
+      await this.createTodoFromText(link, line, capture);
+    } else if (line.startsWith('買股') || line.startsWith('賣股')) {
+      await this.tryStockCommand(link.userId, line, capture);
+    } else if (line.startsWith('支出') || line.startsWith('收入')) {
+      await this.tryFinanceCommand(link.userId, line, capture);
+    } else {
+      return `看不懂「${line}」`;
+    }
+
+    return results.join(' ') || `「${line}」沒有任何回應`;
   }
 
   // --- 記帳 ---
@@ -455,7 +522,7 @@ export class LineService {
   private async tryFinanceCommand(
     userId: string,
     text: string,
-    replyToken: string,
+    respond: Responder,
   ): Promise<boolean> {
     if (!text.startsWith('支出') && !text.startsWith('收入')) return false;
 
@@ -463,10 +530,7 @@ export class LineService {
       where: { ownerUserId: userId },
     });
     if (!space) {
-      await this.reply(
-        replyToken,
-        '找不到你的個人空間，請先到元序 App 登入一次。',
-      );
+      await respond('找不到你的個人空間，請先到元序 App 登入一次。');
       return true;
     }
     const [categories, accounts] = await Promise.all([
@@ -482,19 +546,13 @@ export class LineService {
       accounts,
     );
     if (!parsed) {
-      await this.reply(
-        replyToken,
-        '看不懂記帳格式，傳「記帳」看範例跟目前可用的分類/帳戶。',
-      );
+      await respond('看不懂記帳格式，傳「記帳」看範例跟目前可用的分類/帳戶。');
       return true;
     }
 
     const accountId = parsed.accountId ?? accounts[0]?.id;
     if (!accountId) {
-      await this.reply(
-        replyToken,
-        '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。',
-      );
+      await respond('你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
       return true;
     }
 
@@ -524,8 +582,7 @@ export class LineService {
       : null;
     const typeLabel =
       parsed.type === FinanceTransactionType.INCOME ? '收入' : '支出';
-    await this.reply(
-      replyToken,
+    await respond(
       `已記錄${typeLabel} ${parsed.amount.toLocaleString('en-US')}（${category?.name ?? '未分類'} · ${account?.name ?? ''}）${parsed.note ? ' · ' + parsed.note : ''}`,
     );
     return true;
@@ -759,7 +816,7 @@ export class LineService {
   private async tryStockCommand(
     userId: string,
     text: string,
-    replyToken: string,
+    respond: Responder,
   ): Promise<boolean> {
     if (!text.startsWith('買股') && !text.startsWith('賣股')) return false;
 
@@ -767,10 +824,7 @@ export class LineService {
       where: { ownerUserId: userId },
     });
     if (!space) {
-      await this.reply(
-        replyToken,
-        '找不到你的個人空間，請先到元序 App 登入一次。',
-      );
+      await respond('找不到你的個人空間，請先到元序 App 登入一次。');
       return true;
     }
     const accounts = await this.prisma.financeAccount.findMany({
@@ -779,19 +833,13 @@ export class LineService {
     });
     const parsed = this.parseStockCommand(text, accounts);
     if (!parsed) {
-      await this.reply(
-        replyToken,
-        '看不懂股票交易格式，傳「股票買賣」看範例跟目前可用的帳戶。',
-      );
+      await respond('看不懂股票交易格式，傳「股票買賣」看範例跟目前可用的帳戶。');
       return true;
     }
 
     const accountId = parsed.accountId ?? accounts[0]?.id;
     if (!accountId) {
-      await this.reply(
-        replyToken,
-        '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。',
-      );
+      await respond('你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
       return true;
     }
 
@@ -814,8 +862,7 @@ export class LineService {
     const account = accounts.find((a) => a.id === accountId);
     const typeLabel =
       parsed.type === StockTransactionType.BUY ? '買入' : '賣出';
-    await this.reply(
-      replyToken,
+    await respond(
       `已記錄${typeLabel} ${parsed.stockCode}，約 ${shares.toFixed(2)} 股（成交價 ${parsed.pricePerShare}，投入 ${Math.round(parsed.totalCost).toLocaleString('en-US')}，帳戶 ${account?.name ?? ''}），交割日（T+2）到了會自動記帳。`,
     );
     return true;
@@ -1506,25 +1553,19 @@ export class LineService {
   private async createTodoFromText(
     link: LineAccountLink,
     text: string,
-    replyToken: string,
+    respond: Responder,
   ) {
     if (!link.activeTodoPersonal && !link.activeProjectId) {
-      await this.reply(replyToken, '請先傳「代辦事項」選擇要記錄的個人事項或專案。');
+      await respond('請先傳「代辦事項」選擇要記錄的個人事項或專案。');
       return;
     }
     const parsed = this.parseTodoCommand(text);
     if (parsed === 'needs_date') {
-      await this.reply(
-        replyToken,
-        '請加上日期或標記「持續」，例如「新增 8/10 買材料」或「新增 持續 每週檢查庫存」。',
-      );
+      await respond('請加上日期或標記「持續」，例如「新增 8/10 買材料」或「新增 持續 每週檢查庫存」。');
       return;
     }
     if (!parsed) {
-      await this.reply(
-        replyToken,
-        '請在「新增」後面接代辦事項的內容，例如「新增 8/10 買材料」。',
-      );
+      await respond('請在「新增」後面接代辦事項的內容，例如「新增 8/10 買材料」。');
       return;
     }
     const { title, dueDate, isOngoing } = parsed;
@@ -1544,7 +1585,7 @@ export class LineService {
           sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
         },
       });
-      await this.reply(replyToken, `已新增個人代辦事項「${title}」（${dateLabel}）。`);
+      await respond(`已新增個人代辦事項「${title}」（${dateLabel}）。`);
       return;
     }
 
@@ -1552,10 +1593,7 @@ export class LineService {
       where: { id: link.activeProjectId! },
     });
     if (!project) {
-      await this.reply(
-        replyToken,
-        '這個專案好像不存在了，傳「切換專案」重新選一個。',
-      );
+      await respond('這個專案好像不存在了，傳「切換專案」重新選一個。');
       return;
     }
     const maxSortOrder = await this.prisma.projectTodo.aggregate({
@@ -1571,10 +1609,7 @@ export class LineService {
         sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
       },
     });
-    await this.reply(
-      replyToken,
-      `已新增代辦事項「${title}」（${project.name}，${dateLabel}）。`,
-    );
+    await respond(`已新增代辦事項「${title}」（${project.name}，${dateLabel}）。`);
   }
 
   /** "完成 N" references the Nth item of whichever list (代辦事項 or
@@ -1700,12 +1735,11 @@ export class LineService {
   private async createCalendarEventFromText(
     userId: string,
     text: string,
-    replyToken: string,
+    respond: Responder,
   ) {
     const parsed = this.parseCalendarCommand(text);
     if (!parsed) {
-      await this.reply(
-        replyToken,
+      await respond(
         '看不懂格式，請用「新增行事曆 日期 時間 項目 [@地點]」，例如「新增行事曆 7/31 14:00 開會 @台北辦公室」；全天活動時間可以打「全天」。',
       );
       return;
@@ -1715,10 +1749,7 @@ export class LineService {
       where: { calendarOwnerUserId: userId },
     });
     if (!space) {
-      await this.reply(
-        replyToken,
-        '你還沒有行事曆空間，請先到元序 App 建立一個。',
-      );
+      await respond('你還沒有行事曆空間，請先到元序 App 建立一個。');
       return;
     }
 
@@ -1733,10 +1764,7 @@ export class LineService {
     const timeLabel = parsed.allDay
       ? '全天'
       : `${String(parsed.startAt.getHours()).padStart(2, '0')}:${String(parsed.startAt.getMinutes()).padStart(2, '0')}`;
-    await this.reply(
-      replyToken,
-      `已新增行事曆「${parsed.title}」（${dateLabel} ${timeLabel}）。`,
-    );
+    await respond(`已新增行事曆「${parsed.title}」（${dateLabel} ${timeLabel}）。`);
   }
 
   private parseCalendarCommand(text: string): {
