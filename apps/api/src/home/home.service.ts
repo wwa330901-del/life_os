@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScheduleService } from '../projects/schedule.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
+import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
+import { DocumentApprovalsService } from '../document-approvals/document-approvals.service';
 import { FinanceTransactionType } from '../../generated/prisma/client.js';
 import { UpdateHomeLayoutDto } from './dto/update-home-layout.dto';
 
@@ -10,8 +12,19 @@ import { UpdateHomeLayoutDto } from './dto/update-home-layout.dto';
  * sees exactly this. `HomeService.getLayout` fills in any widget missing
  * from a saved layout (e.g. one added in a later release) at the end, so
  * it's never silently hidden just because it didn't exist when the user
- * last customized their layout. */
-const DEFAULT_WIDGET_TYPES = ['personalFinance', 'todayFinance', 'projectSummary', 'todayTodos'];
+ * last customized their layout. 2026-08-03: added stockSummary/
+ * pendingApprovals/ongoingTodos/recentKnowledgeItems for the modules built
+ * since the original four (投資, 文件簽核, 代辦事項獨立空間's 持續性任務, 知識庫). */
+const DEFAULT_WIDGET_TYPES = [
+  'personalFinance',
+  'todayFinance',
+  'projectSummary',
+  'todayTodos',
+  'stockSummary',
+  'pendingApprovals',
+  'ongoingTodos',
+  'recentKnowledgeItems',
+];
 
 export interface HomeWidgetConfig {
   type: string;
@@ -31,6 +44,8 @@ export class HomeService {
     private readonly prisma: PrismaService,
     private readonly scheduleService: ScheduleService,
     private readonly financeAccountsService: FinanceAccountsService,
+    private readonly stocksHoldingsService: StocksHoldingsService,
+    private readonly documentApprovalsService: DocumentApprovalsService,
   ) {}
 
   async getLayout(userId: string): Promise<HomeWidgetConfig[]> {
@@ -56,12 +71,25 @@ export class HomeService {
   }
 
   async getDashboard(userId: string) {
-    const [personalFinance, projectSummary, todosToday] = await Promise.all([
-      this.getPersonalFinance(userId),
-      this.getProjectSummary(userId),
-      this.getTodosToday(userId),
-    ]);
-    return { personalFinance, projectSummary, todosToday };
+    const [personalFinance, projectSummary, todosToday, stockSummary, pendingApprovals, ongoingTodos, recentKnowledgeItems] =
+      await Promise.all([
+        this.getPersonalFinance(userId),
+        this.getProjectSummary(userId),
+        this.getTodosToday(userId),
+        this.getStockSummary(userId),
+        this.documentApprovalsService.pendingForMe(userId),
+        this.getOngoingTodos(userId),
+        this.getRecentKnowledgeItems(userId),
+      ]);
+    return {
+      personalFinance,
+      projectSummary,
+      todosToday,
+      stockSummary,
+      pendingApprovals,
+      ongoingTodos,
+      recentKnowledgeItems,
+    };
   }
 
   private async getPersonalFinance(userId: string) {
@@ -179,6 +207,92 @@ export class HomeService {
       completedToday: completedToday.map(label),
       dueTodayIncomplete: dueTodayIncomplete.map(label),
     };
+  }
+
+  /** null if the user has no personal space (shouldn't happen in practice —
+   * every user gets one at signup) or no stock holdings at all. */
+  private async getStockSummary(userId: string) {
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) return null;
+
+    const holdings = await this.stocksHoldingsService.list(userId, space.id);
+    if (holdings.length === 0) return null;
+
+    let totalMarketValue = 0;
+    let totalGainLoss = 0;
+    let pricesAvailable = true;
+    for (const h of holdings) {
+      if (h.marketValue == null || h.gainLoss == null) {
+        pricesAvailable = false;
+        continue;
+      }
+      totalMarketValue += h.marketValue;
+      totalGainLoss += h.gainLoss;
+    }
+
+    return {
+      totalMarketValue: pricesAvailable ? totalMarketValue : null,
+      totalGainLoss: pricesAvailable ? totalGainLoss : null,
+      holdings: holdings.map((h) => ({
+        stockCode: h.stockCode,
+        stockName: h.stockName,
+        shares: h.shares,
+        marketValue: h.marketValue,
+        gainLoss: h.gainLoss,
+      })),
+    };
+  }
+
+  /** 持續性任務 (isOngoing) across 個人 + every project the user belongs to —
+   * unlike getTodosToday, not date-windowed at all (that's the point of
+   * this flag: no fixed date to filter on). */
+  private async getOngoingTodos(userId: string) {
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId },
+      include: { project: true },
+    });
+    const projectIds = memberships.map((m) => m.projectId);
+    const projectNameOf = new Map(memberships.map((m) => [m.projectId, m.project.name]));
+
+    const todos = await this.prisma.projectTodo.findMany({
+      where: {
+        isOngoing: true,
+        done: false,
+        OR: [{ projectId: { in: projectIds } }, { personalOwnerUserId: userId }],
+      },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    return todos.map((t) => ({
+      id: t.id,
+      title: t.title,
+      projectName: t.projectId ? (projectNameOf.get(t.projectId) ?? '') : '個人',
+    }));
+  }
+
+  /** Most recent 5 knowledge items this user owns, regardless of status —
+   * a lightweight preview (title/category/status only), not the full
+   * field-value payload `KnowledgeItemsService.listOwn` returns. */
+  private async getRecentKnowledgeItems(userId: string) {
+    const items = await this.prisma.knowledgeItem.findMany({
+      where: { ownerUserId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        createdAt: true,
+        category: { select: { name: true } },
+      },
+    });
+    return items.map((i) => ({
+      id: i.id,
+      title: i.title ?? '未命名',
+      categoryName: i.category?.name ?? null,
+      status: i.status,
+      createdAt: i.createdAt,
+    }));
   }
 }
 

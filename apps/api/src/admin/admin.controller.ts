@@ -11,6 +11,8 @@ import {
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PlatformAdminGuard } from '../auth/guards/platform-admin.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-payload';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
@@ -36,8 +38,8 @@ export class AdminController {
   }
 
   @Post('spaces')
-  createSpace(@Body() dto: CreateSpaceDto) {
-    return this.adminService.createCompanySpace(dto.name);
+  createSpace(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSpaceDto) {
+    return this.adminService.createCompanySpace(user.id, dto.name);
   }
 
   @Post('spaces/:id/members')

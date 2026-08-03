@@ -82,9 +82,21 @@ export class AdminService {
     };
   }
 
-  createCompanySpace(name: string) {
+  /** The creating platform admin is auto-added as OWNER — without this, a
+   * freshly created space had zero members, so it didn't even show up in
+   * its creator's own space list (`GET /spaces/me` only returns spaces the
+   * caller is actually a member of) until they separately went and added
+   * themselves via `addMember` below. That gap was the real cause behind
+   * "the properties screen is blank and I can't add anything" (2026-08-03)
+   * — they were never a member the whole time `assertCanManage` was
+   * silently rejecting their attempts. */
+  createCompanySpace(creatorUserId: string, name: string) {
     return this.prisma.space.create({
-      data: { type: SpaceType.COMPANY, name },
+      data: {
+        type: SpaceType.COMPANY,
+        name,
+        memberships: { create: { userId: creatorUserId, role: MembershipRole.OWNER } },
+      },
     });
   }
 

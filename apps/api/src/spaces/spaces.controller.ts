@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { SpacesService } from './spaces.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -27,5 +27,10 @@ export class SpacesController {
   @Post('calendar')
   getOrCreateCalendarSpace(@CurrentUser() user: AuthenticatedUser) {
     return this.spacesService.getOrCreateCalendarSpace(user.id);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.spacesService.remove(user.id, id);
   }
 }

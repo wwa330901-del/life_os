@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/models/app_user.dart';
 import '../../state/auth_provider.dart';
+import '../../state/space_provider.dart';
 import '../../state/ui_prefs_provider.dart';
 import '../widgets/ai_settings_dialog.dart';
 import 'space_switcher_list.dart';
@@ -232,6 +233,14 @@ class _SidebarPanel extends ConsumerWidget {
                 selected: propertiesSettingsSelected,
                 onTap: onOpenPropertiesSettings,
               ),
+            if (space.type == SpaceType.company && space.role == 'OWNER')
+              _NavItem(
+                icon: Icons.delete_forever_outlined,
+                label: '刪除空間',
+                selected: false,
+                destructive: true,
+                onTap: () => _deleteSpace(context, ref, space),
+              ),
             const Spacer(),
             Divider(height: 1, color: scheme.outline.withValues(alpha: 0.25)),
             _NavItem(
@@ -289,6 +298,60 @@ class _SidebarPanel extends ConsumerWidget {
       }
     }
   }
+
+  /// OWNER-only (server also enforces this) — requires typing the space's
+  /// exact name to confirm, since this cascades every project/work item/
+  /// todo/document/approval inside it and can't be undone.
+  Future<void> _deleteSpace(BuildContext context, WidgetRef ref, SpaceSummary space) async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('刪除空間'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('這會永久刪除「${space.name}」裡的所有專案、工項、代辦事項、文件與簽核紀錄，且無法復原。'),
+                const SizedBox(height: 12),
+                Text('請輸入空間名稱「${space.name}」以確認：'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+              onPressed: controller.text.trim() == space.name
+                  ? () => Navigator.of(context).pop(true)
+                  : null,
+              child: const Text('永久刪除'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await ref.read(apiClientProvider).deleteSpace(space.id);
+      ref.invalidate(mySpacesProvider);
+      ref.read(selectedSpaceProvider.notifier).clear();
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
 }
 
 class _NavItem extends StatelessWidget {
@@ -297,16 +360,19 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.destructive = false,
   });
 
   final IconData icon;
   final String label;
   final bool selected;
+  final bool destructive;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final color = destructive ? scheme.error : (selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.7));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Material(
@@ -319,7 +385,7 @@ class _NavItem extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             child: Row(
               children: [
-                Icon(icon, size: 18, color: selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.7)),
+                Icon(icon, size: 18, color: color),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -328,7 +394,9 @@ class _NavItem extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      color: selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.85),
+                      color: destructive
+                          ? scheme.error
+                          : (selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.85)),
                     ),
                   ),
                 ),

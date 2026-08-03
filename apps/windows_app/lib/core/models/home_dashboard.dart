@@ -1,4 +1,5 @@
 import 'finance.dart';
+import 'knowledge.dart';
 
 /// Read-only account balance for the home dashboard — unlike
 /// `FinanceAccount`, there's no `initialBalance`/`sortOrder` to carry
@@ -43,6 +44,10 @@ String homeWidgetLabel(String type) => switch (type) {
   'todayFinance' => '本日支出及收入',
   'projectSummary' => '專案總表',
   'todayTodos' => '本日代辦事項',
+  'stockSummary' => '投資/持股總覽',
+  'pendingApprovals' => '待我簽核',
+  'ongoingTodos' => '持續性任務',
+  'recentKnowledgeItems' => '知識庫最新入庫',
   _ => type,
 };
 
@@ -130,12 +135,115 @@ class HomeTodosToday {
   );
 }
 
+class HomeStockHolding {
+  const HomeStockHolding({
+    required this.stockCode,
+    required this.stockName,
+    required this.shares,
+    required this.marketValue,
+    required this.gainLoss,
+  });
+
+  final String stockCode;
+  final String? stockName;
+  final double shares;
+  final double? marketValue;
+  final double? gainLoss;
+
+  factory HomeStockHolding.fromJson(Map<String, dynamic> json) => HomeStockHolding(
+    stockCode: json['stockCode'] as String,
+    stockName: json['stockName'] as String?,
+    shares: (json['shares'] as num).toDouble(),
+    marketValue: (json['marketValue'] as num?)?.toDouble(),
+    gainLoss: (json['gainLoss'] as num?)?.toDouble(),
+  );
+}
+
+class HomeStockSummary {
+  const HomeStockSummary({required this.totalMarketValue, required this.totalGainLoss, required this.holdings});
+
+  final double? totalMarketValue;
+  final double? totalGainLoss;
+  final List<HomeStockHolding> holdings;
+
+  factory HomeStockSummary.fromJson(Map<String, dynamic> json) => HomeStockSummary(
+    totalMarketValue: (json['totalMarketValue'] as num?)?.toDouble(),
+    totalGainLoss: (json['totalGainLoss'] as num?)?.toDouble(),
+    holdings: (json['holdings'] as List<dynamic>)
+        .map((e) => HomeStockHolding.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+class HomePendingApproval {
+  const HomePendingApproval({
+    required this.stepId,
+    required this.sequence,
+    required this.totalSteps,
+    required this.documentId,
+    required this.documentName,
+    required this.projectId,
+    required this.submittedByName,
+  });
+
+  final String stepId;
+  final int sequence;
+  final int totalSteps;
+  final String documentId;
+  final String documentName;
+  final String projectId;
+  final String submittedByName;
+
+  factory HomePendingApproval.fromJson(Map<String, dynamic> json) => HomePendingApproval(
+    stepId: json['stepId'] as String,
+    sequence: json['sequence'] as int,
+    totalSteps: json['totalSteps'] as int,
+    documentId: json['documentId'] as String,
+    documentName: json['documentName'] as String,
+    projectId: json['projectId'] as String,
+    submittedByName: json['submittedByName'] as String,
+  );
+}
+
+class HomeKnowledgeItemPreview {
+  const HomeKnowledgeItemPreview({
+    required this.id,
+    required this.title,
+    required this.categoryName,
+    required this.status,
+  });
+
+  final String id;
+  final String title;
+  final String? categoryName;
+  final KnowledgeItemStatus status;
+
+  factory HomeKnowledgeItemPreview.fromJson(Map<String, dynamic> json) => HomeKnowledgeItemPreview(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    categoryName: json['categoryName'] as String?,
+    status: KnowledgeItemStatusJson.fromJson(json['status'] as String),
+  );
+}
+
 class HomeDashboard {
-  const HomeDashboard({required this.personalFinance, required this.projectSummary, required this.todosToday});
+  const HomeDashboard({
+    required this.personalFinance,
+    required this.projectSummary,
+    required this.todosToday,
+    required this.stockSummary,
+    required this.pendingApprovals,
+    required this.ongoingTodos,
+    required this.recentKnowledgeItems,
+  });
 
   final HomePersonalFinance? personalFinance;
   final List<HomeProjectSummary> projectSummary;
   final HomeTodosToday todosToday;
+  final HomeStockSummary? stockSummary;
+  final List<HomePendingApproval> pendingApprovals;
+  final List<HomeTodoRef> ongoingTodos;
+  final List<HomeKnowledgeItemPreview> recentKnowledgeItems;
 
   factory HomeDashboard.fromJson(Map<String, dynamic> json) => HomeDashboard(
     personalFinance: json['personalFinance'] == null
@@ -145,5 +253,17 @@ class HomeDashboard {
         .map((e) => HomeProjectSummary.fromJson(e as Map<String, dynamic>))
         .toList(),
     todosToday: HomeTodosToday.fromJson(json['todosToday'] as Map<String, dynamic>),
+    stockSummary: json['stockSummary'] == null
+        ? null
+        : HomeStockSummary.fromJson(json['stockSummary'] as Map<String, dynamic>),
+    pendingApprovals: (json['pendingApprovals'] as List<dynamic>)
+        .map((e) => HomePendingApproval.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    ongoingTodos: (json['ongoingTodos'] as List<dynamic>)
+        .map((e) => HomeTodoRef.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    recentKnowledgeItems: (json['recentKnowledgeItems'] as List<dynamic>)
+        .map((e) => HomeKnowledgeItemPreview.fromJson(e as Map<String, dynamic>))
+        .toList(),
   );
 }

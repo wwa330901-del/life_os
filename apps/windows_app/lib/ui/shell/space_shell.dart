@@ -37,6 +37,16 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
   bool _showPropertiesSettings = false;
   bool _showApprovals = false;
 
+  // `_RootRouter` reuses this same `SpaceShell` widget instance across
+  // every space (it's `const SpaceShell()` regardless of which one is
+  // selected) — so switching from one company space's project straight to
+  // a different company space via the sidebar re-runs build() with a new
+  // `space`, but these local fields would otherwise keep pointing at the
+  // old space's project/screen. Track which space they belong to and
+  // reset on mismatch (2026-08-03 bug: clicking another company space
+  // while inside a project didn't navigate away).
+  String? _stateForSpaceId;
+
   void _backToList() => setState(() {
     _openProjectId = null;
     _showPropertiesSettings = false;
@@ -60,6 +70,13 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     final space = ref.watch(selectedSpaceProvider);
     // `_RootRouter` only ever builds this widget once a space is selected.
     if (space == null) return const SizedBox.shrink();
+
+    if (space.id != _stateForSpaceId) {
+      _stateForSpaceId = space.id;
+      _openProjectId = null;
+      _showPropertiesSettings = false;
+      _showApprovals = false;
+    }
 
     final content = switch (space.type) {
       SpaceType.personal => DashboardView(space: space),

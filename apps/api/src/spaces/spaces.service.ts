@@ -1,10 +1,11 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SpaceType } from '../../generated/prisma/client.js';
+import { MembershipRole, SpaceType } from '../../generated/prisma/client.js';
 
 @Injectable()
 export class SpacesService {
@@ -116,5 +117,31 @@ export class SpacesService {
       email: m.user.email,
       role: m.role,
     }));
+  }
+
+  /** Company spaces only — personal/calendar spaces are 1:1-per-user and
+   * not something this endpoint is meant to touch. OWNER-only (2026-08-03
+   * user decision, confirming by typing the space's name is enforced
+   * client-side only — the real authorization is this role check).
+   * `Project.spaceId`/`CompanyMembership.spaceId` are the only two
+   * `ON DELETE RESTRICT` foreign keys pointing at Space (everything else —
+   * DocumentTemplate, GeneratedDocument, ProjectPropertyDefinition, etc. —
+   * cascades), so both have to be cleared explicitly before the Space
+   * itself can go; deleting the Projects first cascades away everything
+   * under them (WorkItem/ProjectMember/ProjectTodo/GeneratedDocument/
+   * ProjectPropertyValue/...) via their own existing Cascade rules. */
+  async remove(userId: string, spaceId: string): Promise<void> {
+    const space = await this.getForUserOrThrow(userId, spaceId);
+    if (space.type !== SpaceType.COMPANY) {
+      throw new BadRequestException('只能刪除公司空間');
+    }
+    if (space.role !== MembershipRole.OWNER) {
+      throw new ForbiddenException('只有空間擁有者可以刪除這個空間');
+    }
+    await this.prisma.$transaction([
+      this.prisma.project.deleteMany({ where: { spaceId } }),
+      this.prisma.companyMembership.deleteMany({ where: { spaceId } }),
+      this.prisma.space.delete({ where: { id: spaceId } }),
+    ]);
   }
 }

@@ -203,13 +203,15 @@ class _CalendarBody extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          flex: 3,
+          flex: 7,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 12, 20),
             child: TableCalendar<CalendarEvent>(
               firstDay: DateTime(2000),
               lastDay: DateTime(2100),
               focusedDay: focusedDay,
+              rowHeight: 116,
+              daysOfWeekHeight: 24,
               selectedDayPredicate: (day) => isSameDay(day, selectedDay),
               onDaySelected: onDaySelected,
               onPageChanged: onPageChanged,
@@ -218,20 +220,28 @@ class _CalendarBody extends ConsumerWidget {
                 formatButtonVisible: false,
                 titleCentered: true,
               ),
-              calendarStyle: CalendarStyle(
-                outsideDaysVisible: true,
-                todayDecoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.25),
-                  shape: BoxShape.circle,
+              calendarStyle: const CalendarStyle(outsideDaysVisible: true),
+              calendarBuilders: CalendarBuilders<CalendarEvent>(
+                // 事件標題直接畫在格子裡（見下方 _DayCell），不需要再疊一層
+                // 預設的小圓點 marker。
+                markerBuilder: (context, day, dayEvents) => const SizedBox.shrink(),
+                defaultBuilder: (context, day, focused) => _DayCell(day: day, events: _eventsOn(day)),
+                outsideBuilder: (context, day, focused) =>
+                    _DayCell(day: day, events: _eventsOn(day), outside: true),
+                todayBuilder: (context, day, focused) =>
+                    _DayCell(day: day, events: _eventsOn(day), today: true),
+                selectedBuilder: (context, day, focused) => _DayCell(
+                  day: day,
+                  events: _eventsOn(day),
+                  selected: true,
+                  today: isSameDay(day, DateTime.now()),
                 ),
-                selectedDecoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
-                markerDecoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
               ),
             ),
           ),
         ),
         Expanded(
-          flex: 2,
+          flex: 3,
           child: Container(
             margin: const EdgeInsets.fromLTRB(0, 8, 20, 20),
             decoration: BoxDecoration(
@@ -248,6 +258,84 @@ class _CalendarBody extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// One month-grid cell — day number + up to [_maxShown] event title chips,
+/// "+N" for the rest (fixed-height grid, not "grow to fit everything";
+/// clicking the day still opens the full list in the side agenda panel).
+class _DayCell extends StatelessWidget {
+  const _DayCell({
+    required this.day,
+    required this.events,
+    this.selected = false,
+    this.today = false,
+    this.outside = false,
+  });
+
+  final DateTime day;
+  final List<CalendarEvent> events;
+  final bool selected;
+  final bool today;
+  final bool outside;
+
+  static const _maxShown = 2;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final shown = events.take(_maxShown).toList();
+    final overflow = events.length - shown.length;
+    final dayNumberColor = outside
+        ? scheme.onSurface.withValues(alpha: 0.35)
+        : selected
+        ? scheme.primary
+        : scheme.onSurface;
+
+    return Container(
+      margin: const EdgeInsets.all(2),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      decoration: BoxDecoration(
+        color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
+        borderRadius: BorderRadius.circular(8),
+        border: today ? Border.all(color: scheme.primary, width: 1.2) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${day.day}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected || today ? FontWeight.w700 : FontWeight.w500,
+              color: dayNumberColor,
+            ),
+          ),
+          const SizedBox(height: 2),
+          for (final e in shown)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                e.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: scheme.onSurface.withValues(alpha: outside ? 0.5 : 1)),
+              ),
+            ),
+          if (overflow > 0)
+            Text(
+              '+$overflow',
+              style: TextStyle(fontSize: 10, color: scheme.onSurface.withValues(alpha: 0.6)),
+            ),
+        ],
+      ),
     );
   }
 }

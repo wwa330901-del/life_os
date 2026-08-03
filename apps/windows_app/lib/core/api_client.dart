@@ -139,6 +139,12 @@ class ApiClient {
     return SpaceSummary.fromJson(body);
   }
 
+  /// Company spaces only, OWNER-only (server-enforced) — cascades every
+  /// project/work item/todo/document/approval inside it.
+  Future<void> deleteSpace(String spaceId) async {
+    await _delete('/spaces/$spaceId');
+  }
+
   Future<List<CalendarEvent>> listCalendarEvents(String spaceId, {DateTime? from, DateTime? to}) async {
     final params = <String, String>{
       if (from != null) 'from': from.toUtc().toIso8601String(),
