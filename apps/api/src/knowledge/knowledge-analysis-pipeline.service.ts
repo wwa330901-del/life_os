@@ -90,6 +90,30 @@ export class KnowledgeAnalysisPipeline {
     }
   }
 
+  /** A screen recording/clip sent via LINE — distinct from a YouTube link
+   * (which Gemini watches by URI reference, no upload needed here). */
+  async processVideoSubmission(
+    itemId: string,
+    ownerUserId: string,
+    video: { data: Buffer; mimeType: string },
+  ): Promise<void> {
+    try {
+      const apiKey = await this.requireApiKey(ownerUserId);
+      await this.itemsService.markProcessing(itemId);
+      await this.runAnalysis(itemId, ownerUserId, apiKey, {
+        sourcePlatform: '影片',
+        video,
+      });
+    } catch (error) {
+      this.logger.error(`知識庫影片分析失敗 item=${itemId}`, error as Error);
+      await this.itemsService.markFailed(itemId, this.errorMessage(error));
+      await this.lineNotifier.notifyByUser(
+        ownerUserId,
+        this.userFacingMessage(error),
+      );
+    }
+  }
+
   /** The "no API key" error is already a complete, friendly instruction —
    * everything else gets a generic wrapper so a raw technical message
    * (e.g. "Fetch failed with status 404") doesn't show up unexplained. */
@@ -133,6 +157,7 @@ export class KnowledgeAnalysisPipeline {
         extractedText: fetched.extractedText,
         youtubeUrl: fetched.youtubeUrl,
         image: fetched.image,
+        video: fetched.video,
         existingCategories,
       })
       .catch(async (error: unknown) => {

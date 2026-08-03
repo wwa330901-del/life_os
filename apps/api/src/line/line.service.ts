@@ -162,6 +162,17 @@ export class LineService {
           continue;
         }
 
+        if (event.type === 'message' && event.message?.type === 'video') {
+          if (!link) continue;
+          await this.handleVideoMessage(
+            link.id,
+            link.userId,
+            event.message.id,
+            replyToken,
+          );
+          continue;
+        }
+
         if (event.type !== 'message' || event.message?.type !== 'text')
           continue;
         const text = event.message.text?.trim();
@@ -962,7 +973,7 @@ export class LineService {
   ) {
     if (!messageId) return;
     try {
-      const data = await this.fetchLineImageContent(messageId);
+      const data = await this.fetchLineMessageContent(messageId);
       const item = await this.knowledgeItemsService.createPending(userId, {
         sourcePlatform: '圖片',
       });
@@ -984,7 +995,43 @@ export class LineService {
     }
   }
 
-  private async fetchLineImageContent(messageId: string): Promise<Buffer> {
+  /** Same idea as `handleImageMessage` — a screen recording/clip sent
+   * straight to the bot (not a YouTube link, which is handled by
+   * `captureKnowledgeUrl` instead since Gemini watches that by URI
+   * reference). 2026-08-04: this message type was previously not handled
+   * at all — `handleEvents`'s type filter silently dropped it, so a video
+   * sent to the bot got no ack and no analysis, ever. */
+  private async handleVideoMessage(
+    linkId: string,
+    userId: string,
+    messageId: string | undefined,
+    replyToken: string,
+  ) {
+    if (!messageId) return;
+    try {
+      const data = await this.fetchLineMessageContent(messageId);
+      const item = await this.knowledgeItemsService.createPending(userId, {
+        sourcePlatform: '影片',
+      });
+      await this.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
+      void this.knowledgeAnalysisPipeline.processVideoSubmission(
+        item.id,
+        userId,
+        {
+          data,
+          mimeType: 'video/mp4',
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch LINE video content for link=${linkId}`,
+        error as Error,
+      );
+      await this.reply(replyToken, '影片下載失敗，請再傳一次看看。');
+    }
+  }
+
+  private async fetchLineMessageContent(messageId: string): Promise<Buffer> {
     const response = await fetch(
       `https://api-data.line.me/v2/bot/message/${messageId}/content`,
       {

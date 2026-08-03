@@ -41,18 +41,48 @@ export class TodoDigestService {
     }
   }
 
+  /** Grouped by 個人/each project (個人 first), continuously numbered across
+   * every group — and that numbering is written to `lastTodoListIds` so
+   * "完成 N"/"改期 N" work directly off this push, without the user having
+   * to separately open "代辦事項" or switch project context first
+   * (2026-08-04 explicit user ask: "不要再切換專案了，要就一次"). */
   private async notifyUser(userId: string, title: string, emptyText: string) {
     const { dueTodayIncomplete } = await this.homeService.getTodosToday(userId);
 
-    const text =
-      dueTodayIncomplete.length === 0
-        ? [title, '', emptyText].join('\n')
-        : [
-            title,
-            '',
-            ...dueTodayIncomplete.map((t) => `・${t.title}（${t.projectName}）`),
-          ].join('\n');
+    if (dueTodayIncomplete.length === 0) {
+      await this.lineNotifier.notifyByUser(userId, [title, '', emptyText].join('\n'));
+      return;
+    }
 
-    await this.lineNotifier.notifyByUser(userId, text);
+    const groups = new Map<string, { id: string; title: string }[]>();
+    for (const t of dueTodayIncomplete) {
+      const list = groups.get(t.projectName) ?? [];
+      list.push({ id: t.id, title: t.title });
+      groups.set(t.projectName, list);
+    }
+    const orderedGroupNames = [
+      ...(groups.has('個人') ? ['個人'] : []),
+      ...[...groups.keys()].filter((name) => name !== '個人'),
+    ];
+
+    const lines: string[] = [title, ''];
+    const orderedIds: string[] = [];
+    let n = 0;
+    for (const groupName of orderedGroupNames) {
+      lines.push(groupName === '個人' ? '個人代辦：' : `${groupName}：`);
+      for (const item of groups.get(groupName)!) {
+        n += 1;
+        orderedIds.push(item.id);
+        lines.push(`${n}. ${item.title}`);
+      }
+      lines.push('');
+    }
+    lines.push('傳「完成 編號」標記完成，或「改期 編號 新日期」改期。');
+
+    await this.prisma.lineAccountLink.update({
+      where: { userId },
+      data: { lastTodoListIds: orderedIds },
+    });
+    await this.lineNotifier.notifyByUser(userId, lines.join('\n'));
   }
 }

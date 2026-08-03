@@ -14,6 +14,7 @@ export interface FetchedContent {
   extractedText?: string;
   youtubeUrl?: string;
   image?: { data: Buffer; mimeType: string };
+  video?: { data: Buffer; mimeType: string };
 }
 
 /** Confirmed by direct testing (2026-08-03): a logged-out fetch of an

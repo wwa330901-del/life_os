@@ -175,6 +175,13 @@ export class GeminiContentAnalysisService implements AiContentAnalysisService {
         mime_type: input.image.mimeType,
       });
     }
+    if (input.video) {
+      parts.push({
+        type: 'video',
+        data: input.video.data.toString('base64'),
+        mime_type: input.video.mimeType,
+      });
+    }
 
     return parts;
   }

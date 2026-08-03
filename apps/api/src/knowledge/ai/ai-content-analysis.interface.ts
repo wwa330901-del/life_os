@@ -26,6 +26,10 @@ export interface ContentAnalysisInput {
   youtubeUrl?: string;
   /** Direct image bytes — a JPG/PNG sent via LINE, or a fetched IG/og:image thumbnail. */
   image?: { data: Buffer; mimeType: string };
+  /** Direct video bytes — a screen recording/clip sent via LINE. Distinct
+   * from `youtubeUrl` (Gemini watches that by reference, no upload needed);
+   * this is inline video data, same shape as `image`. */
+  video?: { data: Buffer; mimeType: string };
   existingCategories: CategoryContext[];
 }
 
