@@ -88,6 +88,9 @@ class PersonalTodoTab extends ConsumerWidget {
   Future<void> _openEditor(BuildContext context, WidgetRef ref, ProjectTodo? existing) async {
     final titleController = TextEditingController(text: existing?.title ?? '');
     var dueDate = existing?.dueDate;
+    // 每一筆代辦事項都必須是「有日期」或「持續性任務」二選一——沒有第三種
+    // 「都不選」的狀態，所以新增時預設落在「設定日期」而不是留空。
+    var isOngoing = existing?.isOngoing ?? false;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -106,37 +109,49 @@ class PersonalTodoTab extends ConsumerWidget {
                   decoration: const InputDecoration(labelText: '項目'),
                 ),
                 const SizedBox(height: 12),
-                InkWell(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: dueDate ?? DateTime.now(),
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) setState(() => dueDate = picked);
-                  },
-                  child: InputDecorator(
-                    decoration: InputDecoration(
-                      labelText: '日期（選填）',
-                      suffixIcon: dueDate == null
-                          ? const Icon(Icons.calendar_today_outlined, size: 18)
-                          : IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () => setState(() => dueDate = null),
-                            ),
-                    ),
-                    child: Text(
-                      dueDate == null ? '未設定' : '${dueDate!.year}/${dueDate!.month}/${dueDate!.day}',
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('設定日期')),
+                    ButtonSegment(value: true, label: Text('持續性任務')),
+                  ],
+                  selected: {isOngoing},
+                  onSelectionChanged: (selection) => setState(() {
+                    isOngoing = selection.first;
+                    if (isOngoing) dueDate = null;
+                  }),
+                ),
+                if (!isOngoing) ...[
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: dueDate ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) setState(() => dueDate = picked);
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: '日期',
+                        suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
+                      ),
+                      child: Text(
+                        dueDate == null ? '未設定' : '${dueDate!.year}/${dueDate!.month}/${dueDate!.day}',
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('儲存')),
+            FilledButton(
+              onPressed: !isOngoing && dueDate == null ? null : () => Navigator.of(context).pop(true),
+              child: const Text('儲存'),
+            ),
           ],
         ),
       ),
@@ -149,13 +164,14 @@ class PersonalTodoTab extends ConsumerWidget {
     try {
       final api = ref.read(apiClientProvider);
       if (existing == null) {
-        await api.createTodo(title: title, dueDate: dueDate);
+        await api.createTodo(title: title, dueDate: dueDate, isOngoing: isOngoing);
       } else {
         await api.updateTodo(
           todoId: existing.id,
           title: title,
           dueDate: dueDate,
           clearDueDate: dueDate == null,
+          isOngoing: isOngoing,
         );
       }
       ref.invalidate(todoOverviewProvider);

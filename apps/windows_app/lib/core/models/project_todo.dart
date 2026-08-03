@@ -22,7 +22,11 @@ extension TodoPriorityJson on TodoPriority {
 
 /// A project-level to-do item — distinct from 工項 (WorkItem, which is
 /// schedule/duration-bearing and feeds the Gantt engine); a todo is a plain
-/// task with no duration, optionally assigned to a project member.
+/// task with no duration, optionally assigned to a project member. Every
+/// todo has exactly one of dueDate/isOngoing set (2026-08-03 rule) — a
+/// pre-existing item from before that rule can have neither, which is why
+/// both fields stay nullable/false-able here rather than one being
+/// required.
 class ProjectTodo {
   const ProjectTodo({
     required this.id,
@@ -30,6 +34,7 @@ class ProjectTodo {
     required this.done,
     required this.completedAt,
     required this.dueDate,
+    required this.isOngoing,
     required this.priority,
     required this.notes,
     required this.assigneeUserId,
@@ -41,6 +46,7 @@ class ProjectTodo {
   final bool done;
   final DateTime? completedAt;
   final DateTime? dueDate;
+  final bool isOngoing;
   final TodoPriority priority;
   final String? notes;
   final String? assigneeUserId;
@@ -52,6 +58,7 @@ class ProjectTodo {
     done: json['done'] as bool,
     completedAt: json['completedAt'] == null ? null : DateTime.parse(json['completedAt'] as String),
     dueDate: json['dueDate'] == null ? null : DateTime.parse(json['dueDate'] as String),
+    isOngoing: json['isOngoing'] as bool? ?? false,
     priority: TodoPriorityJson.fromJson(json['priority'] as String),
     notes: json['notes'] as String?,
     assigneeUserId: json['assigneeUserId'] as String?,

@@ -56,12 +56,15 @@ export class TodosService {
   }
 
   async create(userId: string, dto: CreateTodoDto) {
+    this.assertDueDateXorOngoing(dto.dueDate ?? null, dto.isOngoing ?? false);
+
     if (!dto.projectId) {
       return this.prisma.projectTodo.create({
         data: {
           personalOwnerUserId: userId,
           title: dto.title,
           dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+          isOngoing: dto.isOngoing ?? false,
           priority: dto.priority,
           notes: dto.notes,
           sortOrder: await this.nextSortOrder({ personalOwnerUserId: userId }),
@@ -78,6 +81,7 @@ export class TodosService {
         projectId: project.id,
         title: dto.title,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+        isOngoing: dto.isOngoing ?? false,
         priority: dto.priority,
         notes: dto.notes,
         assigneeUserId: dto.assigneeUserId,
@@ -92,6 +96,16 @@ export class TodosService {
       await this.assertProjectMember(existing.projectId, dto.assigneeUserId);
     }
 
+    // Only re-check the date/ongoing rule when this update actually
+    // touches one of those two fields — an update that's e.g. only
+    // toggling `done` shouldn't fail just because a pre-existing row
+    // predates this rule and has neither set (see schema comment).
+    if (dto.dueDate !== undefined || dto.isOngoing !== undefined) {
+      const finalDueDate = dto.dueDate !== undefined ? dto.dueDate : existing.dueDate;
+      const finalIsOngoing = dto.isOngoing !== undefined ? dto.isOngoing : existing.isOngoing;
+      this.assertDueDateXorOngoing(finalDueDate, finalIsOngoing);
+    }
+
     const justCompleted = dto.done === true && !existing.done;
     const justReopened = dto.done === false && existing.done;
 
@@ -103,11 +117,26 @@ export class TodosService {
         ...(justCompleted && { completedAt: new Date() }),
         ...(justReopened && { completedAt: null }),
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
+        ...(dto.isOngoing !== undefined && { isOngoing: dto.isOngoing }),
         ...(dto.priority !== undefined && { priority: dto.priority }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
         ...(dto.assigneeUserId !== undefined && { assigneeUserId: dto.assigneeUserId }),
       },
     });
+  }
+
+  /** Every todo needs exactly one of a due date or the 持續性任務 flag —
+   * "pick one" not "either is fine, neither is fine too" (2026-08-03,
+   * explicit user rule). Pre-existing rows that predate this rule are
+   * left alone (see schema comment) — this only gate new creates/edits. */
+  private assertDueDateXorOngoing(dueDate: string | Date | null | undefined, isOngoing: boolean) {
+    const hasDueDate = dueDate != null;
+    if (!hasDueDate && !isOngoing) {
+      throw new BadRequestException('請選擇日期，或標記為持續性任務');
+    }
+    if (hasDueDate && isOngoing) {
+      throw new BadRequestException('日期跟持續性任務只能選一個');
+    }
   }
 
   async remove(userId: string, id: string) {

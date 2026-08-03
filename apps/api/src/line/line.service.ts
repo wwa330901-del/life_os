@@ -1210,6 +1210,14 @@ export class LineService {
       : { projectId: target.projectId, done: false };
   }
 
+  /** `（8/10）`／`（持續）`／`''` (for a pre-existing row with neither set —
+   * see schema comment on ProjectTodo). */
+  private todoDateSuffix(todo: { dueDate: Date | null; isOngoing: boolean }): string {
+    if (todo.isOngoing) return '（持續）';
+    if (todo.dueDate) return `（${todo.dueDate.getMonth() + 1}/${todo.dueDate.getDate()}）`;
+    return '';
+  }
+
   /** No active target yet → quick-reply buttons: 個人 + every project the
    * user belongs to (auto-picks 個人 if they belong to zero projects,
    * since that's the only option left); otherwise shows that target's
@@ -1293,17 +1301,14 @@ export class LineService {
     const lines = [
       `✅ 代辦事項（${title}）`,
       '',
-      '新增：新增 項目內容　例如「新增 買材料」',
+      '新增：新增 日期或「持續」 項目內容　例如「新增 8/10 買材料」或「新增 持續 每週檢查庫存」',
       '完成：完成 編號　例如「完成 2」',
       '',
       `未完成清單（${incomplete.length}）：`,
     ];
     lines.push(
       ...(incomplete.length
-        ? incomplete.map(
-            (t, i) =>
-              `${i + 1}. ${t.title}${t.dueDate ? `（${t.dueDate.getMonth() + 1}/${t.dueDate.getDate()}）` : ''}`,
-          )
+        ? incomplete.map((t, i) => `${i + 1}. ${t.title}${this.todoDateSuffix(t)}`)
         : ['（目前沒有未完成的代辦事項）']),
     );
     lines.push(
@@ -1314,9 +1319,10 @@ export class LineService {
   }
 
   /** 今日已完成（個人+所有專案合併顯示，不用選）、今日到期還沒完成、未來 7
-   * 天內到期 —— 未完成的兩組會連續編號，供「完成 N」使用；已完成的只是列出
-   * 來看，沒有編號（沒有可以「完成」的動作）。個人事項不受專案成員身份限
-   * 制，即使使用者不屬於任何專案，個人事項一樣會顯示。 */
+   * 天內到期、持續性任務（不受日期限制，永遠列出）—— 未完成的三組會連續編
+   * 號，供「完成 N」使用；已完成的只是列出來看，沒有編號（沒有可以「完成」
+   * 的動作）。個人事項不受專案成員身份限制，即使使用者不屬於任何專案，個
+   * 人事項一樣會顯示。 */
   private async sendTodoOverviewAllProjects(
     linkId: string,
     userId: string,
@@ -1356,11 +1362,12 @@ export class LineService {
       (t) =>
         !t.done && t.dueDate && t.dueDate >= todayEnd && t.dueDate < weekEnd,
     );
+    const ongoing = todos.filter((t) => !t.done && t.isOngoing);
 
     await this.prisma.lineAccountLink.update({
       where: { id: linkId },
       data: {
-        lastTodoListIds: [...overdueToday, ...restOfWeek].map((t) => t.id),
+        lastTodoListIds: [...overdueToday, ...restOfWeek, ...ongoing].map((t) => t.id),
       },
     });
 
@@ -1393,8 +1400,51 @@ export class LineService {
         : ['（沒有）']),
     );
 
+    lines.push('', `持續性任務（${ongoing.length}）：`);
+    lines.push(
+      ...(ongoing.length
+        ? ongoing.map(
+            (t, i) => `${overdueToday.length + restOfWeek.length + i + 1}. ${labelOf(t)}`,
+          )
+        : ['（沒有）']),
+    );
+
     lines.push('', '傳「完成 編號」標記完成，例如「完成 2」。');
     await this.reply(replyToken, lines.join('\n'));
+  }
+
+  /** 每一筆代辦事項都必須是「有日期」或「持續性任務」二選一（2026-08-03 使
+   * 用者明確要求），所以「新增」指令的日期/「持續」標記是必填，不是可省
+   * 略的欄位 —— 沒偵測到任一種就直接請使用者補上，不會靜靜地新增一筆兩者
+   * 都沒有的項目。日期沿用 `parseCalendarCommand` 一樣的「自我分隔」寫
+   * 法（數字+"/"，可以黏在其他文字前面不用特別分隔），只是todo不需要時
+   * 間。 */
+  private parseTodoCommand(
+    text: string,
+  ): { title: string; dueDate: Date | null; isOngoing: boolean } | null | 'needs_date' {
+    let rest = text.replace(/^新增(代辦|待辦)?/, '').replace(LEADING_SEPARATORS, '');
+
+    let dueDate: Date | null = null;
+    let isOngoing = false;
+
+    if (rest.startsWith('持續')) {
+      isOngoing = true;
+      rest = rest.slice(2).replace(LEADING_SEPARATORS, '');
+    } else {
+      const dateMatch = rest.match(/^(\d{1,4})\/(\d{1,2})(?:\/(\d{1,2}))?/);
+      if (!dateMatch) return 'needs_date';
+      const year = dateMatch[3] ? Number(dateMatch[1]) : new Date().getFullYear();
+      const month = Number(dateMatch[3] ? dateMatch[2] : dateMatch[1]);
+      const day = Number(dateMatch[3] ?? dateMatch[2]);
+      dueDate = new Date(year, month - 1, day);
+      if (Number.isNaN(dueDate.getTime())) return null;
+      rest = rest.slice(dateMatch[0].length).replace(LEADING_SEPARATORS, '');
+    }
+
+    const title = rest.replace(EDGE_SEPARATORS, '').trim();
+    if (!title) return null;
+
+    return { title, dueDate, isOngoing };
   }
 
   private async createTodoFromText(
@@ -1406,17 +1456,23 @@ export class LineService {
       await this.reply(replyToken, '請先傳「代辦事項」選擇要記錄的個人事項或專案。');
       return;
     }
-    const title = text
-      .replace(/^新增(代辦|待辦)?/, '')
-      .replace(LEADING_SEPARATORS, '')
-      .trim();
-    if (!title) {
+    const parsed = this.parseTodoCommand(text);
+    if (parsed === 'needs_date') {
       await this.reply(
         replyToken,
-        '請在「新增」後面接代辦事項的內容，例如「新增 買材料」。',
+        '請加上日期或標記「持續」，例如「新增 8/10 買材料」或「新增 持續 每週檢查庫存」。',
       );
       return;
     }
+    if (!parsed) {
+      await this.reply(
+        replyToken,
+        '請在「新增」後面接代辦事項的內容，例如「新增 8/10 買材料」。',
+      );
+      return;
+    }
+    const { title, dueDate, isOngoing } = parsed;
+    const dateLabel = isOngoing ? '持續' : `${dueDate!.getMonth() + 1}/${dueDate!.getDate()}`;
 
     if (link.activeTodoPersonal) {
       const maxSortOrder = await this.prisma.projectTodo.aggregate({
@@ -1427,10 +1483,12 @@ export class LineService {
         data: {
           personalOwnerUserId: link.userId,
           title,
+          dueDate,
+          isOngoing,
           sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
         },
       });
-      await this.reply(replyToken, `已新增個人代辦事項「${title}」。`);
+      await this.reply(replyToken, `已新增個人代辦事項「${title}」（${dateLabel}）。`);
       return;
     }
 
@@ -1452,12 +1510,14 @@ export class LineService {
       data: {
         projectId: link.activeProjectId,
         title,
+        dueDate,
+        isOngoing,
         sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
       },
     });
     await this.reply(
       replyToken,
-      `已新增代辦事項「${title}」（${project.name}）。`,
+      `已新增代辦事項「${title}」（${project.name}，${dateLabel}）。`,
     );
   }
 

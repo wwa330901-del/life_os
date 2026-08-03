@@ -901,7 +901,17 @@ model ProjectTodo {
   title    String
   done     Boolean   @default(false)
   completedAt DateTime?
-  dueDate  DateTime? @db.Date
+
+  /// Every todo must have exactly one of dueDate/isOngoing set going
+  /// forward (enforced in TodosService, not a DB constraint — a plain
+  /// NOT NULL/CHECK would also reject the pre-existing rows that predate
+  /// this rule (2026-08-03), which the user explicitly wants left alone
+  /// rather than force-backfilled). isOngoing = a deliberate "no fixed
+  /// date, recurring/persistent task" marker — distinct from just leaving
+  /// dueDate empty, which is why it's its own flag rather than dueDate
+  /// staying implicitly optional.
+  dueDate    DateTime? @db.Date
+  isOngoing  Boolean   @default(false)
   priority TodoPriority @default(MEDIUM)
   notes    String?
 

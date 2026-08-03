@@ -19,6 +19,10 @@ export class UpdateTodoDto {
   dueDate?: string | null;
 
   @IsOptional()
+  @IsBoolean()
+  isOngoing?: boolean;
+
+  @IsOptional()
   @IsEnum(TodoPriority)
   priority?: TodoPriority;
 

@@ -1130,11 +1130,13 @@ class ApiClient {
   }
 
   /// projectId 留空 = 個人事項（歸屬呼叫者本人）；有填 = 工作事項（歸屬該專
-  /// 案，呼叫者需有該專案的存取權）。
+  /// 案，呼叫者需有該專案的存取權）。dueDate/isOngoing 必須恰好擇一（後端
+  /// 會驗證）——傳 isOngoing: true 時就不用帶 dueDate。
   Future<void> createTodo({
     String? projectId,
     required String title,
     DateTime? dueDate,
+    bool isOngoing = false,
     TodoPriority? priority,
     String? notes,
     String? assigneeUserId,
@@ -1143,6 +1145,7 @@ class ApiClient {
       if (projectId != null) 'projectId': projectId,
       'title': title,
       if (dueDate != null) 'dueDate': _dateOnly(dueDate),
+      'isOngoing': isOngoing,
       if (priority != null) 'priority': priority.toJson(),
       if (notes != null && notes.isNotEmpty) 'notes': notes,
       if (assigneeUserId != null) 'assigneeUserId': assigneeUserId,
@@ -1155,6 +1158,7 @@ class ApiClient {
     bool? done,
     DateTime? dueDate,
     bool clearDueDate = false,
+    bool? isOngoing,
     TodoPriority? priority,
     String? notes,
     bool clearNotes = false,
@@ -1168,6 +1172,7 @@ class ApiClient {
         'dueDate': null
       else if (dueDate != null)
         'dueDate': _dateOnly(dueDate),
+      if (isOngoing != null) 'isOngoing': isOngoing,
       if (priority != null) 'priority': priority.toJson(),
       if (clearNotes)
         'notes': null

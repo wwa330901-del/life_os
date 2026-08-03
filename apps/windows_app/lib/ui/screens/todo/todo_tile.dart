@@ -37,7 +37,9 @@ class TodoTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final subtitleParts = <String>[];
-    if (todo.dueDate != null) {
+    if (todo.isOngoing) {
+      subtitleParts.add('持續性任務');
+    } else if (todo.dueDate != null) {
       subtitleParts.add('截止 ${todo.dueDate!.month}/${todo.dueDate!.day}');
     }
     if (assigneeName != null) subtitleParts.add(assigneeName!);
