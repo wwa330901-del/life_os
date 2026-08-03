@@ -323,6 +323,10 @@ export class LineService {
       await this.completeTodoByNumber(linkId, text, replyToken);
       return;
     }
+    if (text.startsWith('改期')) {
+      await this.rescheduleTodoByNumber(linkId, text, replyToken);
+      return;
+    }
 
     if (text === '股票買賣') {
       await this.sendStockHelp(userId, replyToken);
@@ -1303,6 +1307,7 @@ export class LineService {
       '',
       '新增：新增 日期或「持續」 項目內容　例如「新增 8/10 買材料」或「新增 持續 每週檢查庫存」',
       '完成：完成 編號　例如「完成 2」',
+      '改期：改期 編號 新日期(或持續)　例如「改期 2 8/15」',
       '',
       `未完成清單（${incomplete.length}）：`,
     ];
@@ -1409,42 +1414,46 @@ export class LineService {
         : ['（沒有）']),
     );
 
-    lines.push('', '傳「完成 編號」標記完成，例如「完成 2」。');
+    lines.push('', '傳「完成 編號」標記完成，或「改期 編號 新日期」改期，例如「完成 2」「改期 2 8/15」。');
     await this.reply(replyToken, lines.join('\n'));
+  }
+
+  /** Shared by `parseTodoCommand` (新增) and `rescheduleTodoByNumber`
+   * (改期) — pulls a leading date (自我分隔, same digit+"/" style as
+   * `parseCalendarCommand`) or the `持續` keyword off the front of `text`,
+   * returning the parsed date/ongoing flag plus whatever's left. Returns
+   * null if neither is found at the front. */
+  private parseDateOrOngoingPrefix(
+    text: string,
+  ): { dueDate: Date | null; isOngoing: boolean; rest: string } | null {
+    if (text.startsWith('持續')) {
+      return { dueDate: null, isOngoing: true, rest: text.slice(2).replace(LEADING_SEPARATORS, '') };
+    }
+    const dateMatch = text.match(/^(\d{1,4})\/(\d{1,2})(?:\/(\d{1,2}))?/);
+    if (!dateMatch) return null;
+    const year = dateMatch[3] ? Number(dateMatch[1]) : new Date().getFullYear();
+    const month = Number(dateMatch[3] ? dateMatch[2] : dateMatch[1]);
+    const day = Number(dateMatch[3] ?? dateMatch[2]);
+    const dueDate = new Date(year, month - 1, day);
+    if (Number.isNaN(dueDate.getTime())) return null;
+    return { dueDate, isOngoing: false, rest: text.slice(dateMatch[0].length).replace(LEADING_SEPARATORS, '') };
   }
 
   /** 每一筆代辦事項都必須是「有日期」或「持續性任務」二選一（2026-08-03 使
    * 用者明確要求），所以「新增」指令的日期/「持續」標記是必填，不是可省
    * 略的欄位 —— 沒偵測到任一種就直接請使用者補上，不會靜靜地新增一筆兩者
-   * 都沒有的項目。日期沿用 `parseCalendarCommand` 一樣的「自我分隔」寫
-   * 法（數字+"/"，可以黏在其他文字前面不用特別分隔），只是todo不需要時
-   * 間。 */
+   * 都沒有的項目。 */
   private parseTodoCommand(
     text: string,
   ): { title: string; dueDate: Date | null; isOngoing: boolean } | null | 'needs_date' {
-    let rest = text.replace(/^新增(代辦|待辦)?/, '').replace(LEADING_SEPARATORS, '');
+    const rest = text.replace(/^新增(代辦|待辦)?/, '').replace(LEADING_SEPARATORS, '');
+    const parsed = this.parseDateOrOngoingPrefix(rest);
+    if (!parsed) return 'needs_date';
 
-    let dueDate: Date | null = null;
-    let isOngoing = false;
-
-    if (rest.startsWith('持續')) {
-      isOngoing = true;
-      rest = rest.slice(2).replace(LEADING_SEPARATORS, '');
-    } else {
-      const dateMatch = rest.match(/^(\d{1,4})\/(\d{1,2})(?:\/(\d{1,2}))?/);
-      if (!dateMatch) return 'needs_date';
-      const year = dateMatch[3] ? Number(dateMatch[1]) : new Date().getFullYear();
-      const month = Number(dateMatch[3] ? dateMatch[2] : dateMatch[1]);
-      const day = Number(dateMatch[3] ?? dateMatch[2]);
-      dueDate = new Date(year, month - 1, day);
-      if (Number.isNaN(dueDate.getTime())) return null;
-      rest = rest.slice(dateMatch[0].length).replace(LEADING_SEPARATORS, '');
-    }
-
-    const title = rest.replace(EDGE_SEPARATORS, '').trim();
+    const title = parsed.rest.replace(EDGE_SEPARATORS, '').trim();
     if (!title) return null;
 
-    return { title, dueDate, isOngoing };
+    return { title, dueDate: parsed.dueDate, isOngoing: parsed.isOngoing };
   }
 
   private async createTodoFromText(
@@ -1570,6 +1579,65 @@ export class LineService {
     await this.reply(
       replyToken,
       `已完成「${todo.title}」（${todo.project?.name ?? '個人'}）。`,
+    );
+  }
+
+  /** "改期 N 日期或「持續」" — same numbered-list reference as「完成 N」,
+   * lets a todo be rescheduled (or switched to/from 持續性任務) without
+   * having to delete and recreate it. */
+  private async rescheduleTodoByNumber(
+    linkId: string,
+    text: string,
+    replyToken: string,
+  ) {
+    const rest = text.replace(/^改期/, '').replace(LEADING_SEPARATORS, '');
+    const numberMatch = rest.match(/^\d+/);
+    if (!numberMatch) {
+      await this.reply(
+        replyToken,
+        '請在「改期」後面接編號跟新日期（或「持續」），例如「改期 2 8/15」或「改期 2 持續」，編號請先看「代辦事項」或「代辦事項總覽」。',
+      );
+      return;
+    }
+    const n = Number(numberMatch[0]);
+    const afterNumber = rest.slice(numberMatch[0].length).replace(LEADING_SEPARATORS, '');
+
+    const parsed = this.parseDateOrOngoingPrefix(afterNumber);
+    if (!parsed) {
+      await this.reply(
+        replyToken,
+        '請在編號後面接新日期或「持續」，例如「改期 2 8/15」或「改期 2 持續」。',
+      );
+      return;
+    }
+
+    const link = await this.prisma.lineAccountLink.findUnique({
+      where: { id: linkId },
+    });
+    const todoId = link?.lastTodoListIds[n - 1];
+    if (!todoId) {
+      await this.reply(
+        replyToken,
+        `找不到編號 ${n}，請先傳「代辦事項」或「代辦事項總覽」看目前的編號。`,
+      );
+      return;
+    }
+    const todo = await this.prisma.projectTodo.findUnique({
+      where: { id: todoId },
+      include: { project: true },
+    });
+    if (!todo) {
+      await this.reply(replyToken, '這筆代辦事項好像已經被刪除了。');
+      return;
+    }
+    await this.prisma.projectTodo.update({
+      where: { id: todo.id },
+      data: { dueDate: parsed.dueDate, isOngoing: parsed.isOngoing },
+    });
+    const dateLabel = parsed.isOngoing ? '持續' : `${parsed.dueDate!.getMonth() + 1}/${parsed.dueDate!.getDate()}`;
+    await this.reply(
+      replyToken,
+      `已將「${todo.title}」（${todo.project?.name ?? '個人'}）改期為 ${dateLabel}。`,
     );
   }
 
