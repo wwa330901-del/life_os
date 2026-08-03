@@ -21,6 +21,7 @@ import {
   StockTransactionType,
 } from '../../generated/prisma/client.js';
 import type { LineAccountLink } from '../../generated/prisma/client.js';
+import { taipeiTodayRange, taipeiCurrentMonth } from '../common/taipei-date';
 
 interface LineWebhookEvent {
   type: string;
@@ -675,14 +676,8 @@ export class LineService {
       return;
     }
 
-    const now = new Date();
-    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const todayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    const month = taipeiCurrentMonth();
+    const { start: todayStart, end: todayEnd } = taipeiTodayRange();
 
     const [accounts, monthSummary, todayTransactions] = await Promise.all([
       this.financeAccountsService.list(userId, space.id),
@@ -1441,13 +1436,7 @@ export class LineService {
       orderBy: [{ dueDate: 'asc' }, { sortOrder: 'asc' }],
     });
 
-    const now = new Date();
-    const todayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const todayEnd = new Date(todayStart.getTime() + 86400000);
+    const { start: todayStart, end: todayEnd } = taipeiTodayRange();
     const weekEnd = new Date(todayStart.getTime() + 7 * 86400000);
     const isSameDay = (d: Date) => d >= todayStart && d < todayEnd;
 

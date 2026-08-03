@@ -6,6 +6,7 @@ import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
 import { DocumentApprovalsService } from '../document-approvals/document-approvals.service';
 import { FinanceTransactionType } from '../../generated/prisma/client.js';
 import { UpdateHomeLayoutDto } from './dto/update-home-layout.dto';
+import { taipeiTodayRange } from '../common/taipei-date';
 
 /** Every widget the home dashboard knows how to show, in the default
  * order — a first-time user (or one who's never touched layout settings)
@@ -31,12 +32,10 @@ export interface HomeWidgetConfig {
   visible: boolean;
 }
 
-function todayRange(): { start: Date; end: Date } {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const end = new Date(start.getTime() + 86400000);
-  return { start, end };
-}
+/** 2026-08-04: was naive server-local `new Date()` boundaries — wrong for
+ * ~8 hours every day since Render's server clock is UTC, not Taiwan time.
+ * See `taipeiTodayRange` for the full explanation of the bug this caused. */
+const todayRange = taipeiTodayRange;
 
 @Injectable()
 export class HomeService {
