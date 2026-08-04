@@ -360,6 +360,10 @@ export class LineService {
       await this.createCalendarEventFromText(userId, text, (msg) => this.reply(replyToken, msg));
       return;
     }
+    if (text === '今日行事曆') {
+      await this.sendTodayCalendarEvents(userId, replyToken);
+      return;
+    }
     if (text.startsWith('新增')) {
       await this.createTodoFromText(link, text, (msg) => this.reply(replyToken, msg));
       return;
@@ -402,6 +406,7 @@ export class LineService {
         '・持股總覽',
         '・代辦事項 / 代辦事項總覽',
         '・新增行事曆 7/31 14:00 開會 @地點',
+        '・今日行事曆',
         '・查詢 <問題>：例如「查詢 這個月餐飲花多少」（AI 問答，不含投資/股票）',
         '',
         '想一次記多筆，貼多行文字（一行一筆）就會逐行處理，例如：',
@@ -1812,6 +1817,40 @@ export class LineService {
       ? '全天'
       : `${String(parsed.startAt.getHours()).padStart(2, '0')}:${String(parsed.startAt.getMinutes()).padStart(2, '0')}`;
     await respond(`已新增行事曆「${parsed.title}」（${dateLabel} ${timeLabel}）。`);
+  }
+
+  /** "今日行事曆" — was a real gap: 行事曆 only ever had "新增", no way to
+   * just look at what's already on it. Uses `taipeiTodayRange` (not a naive
+   * `new Date()` day boundary) for the same reason `HomeService.todayRange`
+   * does — Render's server clock is UTC, not Taiwan time. */
+  private async sendTodayCalendarEvents(userId: string, replyToken: string) {
+    const space = await this.prisma.space.findUnique({
+      where: { calendarOwnerUserId: userId },
+    });
+    if (!space) {
+      await this.reply(replyToken, '你還沒有行事曆空間，請先到元序 App 建立一個。');
+      return;
+    }
+
+    const { start, end } = taipeiTodayRange();
+    const events = await this.prisma.calendarEvent.findMany({
+      where: { spaceId: space.id, startAt: { gte: start, lt: end } },
+      orderBy: { startAt: 'asc' },
+    });
+
+    if (events.length === 0) {
+      await this.reply(replyToken, '📅 今日行事曆\n\n今天沒有排定的行程。');
+      return;
+    }
+
+    const lines = ['📅 今日行事曆', ''];
+    for (const event of events) {
+      const timeLabel = event.allDay
+        ? '全天'
+        : `${String(event.startAt.getHours()).padStart(2, '0')}:${String(event.startAt.getMinutes()).padStart(2, '0')}`;
+      lines.push(`・${timeLabel} ${event.title}${event.location ? `（${event.location}）` : ''}`);
+    }
+    await this.reply(replyToken, lines.join('\n'));
   }
 
   private parseCalendarCommand(text: string): {
