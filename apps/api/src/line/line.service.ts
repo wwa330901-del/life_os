@@ -1177,12 +1177,10 @@ export class LineService {
    * (`pendingExhibitionScheduleItemId`), disambiguated by the item's own
    * `exhibitionDecisionStatus`: still null means this reply is the initial
    * 安排/不安排 answer; already SCHEDULED means this reply is the follow-up
-   * 何時 answer. Only ever writes a CalendarEvent, not a todo — this was
-   * originally because ProjectTodo.projectId was required and an
-   * exhibition isn't tied to any project; now that 個人 todos exist
-   * (personalOwnerUserId, no project needed) that blocker is gone, but
-   * adding a todo here wasn't part of the 個人/工作 split's scope — revisit
-   * if the user asks for it. */
+   * 何時 answer. Writes both a CalendarEvent (so it shows on the calendar)
+   * and a personal ProjectTodo due the same day (so it also surfaces in the
+   * daily 代辦事項 digest) — the todo is created via `personalOwnerUserId`,
+   * same as any other 個人 todo. */
   private async resolveExhibitionSchedule(
     link: LineAccountLink,
     text: string,
@@ -1245,6 +1243,19 @@ export class LineService {
       startAt: scheduledAt.toISOString(),
       allDay: false,
     });
+    const maxSortOrder = await this.prisma.projectTodo.aggregate({
+      where: { personalOwnerUserId: link.userId },
+      _max: { sortOrder: true },
+    });
+    await this.prisma.projectTodo.create({
+      data: {
+        personalOwnerUserId: link.userId,
+        title: `觀展：${item.title ?? '展覽'}`,
+        dueDate: scheduledAt,
+        isOngoing: false,
+        sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
+      },
+    });
     await this.knowledgeItemsService.setExhibitionDecision(
       itemId,
       'SCHEDULED',
@@ -1257,7 +1268,7 @@ export class LineService {
     const dateLabel = `${scheduledAt.getMonth() + 1}/${scheduledAt.getDate()} ${String(scheduledAt.getHours()).padStart(2, '0')}:${String(scheduledAt.getMinutes()).padStart(2, '0')}`;
     await this.reply(
       replyToken,
-      `已安排「${item.title ?? '展覽'}」（${dateLabel}），加進你的行事曆了。`,
+      `已安排「${item.title ?? '展覽'}」（${dateLabel}），加進你的行事曆和代辦事項了。`,
     );
   }
 
