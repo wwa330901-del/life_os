@@ -1,9 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpacesService } from '../spaces/spaces.service';
-import { MembershipRole, PropertyType } from '../../generated/prisma/client.js';
+import { MembershipRole, Prisma, PropertyType } from '../../generated/prisma/client.js';
 import { CreatePropertyDefinitionDto, RenamePropertyDefinitionDto } from './dto/property-definition.dto';
 import { PropertyOptionDto } from './dto/property-option.dto';
+import { ReorderPropertyDefinitionDto } from './dto/reorder-property-definition.dto';
+import { UpdateNamingTemplateDto } from './dto/naming-template.dto';
 
 /**
  * Each company space defines its own project properties — Notion-
@@ -25,6 +27,34 @@ export class ProjectPropertiesService {
       where: { spaceId },
       include: { options: { orderBy: { sortOrder: 'asc' } } },
       orderBy: { sortOrder: 'asc' },
+    });
+  }
+
+  /** Null means this space has no 案名 auto-suggestion rule set (使用者手動輸入，
+   * same as before this feature existed). */
+  async getNamingTemplate(userId: string, spaceId: string) {
+    await this.spacesService.getForUserOrThrow(userId, spaceId);
+    const space = await this.prisma.space.findUniqueOrThrow({
+      where: { id: spaceId },
+      select: { projectNameTemplate: true },
+    });
+    return space.projectNameTemplate ?? null;
+  }
+
+  async updateNamingTemplate(userId: string, spaceId: string, dto: UpdateNamingTemplateDto) {
+    await this.assertCanManage(userId, spaceId);
+    await this.prisma.space.update({
+      where: { id: spaceId },
+      data: { projectNameTemplate: { propertyNames: dto.propertyNames, separator: dto.separator } },
+    });
+    return this.getNamingTemplate(userId, spaceId);
+  }
+
+  async clearNamingTemplate(userId: string, spaceId: string) {
+    await this.assertCanManage(userId, spaceId);
+    await this.prisma.space.update({
+      where: { id: spaceId },
+      data: { projectNameTemplate: Prisma.JsonNull },
     });
   }
 
@@ -57,6 +87,43 @@ export class ProjectPropertiesService {
       where: { id: definitionId },
       data: { name: dto.name },
     });
+  }
+
+  /** Reorders a property definition relative to a sibling in the same
+   * space — same "recompute every sibling's sortOrder to its new index"
+   * approach as `WorkItemsService.reorder`. Definitions are a flat list
+   * per space (no parent/child grouping to respect), so this is simpler
+   * than the work-item version. */
+  async reorder(
+    userId: string,
+    spaceId: string,
+    definitionId: string,
+    dto: ReorderPropertyDefinitionDto,
+  ) {
+    await this.assertCanManage(userId, spaceId);
+    const definition = await this.getDefinitionOrThrow(spaceId, definitionId);
+    await this.getDefinitionOrThrow(spaceId, dto.targetId);
+
+    const siblings = await this.prisma.projectPropertyDefinition.findMany({
+      where: { spaceId },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    const withoutItem = siblings.filter((s) => s.id !== definitionId);
+    const targetIndex = withoutItem.findIndex((s) => s.id === dto.targetId);
+    const insertIndex = dto.insertAfter ? targetIndex + 1 : targetIndex;
+    withoutItem.splice(insertIndex, 0, definition);
+
+    await this.prisma.$transaction(
+      withoutItem.map((sibling, index) =>
+        this.prisma.projectPropertyDefinition.update({
+          where: { id: sibling.id },
+          data: { sortOrder: index },
+        }),
+      ),
+    );
+
+    return this.list(userId, spaceId);
   }
 
   async remove(userId: string, spaceId: string, definitionId: string) {

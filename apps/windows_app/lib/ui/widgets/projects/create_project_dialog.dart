@@ -10,11 +10,12 @@ import '../../../state/projects_provider.dart';
 
 /// Renders one input per this space's own property definitions — a space
 /// with none defined yet just gets a plain name + start date form, same as
-/// a brand new Notion database with no properties. 專案名稱 auto-fills as
-/// 業主名稱+專案地點+類型 only if this space happens to have TEXT properties
-/// named 業主名稱/專案地點 and a SELECT property named 類型 (this space's own
-/// port of the old fixed-field behavior); any other property set just skips
-/// the auto-fill and leaves 專案名稱 to be typed by hand.
+/// a brand new Notion database with no properties. 專案名稱 auto-fills from
+/// this space's own 案名自動命名規則 (`NamingTemplate`, set in 專案設定) if one
+/// is configured — joins the named properties' current values, in the
+/// template's order, with its separator. No template configured (or the
+/// space is missing one of the named properties) just leaves 專案名稱 empty
+/// for the user to type by hand, same as before this feature existed.
 class CreateProjectDialog extends ConsumerStatefulWidget {
   const CreateProjectDialog({super.key, required this.spaceId});
 
@@ -38,6 +39,7 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
   final Map<String, DateTime?> _dateValues = {};
   final Map<String, String?> _selectValues = {};
   List<PropertyDefinition> _definitions = const [];
+  NamingTemplate? _namingTemplate;
   bool _fieldsInitialized = false;
   String _lastAutoName = '';
   var _startDate = DateTime.now();
@@ -71,18 +73,35 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
     }
   }
 
-  PropertyDefinition? _findByName(String name, PropertyType type) =>
-      _definitions.firstWhereOrNull((d) => d.name == name && d.type == type);
+  PropertyDefinition? _findByName(String name) =>
+      _definitions.firstWhereOrNull((d) => d.name == name);
+
+  /// Current display value the user has entered so far for [definition],
+  /// regardless of its type — empty string if not filled in yet.
+  String _currentValueOf(PropertyDefinition definition) {
+    switch (definition.type) {
+      case PropertyType.text:
+      case PropertyType.number:
+        return _textControllers[definition.id]?.text ?? '';
+      case PropertyType.date:
+        final date = _dateValues[definition.id];
+        return date == null ? '' : '${date.year}/${date.month}/${date.day}';
+      case PropertyType.select:
+        final optionId = _selectValues[definition.id];
+        return definition.options.firstWhereOrNull((o) => o.id == optionId)?.label ?? '';
+    }
+  }
 
   void _recomputeName() {
-    final client = _findByName('業主名稱', PropertyType.text);
-    final site = _findByName('專案地點', PropertyType.text);
-    final type = _findByName('類型', PropertyType.select);
-    if (client == null || site == null || type == null) return;
-    final typeLabel =
-        type.options.firstWhereOrNull((o) => o.id == _selectValues[type.id])?.label ?? '';
-    final auto =
-        '${_textControllers[client.id]?.text ?? ''}${_textControllers[site.id]?.text ?? ''}$typeLabel';
+    final template = _namingTemplate;
+    if (template == null || template.propertyNames.isEmpty) return;
+    final parts = <String>[];
+    for (final name in template.propertyNames) {
+      final definition = _findByName(name);
+      if (definition == null) return; // space no longer has this property — skip the suggestion
+      parts.add(_currentValueOf(definition));
+    }
+    final auto = parts.join(template.separator);
     // Only overwrite the name field if it still holds the last auto-generated
     // value — once the user types their own text in, it stops following.
     if (_nameController.text == _lastAutoName) {
@@ -146,6 +165,7 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
   @override
   Widget build(BuildContext context) {
     final propertiesAsync = ref.watch(spacePropertiesProvider(widget.spaceId));
+    _namingTemplate = ref.watch(namingTemplateProvider(widget.spaceId)).value;
 
     return AlertDialog(
       title: const Text('新增專案'),
@@ -234,7 +254,10 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
               firstDate: DateTime(2020),
               lastDate: DateTime(2100),
             );
-            if (picked != null) setState(() => _dateValues[definition.id] = picked);
+            if (picked != null) {
+              setState(() => _dateValues[definition.id] = picked);
+              _recomputeName();
+            }
           },
         );
       case PropertyType.select:

@@ -11,3 +11,8 @@ final spacePropertiesProvider = FutureProvider.family<List<PropertyDefinition>, 
 ) async {
   return ref.read(apiClientProvider).listPropertyDefinitions(spaceId);
 });
+
+/// This space's 案名 auto-suggestion rule, if any — see `NamingTemplate`.
+final namingTemplateProvider = FutureProvider.family<NamingTemplate?, String>((ref, spaceId) async {
+  return ref.read(apiClientProvider).getNamingTemplate(spaceId);
+});

@@ -136,6 +136,14 @@ model Space {
   name      String
   createdAt DateTime  @default(now())
 
+  /// { propertyNames: string[], separator: string } — this company space's
+  /// own rule for suggesting a new project's 案名 by joining the named
+  /// properties' values (in this order) with this separator. Null means no
+  /// suggestion (使用者手動輸入), same as before this feature existed.
+  /// Applied once at project-creation time only (`CreateProjectDialog`) —
+  /// never retroactively re-applied when a property value changes later.
+  projectNameTemplate Json?
+
   // Only set when type = PERSONAL. Each user has exactly one personal space.
   ownerUserId String? @unique
   owner       User?   @relation("PersonalSpaceOwner", fields: [ownerUserId], references: [id])

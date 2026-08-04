@@ -329,6 +329,43 @@ class ApiClient {
     await _delete('/spaces/$spaceId/properties/$definitionId');
   }
 
+  /// Null means this space has no 案名 auto-suggestion rule set.
+  Future<NamingTemplate?> getNamingTemplate(String spaceId) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/spaces/$spaceId/properties/naming-template'),
+      headers: _headers,
+    );
+    final decoded = _checkStatus(res);
+    return decoded == null ? null : NamingTemplate.fromJson(decoded as Map<String, dynamic>);
+  }
+
+  Future<void> updateNamingTemplate({
+    required String spaceId,
+    required List<String> propertyNames,
+    required String separator,
+  }) async {
+    await _patchIgnoreBody('/spaces/$spaceId/properties/naming-template', {
+      'propertyNames': propertyNames,
+      'separator': separator,
+    });
+  }
+
+  Future<void> clearNamingTemplate(String spaceId) async {
+    await _delete('/spaces/$spaceId/properties/naming-template');
+  }
+
+  Future<void> reorderPropertyDefinition({
+    required String spaceId,
+    required String definitionId,
+    required String targetId,
+    required bool insertAfter,
+  }) async {
+    await _patchIgnoreBody('/spaces/$spaceId/properties/$definitionId/reorder', {
+      'targetId': targetId,
+      'insertAfter': insertAfter,
+    });
+  }
+
   Future<void> addPropertyOption({
     required String spaceId,
     required String definitionId,

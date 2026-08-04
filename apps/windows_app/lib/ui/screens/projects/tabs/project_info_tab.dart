@@ -170,18 +170,16 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
     );
   }
 
-  /// Fixed display order: 案號、業主名稱、案名、專案地點、類型、狀態、簽約日期、
-  /// 預計結案日 — mixes per-space custom properties (looked up by name) with
-  /// the two fixed fields (案名/簽約日期/預計結案日 aren't properties at all).
-  /// Any custom property a space adds beyond this standard set still shows
-  /// up, just appended after — so nothing a space owner configured silently
-  /// disappears just because it wasn't in this fixed list.
-  static const _propertyDisplayOrder = ['案號', '業主名稱', '專案地點', '類型', '狀態'];
-
+  /// Every property renders purely in the space's own `sortOrder` — the
+  /// space owner controls this via drag-reorder in 專案設定, and this tab
+  /// just reflects it (2026-08-04: dropped the old hardcoded 案號/業主名稱/
+  /// 專案地點/類型/狀態 fixed slots, which silently ignored `sortOrder` for
+  /// exactly those five names — reordering them in 專案設定 had no visible
+  /// effect here, which defeated the point of adding drag-reorder at all).
+  /// 案名/簽約日期/預計結案日 stay pinned (first/last) since they're not
+  /// `ProjectPropertyDefinition` rows — there's no `sortOrder` to place them
+  /// by.
   Widget _buildBody(Project project, List<PropertyDefinition> definitions) {
-    final byName = {for (final d in definitions) d.name: d};
-    final extras = definitions.where((d) => !_propertyDisplayOrder.contains(d.name));
-
     Widget field(Widget child) => Padding(padding: const EdgeInsets.only(bottom: 16), child: child);
 
     return Padding(
@@ -191,8 +189,6 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (byName['案號'] case final def?) field(_buildField(project, def)),
-            if (byName['業主名稱'] case final def?) field(_buildField(project, def)),
             field(
               TextField(
                 controller: _nameController,
@@ -201,9 +197,7 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
                 onSubmitted: (_) => _nameFocusNode.unfocus(),
               ),
             ),
-            if (byName['專案地點'] case final def?) field(_buildField(project, def)),
-            if (byName['類型'] case final def?) field(_buildField(project, def)),
-            if (byName['狀態'] case final def?) field(_buildField(project, def)),
+            for (final definition in definitions) field(_buildField(project, definition)),
             // 簽約日期/預計結案日 are still backed by the fixed `projectStartDate`/
             // `projectEndDate` columns (the schedule/Gantt engine anchors off
             // the former; the latter feeds the "超出合約期限" schedule
@@ -249,7 +243,6 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
                 },
               ),
             ),
-            for (final definition in extras) field(_buildField(project, definition)),
           ],
         ),
       ),

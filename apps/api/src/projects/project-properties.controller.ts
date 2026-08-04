@@ -5,6 +5,8 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload';
 import { CreatePropertyDefinitionDto, RenamePropertyDefinitionDto } from './dto/property-definition.dto';
 import { PropertyOptionDto } from './dto/property-option.dto';
+import { ReorderPropertyDefinitionDto } from './dto/reorder-property-definition.dto';
+import { UpdateNamingTemplateDto } from './dto/naming-template.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('spaces/:spaceId/properties')
@@ -14,6 +16,25 @@ export class ProjectPropertiesController {
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string) {
     return this.propertiesService.list(user.id, spaceId);
+  }
+
+  @Get('naming-template')
+  getNamingTemplate(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string) {
+    return this.propertiesService.getNamingTemplate(user.id, spaceId);
+  }
+
+  @Patch('naming-template')
+  updateNamingTemplate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Body() dto: UpdateNamingTemplateDto,
+  ) {
+    return this.propertiesService.updateNamingTemplate(user.id, spaceId, dto);
+  }
+
+  @Delete('naming-template')
+  clearNamingTemplate(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string) {
+    return this.propertiesService.clearNamingTemplate(user.id, spaceId);
   }
 
   @Post()
@@ -33,6 +54,16 @@ export class ProjectPropertiesController {
     @Body() dto: RenamePropertyDefinitionDto,
   ) {
     return this.propertiesService.rename(user.id, spaceId, definitionId, dto);
+  }
+
+  @Patch(':definitionId/reorder')
+  reorder(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Param('definitionId') definitionId: string,
+    @Body() dto: ReorderPropertyDefinitionDto,
+  ) {
+    return this.propertiesService.reorder(user.id, spaceId, definitionId, dto);
   }
 
   @Delete(':definitionId')

@@ -113,6 +113,24 @@ class ProjectPropertyValue {
       value == value.roundToDouble() ? value.toInt().toString() : value.toString();
 }
 
+/// This space's own rule (if any) for suggesting a new project's 案名 —
+/// joins the named properties' current values, in this order, with
+/// [separator]. Applied once at project-creation time only, never
+/// retroactively when a property value changes later.
+class NamingTemplate {
+  const NamingTemplate({required this.propertyNames, required this.separator});
+
+  final List<String> propertyNames;
+  final String separator;
+
+  factory NamingTemplate.fromJson(Map<String, dynamic> json) => NamingTemplate(
+    propertyNames: (json['propertyNames'] as List<dynamic>).map((e) => e as String).toList(),
+    separator: json['separator'] as String,
+  );
+
+  Map<String, dynamic> toJson() => {'propertyNames': propertyNames, 'separator': separator};
+}
+
 /// What the client sends back for one property when creating/updating a
 /// project — mirrors `PropertyValueInputDto` on the API.
 class PropertyValueInput {
