@@ -3,17 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/app_user.dart';
 import '../../core/theme/app_accents.dart';
+import '../../state/ai_assistant_provider.dart';
 import '../../state/knowledge_provider.dart';
 import '../../state/space_provider.dart';
 import '../../state/todo_provider.dart';
 
 /// The flat list of "places you can jump straight to" — every space the
-/// user belongs to, 知識庫 and 代辦事項 (both account-level, not a Space),
+/// user belongs to, 知識庫/代辦事項/AI 問答 (all account-level, not a Space),
 /// and 回首頁 — shown identically in [AppSidebar] (inside a space),
-/// [KnowledgeShell]'s own sidebar, and [TodoShell]'s own sidebar, so
-/// switching between any of them never requires detouring back through the
-/// home screen first. Exactly one of [selectedSpaceId] / [knowledgeSelected]
-/// / [todoSelected] should reflect the current screen; all can be
+/// [KnowledgeShell]'s own sidebar, [TodoShell]'s own sidebar, and
+/// `AiAssistantShell`'s own sidebar, so switching between any of them never
+/// requires detouring back through the home screen first. Exactly one of
+/// [selectedSpaceId] / [knowledgeSelected] / [todoSelected] /
+/// [aiAssistantSelected] should reflect the current screen; all can be
 /// false/null while on the home screen itself.
 class SpaceSwitcherList extends ConsumerWidget {
   const SpaceSwitcherList({
@@ -21,19 +23,26 @@ class SpaceSwitcherList extends ConsumerWidget {
     this.selectedSpaceId,
     this.knowledgeSelected = false,
     this.todoSelected = false,
+    this.aiAssistantSelected = false,
   });
 
   final String? selectedSpaceId;
   final bool knowledgeSelected;
   final bool todoSelected;
+  final bool aiAssistantSelected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final spaces = ref.watch(mySpacesProvider).value ?? const [];
 
-    void goToSpace(SpaceSummary target) {
+    void closeAllNonSpace() {
       ref.read(showKnowledgeLibraryProvider.notifier).close();
       ref.read(showTodoSpaceProvider.notifier).close();
+      ref.read(showAiAssistantProvider.notifier).close();
+    }
+
+    void goToSpace(SpaceSummary target) {
+      closeAllNonSpace();
       ref.read(selectedSpaceProvider.notifier).select(target);
     }
 
@@ -46,7 +55,7 @@ class SpaceSwitcherList extends ConsumerWidget {
           onTap: knowledgeSelected
               ? null
               : () {
-                  ref.read(showTodoSpaceProvider.notifier).close();
+                  closeAllNonSpace();
                   ref.read(selectedSpaceProvider.notifier).clear();
                   ref.read(showKnowledgeLibraryProvider.notifier).open();
                 },
@@ -56,15 +65,24 @@ class SpaceSwitcherList extends ConsumerWidget {
           onTap: todoSelected
               ? null
               : () {
-                  ref.read(showKnowledgeLibraryProvider.notifier).close();
+                  closeAllNonSpace();
                   ref.read(selectedSpaceProvider.notifier).clear();
                   ref.read(showTodoSpaceProvider.notifier).open();
                 },
         ),
+        _SpaceRow.aiAssistant(
+          selected: aiAssistantSelected,
+          onTap: aiAssistantSelected
+              ? null
+              : () {
+                  closeAllNonSpace();
+                  ref.read(selectedSpaceProvider.notifier).clear();
+                  ref.read(showAiAssistantProvider.notifier).open();
+                },
+        ),
         _SpaceRow.home(
           onTap: () {
-            ref.read(showKnowledgeLibraryProvider.notifier).close();
-            ref.read(showTodoSpaceProvider.notifier).close();
+            closeAllNonSpace();
             ref.read(selectedSpaceProvider.notifier).clear();
           },
         ),
@@ -77,7 +95,7 @@ class SpaceSwitcherList extends ConsumerWidget {
 /// space" styling (colored type badge + name) so switching spaces looks the
 /// same as before, just without needing a click to reveal the other options
 /// first.
-enum _NonSpaceKind { none, knowledge, todo }
+enum _NonSpaceKind { none, knowledge, todo, aiAssistant }
 
 class _SpaceRow extends StatelessWidget {
   const _SpaceRow({required this.space, required this.selected, required this.onTap})
@@ -95,6 +113,10 @@ class _SpaceRow extends StatelessWidget {
   const _SpaceRow.todo({required this.selected, required this.onTap})
     : space = null,
       _kind = _NonSpaceKind.todo;
+
+  const _SpaceRow.aiAssistant({required this.selected, required this.onTap})
+    : space = null,
+      _kind = _NonSpaceKind.aiAssistant;
 
   final SpaceSummary? space;
   final bool selected;
@@ -114,6 +136,7 @@ class _SpaceRow extends StatelessWidget {
         : switch (_kind) {
             _NonSpaceKind.knowledge => AppAccents.knowledge(scheme.brightness),
             _NonSpaceKind.todo => AppAccents.todo(scheme.brightness),
+            _NonSpaceKind.aiAssistant => AppAccents.aiAssistant(scheme.brightness),
             _NonSpaceKind.none => scheme.onSurface.withValues(alpha: 0.12),
           };
     final icon = s != null
@@ -125,6 +148,7 @@ class _SpaceRow extends StatelessWidget {
         : switch (_kind) {
             _NonSpaceKind.knowledge => Icons.auto_stories_outlined,
             _NonSpaceKind.todo => Icons.checklist_outlined,
+            _NonSpaceKind.aiAssistant => Icons.smart_toy_outlined,
             _NonSpaceKind.none => Icons.home_outlined,
           };
     final label =
@@ -132,6 +156,7 @@ class _SpaceRow extends StatelessWidget {
         switch (_kind) {
           _NonSpaceKind.knowledge => '知識庫',
           _NonSpaceKind.todo => '代辦事項',
+          _NonSpaceKind.aiAssistant => 'AI 問答',
           _NonSpaceKind.none => '回首頁',
         };
 

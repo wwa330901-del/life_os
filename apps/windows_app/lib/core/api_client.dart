@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'models/admin_models.dart';
 import 'models/ai_usage.dart';
+import 'models/ai_assistant.dart';
 import 'models/app_user.dart';
 import 'models/calendar_event.dart';
 import 'models/document_approval.dart';
@@ -639,6 +640,21 @@ class ApiClient {
   Future<AiUsageHistory> getAiUsageHistory() async {
     final body = await _get('/knowledge/ai-usage');
     return AiUsageHistory.fromJson(body);
+  }
+
+  /// [previousInteractionId] carries multi-turn continuity — pass back
+  /// whatever the previous call returned to continue the same
+  /// conversation, or omit to start a fresh one. This is purely
+  /// client-held state; the server never persists a conversation itself.
+  Future<AiAssistantAnswer> askAiAssistant({
+    required String question,
+    String? previousInteractionId,
+  }) async {
+    final body = await _post('/ai-assistant/ask', {
+      'question': question,
+      if (previousInteractionId != null) 'previousInteractionId': previousInteractionId,
+    });
+    return AiAssistantAnswer.fromJson(body);
   }
 
   String _queryString(Map<String, String?> params) {

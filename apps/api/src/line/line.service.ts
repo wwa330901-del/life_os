@@ -10,6 +10,8 @@ import { StocksRecurringService } from '../stocks/stocks-recurring.service';
 import { computeSettlementDate } from '../stocks/stock-settlement-schedule';
 import { KnowledgeItemsService } from '../knowledge/knowledge-items.service';
 import { KnowledgeAnalysisPipeline } from '../knowledge/knowledge-analysis-pipeline.service';
+import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
+import { UsersService } from '../users/users.service';
 import {
   isInstagramUrl,
   INSTAGRAM_UNSUPPORTED_MESSAGE,
@@ -117,6 +119,8 @@ export class LineService {
     private readonly stocksRecurringService: StocksRecurringService,
     private readonly knowledgeItemsService: KnowledgeItemsService,
     private readonly knowledgeAnalysisPipeline: KnowledgeAnalysisPipeline,
+    private readonly aiAssistantService: AiAssistantService,
+    private readonly usersService: UsersService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -378,6 +382,11 @@ export class LineService {
       return;
     }
 
+    if (text.startsWith('查詢')) {
+      await this.handleAiQuery(userId, text, replyToken);
+      return;
+    }
+
     const replyOnce: Responder = (msg) => this.reply(replyToken, msg);
     if (await this.tryFinanceCommand(userId, text, replyOnce)) return;
     if (await this.tryStockCommand(userId, text, replyOnce)) return;
@@ -393,6 +402,7 @@ export class LineService {
         '・持股總覽',
         '・代辦事項 / 代辦事項總覽',
         '・新增行事曆 7/31 14:00 開會 @地點',
+        '・查詢 <問題>：例如「查詢 這個月餐飲花多少」（AI 問答，不含投資/股票）',
         '',
         '想一次記多筆，貼多行文字（一行一筆）就會逐行處理，例如：',
         '支出300午餐現金\n買股0050 152 3000 國泰世華',
@@ -1304,6 +1314,43 @@ export class LineService {
     const minute = match[4] ? Number(match[4]) : 0;
     const date = new Date(now.getFullYear(), month - 1, day, hour, minute);
     return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  /** "查詢 <問題>" — free-text Q&A over the user's own 記帳/代辦/專案/行事曆
+   * data via `AiAssistantService` (Gemini function-calling). Deliberately
+   * stateless on the LINE side (no `previousInteractionId` carried between
+   * messages) — unlike the App's chat screen, there's no open "session" to
+   * anchor continuity to here, so every 查詢 starts a fresh conversation.
+   * Requires the explicit "查詢" prefix (not a no-match fallback) — the
+   * user's own choice, to avoid an ordinary unrecognized command silently
+   * turning into an AI call. */
+  private async handleAiQuery(userId: string, text: string, replyToken: string): Promise<void> {
+    const question = text.replace(/^查詢/, '').replace(LEADING_SEPARATORS, '').trim();
+    if (!question) {
+      await this.reply(replyToken, '請在「查詢」後面接你想問的問題，例如「查詢 這個月餐飲花多少」。');
+      return;
+    }
+
+    const user = await this.usersService.findById(userId);
+    if (!user?.geminiApiKey) {
+      await this.reply(
+        replyToken,
+        '你還沒有設定自己的 Gemini API 金鑰，請先到 App 的「AI 設定」貼上你自己的金鑰才能使用查詢功能。',
+      );
+      return;
+    }
+
+    try {
+      const result = await this.aiAssistantService.ask({
+        userId,
+        apiKey: user.geminiApiKey,
+        question,
+        feature: 'ai_assistant_line',
+      });
+      await this.reply(replyToken, result.answer);
+    } catch {
+      await this.reply(replyToken, '這次查詢失敗了，稍後再試一次看看。');
+    }
   }
 
   // --- 代辦事項（個人 / 工作）---
