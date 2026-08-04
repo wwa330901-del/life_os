@@ -80,9 +80,9 @@ export class FinanceAccountsService {
       deltas.set(accountId, (deltas.get(accountId) ?? 0) + amount);
 
     for (const t of transactions) {
-      if (t.type === FinanceTransactionType.INCOME) {
+      if (t.type === FinanceTransactionType.INCOME || t.type === FinanceTransactionType.LOAN_IN || t.type === FinanceTransactionType.ADVANCE_IN) {
         add(t.accountId, t.amount);
-      } else if (t.type === FinanceTransactionType.EXPENSE) {
+      } else if (t.type === FinanceTransactionType.EXPENSE || t.type === FinanceTransactionType.LOAN_OUT || t.type === FinanceTransactionType.ADVANCE_OUT) {
         add(t.accountId, -t.amount);
       } else if (t.type === FinanceTransactionType.TRANSFER) {
         add(t.accountId, -t.amount);

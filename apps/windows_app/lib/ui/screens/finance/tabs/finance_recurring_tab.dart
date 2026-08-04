@@ -94,10 +94,14 @@ class FinanceRecurringTab extends ConsumerWidget {
     );
   }
 
+  // 定期交易 can only ever be 收入/支出/轉帳 (借貸/代墊 aren't recurring-entry
+  // concepts) — the wildcard just satisfies the shared enum's exhaustiveness
+  // check, never actually reached in practice.
   IconData _iconFor(FinanceTransactionType type) => switch (type) {
     FinanceTransactionType.income => Icons.arrow_downward,
     FinanceTransactionType.expense => Icons.arrow_upward,
     FinanceTransactionType.transfer => Icons.swap_horiz,
+    _ => Icons.swap_horiz,
   };
 
   String _titleFor(

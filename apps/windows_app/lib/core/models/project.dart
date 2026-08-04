@@ -82,3 +82,23 @@ class Project {
     pmName: json['pmName'] as String?,
   );
 }
+
+/// Lightweight cross-space project reference from `GET /projects/mine` —
+/// every project this user is a member of, regardless of which company
+/// space it's in. Used by pickers that need "any of my projects" without
+/// already knowing which space to look in (e.g. 記帳's 代墊-to-project
+/// link) — the full [Project] model always requires a known spaceId to
+/// fetch, this doesn't.
+class MyProjectSummary {
+  const MyProjectSummary({required this.id, required this.name, required this.spaceName});
+
+  final String id;
+  final String name;
+  final String spaceName;
+
+  factory MyProjectSummary.fromJson(Map<String, dynamic> json) => MyProjectSummary(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    spaceName: json['spaceName'] as String,
+  );
+}

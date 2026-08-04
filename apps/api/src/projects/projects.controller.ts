@@ -15,6 +15,13 @@ export class ProjectsController {
     private readonly scheduleService: ScheduleService,
   ) {}
 
+  // Must come before ":id" below — otherwise Nest would match a literal
+  // "mine" request as ":id" = "mine" instead of this route.
+  @Get('mine')
+  listMine(@CurrentUser() user: AuthenticatedUser) {
+    return this.projectsService.listForUser(user.id);
+  }
+
   @Get(':id')
   getOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.projectsService.getOne(user.id, id);

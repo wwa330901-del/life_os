@@ -25,6 +25,23 @@ export class ProjectsService {
    * been added to (see `assertAccess` for the same rule applied to a
    * single project).
    */
+  /** Flat cross-space list of every project this user is a direct member
+   * of — for pickers that need "any project of mine" regardless of which
+   * company space it's in (e.g. 記帳's 代墊-to-project link), unlike
+   * `listForSpace` which is always scoped to one already-known space. */
+  async listForUser(userId: string) {
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId },
+      include: { project: { include: { space: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return memberships.map((m) => ({
+      id: m.project.id,
+      name: m.project.name,
+      spaceName: m.project.space.name,
+    }));
+  }
+
   async listForSpace(userId: string, spaceId: string) {
     const space = await this.spacesService.getForUserOrThrow(userId, spaceId);
     const canSeeEverything =

@@ -1104,6 +1104,101 @@ class ApiClient {
     await _delete('/spaces/$spaceId/finance/recurring-transactions/$id');
   }
 
+  Future<List<FinanceLoan>> listFinanceLoans(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/finance/loans');
+    return body.map((e) => FinanceLoan.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createFinanceLoan({
+    required String spaceId,
+    required FinanceLoanDirection direction,
+    required String counterpartyName,
+    required double amount,
+    required String accountId,
+    required DateTime date,
+    String? note,
+  }) async {
+    await _post('/spaces/$spaceId/finance/loans', {
+      'direction': direction.toJson(),
+      'counterpartyName': counterpartyName,
+      'amount': amount,
+      'accountId': accountId,
+      'date': _dateOnly(date),
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> addFinanceLoanRepayment({
+    required String spaceId,
+    required String loanId,
+    required double amount,
+    required String accountId,
+    required DateTime date,
+    String? note,
+  }) async {
+    await _post('/spaces/$spaceId/finance/loans/$loanId/repayments', {
+      'amount': amount,
+      'accountId': accountId,
+      'date': _dateOnly(date),
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> deleteFinanceLoan({required String spaceId, required String id}) async {
+    await _delete('/spaces/$spaceId/finance/loans/$id');
+  }
+
+  Future<List<FinanceAdvance>> listFinanceAdvances(String spaceId, {String? projectId}) async {
+    final body = await _getList(
+      '/spaces/$spaceId/finance/advances${_queryString({'projectId': projectId})}',
+    );
+    return body.map((e) => FinanceAdvance.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createFinanceAdvance({
+    required String spaceId,
+    required String title,
+    required double amount,
+    required String accountId,
+    required DateTime date,
+    String? note,
+    String? projectId,
+  }) async {
+    await _post('/spaces/$spaceId/finance/advances', {
+      'title': title,
+      'amount': amount,
+      'accountId': accountId,
+      'date': _dateOnly(date),
+      if (note != null && note.isNotEmpty) 'note': note,
+      if (projectId != null) 'projectId': projectId,
+    });
+  }
+
+  Future<void> addFinanceAdvanceRepayment({
+    required String spaceId,
+    required String advanceId,
+    required double amount,
+    required String accountId,
+    required DateTime date,
+    String? note,
+  }) async {
+    await _post('/spaces/$spaceId/finance/advances/$advanceId/repayments', {
+      'amount': amount,
+      'accountId': accountId,
+      'date': _dateOnly(date),
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> deleteFinanceAdvance({required String spaceId, required String id}) async {
+    await _delete('/spaces/$spaceId/finance/advances/$id');
+  }
+
+  Future<List<MyProjectSummary>> listMyProjects() async {
+    final body = await _getList('/projects/mine');
+    return body.map((e) => MyProjectSummary.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   Future<List<StockHolding>> listStockHoldings(String spaceId) async {
     final body = await _getList('/spaces/$spaceId/stocks/holdings');
     return body.map((e) => StockHolding.fromJson(e as Map<String, dynamic>)).toList();

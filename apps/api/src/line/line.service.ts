@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
 import { FinanceBudgetsService } from '../finance/finance-budgets.service';
+import { FinanceLoansService } from '../finance/finance-loans.service';
+import { FinanceAdvancesService } from '../finance/finance-advances.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
 import { StocksRecurringService } from '../stocks/stocks-recurring.service';
@@ -20,6 +22,7 @@ import {
   FinanceAccountType,
   FinanceCategoryKind,
   FinanceTransactionType,
+  FinanceLoanDirection,
   StockTransactionType,
 } from '../../generated/prisma/client.js';
 import type { LineAccountLink } from '../../generated/prisma/client.js';
@@ -114,6 +117,8 @@ export class LineService {
     private readonly financeAccountsService: FinanceAccountsService,
     private readonly financeTransactionsService: FinanceTransactionsService,
     private readonly financeBudgetsService: FinanceBudgetsService,
+    private readonly financeLoansService: FinanceLoansService,
+    private readonly financeAdvancesService: FinanceAdvancesService,
     private readonly calendarEventsService: CalendarEventsService,
     private readonly stocksHoldingsService: StocksHoldingsService,
     private readonly stocksRecurringService: StocksRecurringService,
@@ -386,6 +391,23 @@ export class LineService {
       return;
     }
 
+    if (text === '借貸列表') {
+      await this.sendLoanList(linkId, userId, replyToken);
+      return;
+    }
+    if (text.startsWith('還款')) {
+      await this.repayLoanByNumber(linkId, text, replyToken);
+      return;
+    }
+    if (text === '代墊列表') {
+      await this.sendAdvanceList(linkId, userId, replyToken);
+      return;
+    }
+    if (text.startsWith('收回代墊')) {
+      await this.repayAdvanceByNumber(linkId, text, replyToken);
+      return;
+    }
+
     if (text.startsWith('查詢')) {
       await this.handleAiQuery(userId, text, replyToken);
       return;
@@ -393,6 +415,8 @@ export class LineService {
 
     const replyOnce: Responder = (msg) => this.reply(replyToken, msg);
     if (await this.tryFinanceCommand(userId, text, replyOnce)) return;
+    if (await this.tryLoanCommand(userId, text, replyOnce)) return;
+    if (await this.tryAdvanceCommand(userId, text, replyOnce)) return;
     if (await this.tryStockCommand(userId, text, replyOnce)) return;
     if (await this.tryStockDcaReply(userId, text, replyToken)) return;
 
@@ -402,6 +426,10 @@ export class LineService {
         '看不懂這個指令，可以試試：',
         '・記帳：例如「支出 300 午餐 現金」（傳「記帳」看完整格式跟你的分類/帳戶）',
         '・財務總覽',
+        '・借出 3000 給小明 / 借入 5000 跟小華',
+        '・借貸列表、還款 2 1000（對第2筆登記還款）',
+        '・代墊 5000 材料款 @測試專案（專案可省略）',
+        '・代墊列表、收回代墊 2 1000（對第2筆登記收回）',
         '・股票買賣：例如「買股 0050 152 3000 國泰世華」（傳「股票買賣」看完整格式）',
         '・持股總覽',
         '・代辦事項 / 代辦事項總覽',
@@ -442,6 +470,10 @@ export class LineService {
       await this.tryStockCommand(link.userId, line, capture);
     } else if (line.startsWith('支出') || line.startsWith('收入')) {
       await this.tryFinanceCommand(link.userId, line, capture);
+    } else if (line.startsWith('借出') || line.startsWith('借入')) {
+      await this.tryLoanCommand(link.userId, line, capture);
+    } else if (line.startsWith('代墊')) {
+      await this.tryAdvanceCommand(link.userId, line, capture);
     } else {
       return `看不懂「${line}」`;
     }
@@ -673,6 +705,385 @@ export class LineService {
 
     const note = rest.replace(EDGE_SEPARATORS, '').trim() || null;
     return { type, amount, categoryId, accountId, note };
+  }
+
+  // --- 借貸（跟人借錢/借錢給人）---
+
+  /** "借出/借入 金額 給/跟對象 [備註]" — always uses the caller's first
+   * finance account (same fallback `tryFinanceCommand` uses), since there's
+   * no room in this compact command to also name an account. */
+  private async tryLoanCommand(
+    userId: string,
+    text: string,
+    respond: Responder,
+  ): Promise<boolean> {
+    if (!text.startsWith('借出') && !text.startsWith('借入')) return false;
+
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
+    if (!space) {
+      await respond('找不到你的個人空間，請先到元序 App 登入一次。');
+      return true;
+    }
+
+    const parsed = this.parseLoanCommand(text);
+    if (!parsed) {
+      await respond(
+        '看不懂借貸格式，請用「借出 3000 給小明」或「借入 5000 跟小華」這種格式。',
+      );
+      return true;
+    }
+
+    const accounts = await this.prisma.financeAccount.findMany({
+      where: { spaceId: space.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    const accountId = accounts[0]?.id;
+    if (!accountId) {
+      await respond('你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
+      return true;
+    }
+
+    await this.financeLoansService.create(userId, space.id, {
+      direction: parsed.direction,
+      counterpartyName: parsed.counterpartyName,
+      amount: parsed.amount,
+      accountId,
+      date: new Date().toISOString(),
+      note: parsed.note ?? undefined,
+    });
+
+    const label =
+      parsed.direction === FinanceLoanDirection.LEND
+        ? `借出 ${parsed.amount.toLocaleString('en-US')} 給${parsed.counterpartyName}`
+        : `借入 ${parsed.amount.toLocaleString('en-US')}（跟${parsed.counterpartyName}）`;
+    await respond(`已記錄${label}，傳「借貸列表」查看。`);
+    return true;
+  }
+
+  /** "給"/"跟" marks where the counterparty name starts — whichever comes
+   * first, regardless of direction (lenient, matches this file's general
+   * parsing philosophy). Name runs up to the first whitespace/punctuation;
+   * anything after that becomes an optional note. */
+  private parseLoanCommand(text: string): {
+    direction: FinanceLoanDirection;
+    amount: number;
+    counterpartyName: string;
+    note: string | null;
+  } | null {
+    let rest = text.trim();
+    let direction: FinanceLoanDirection;
+    if (rest.startsWith('借出')) {
+      direction = FinanceLoanDirection.LEND;
+      rest = rest.slice(2);
+    } else if (rest.startsWith('借入')) {
+      direction = FinanceLoanDirection.BORROW;
+      rest = rest.slice(2);
+    } else {
+      return null;
+    }
+    rest = rest.replace(LEADING_SEPARATORS, '');
+
+    const amountMatch = rest.match(/^\d+(\.\d+)?/);
+    if (!amountMatch) return null;
+    const amount = Number(amountMatch[0]);
+    if (!(amount > 0)) return null;
+    rest = rest.slice(amountMatch[0].length).replace(LEADING_SEPARATORS, '');
+
+    const giveIdx = rest.indexOf('給');
+    const withIdx = rest.indexOf('跟');
+    const idx =
+      giveIdx === -1 ? withIdx : withIdx === -1 ? giveIdx : Math.min(giveIdx, withIdx);
+    if (idx === -1) return null;
+    rest = rest.slice(idx + 1);
+
+    const nameMatch = rest.match(/^[^\s，,。.]+/);
+    if (!nameMatch) return null;
+    const counterpartyName = nameMatch[0];
+    const note =
+      rest.slice(nameMatch[0].length).replace(LEADING_SEPARATORS, '').trim() || null;
+    return { direction, amount, counterpartyName, note };
+  }
+
+  /** "借貸列表" — lists only unsettled loans (settled ones would just pile
+   * up forever otherwise), numbered so "還款 N 金額" can reference one.
+   * Overwrites `lastLoanListIds` every time, same pattern as
+   * `lastTodoListIds`. */
+  private async sendLoanList(linkId: string, userId: string, replyToken: string) {
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+
+    const loans = await this.financeLoansService.list(userId, space.id);
+    const outstanding = loans.filter((l) => !l.settled);
+
+    await this.prisma.lineAccountLink.update({
+      where: { id: linkId },
+      data: { lastLoanListIds: outstanding.map((l) => l.id) },
+    });
+
+    if (outstanding.length === 0) {
+      await this.reply(replyToken, '💰 借貸列表\n\n目前沒有未結清的借貸。');
+      return;
+    }
+
+    const lines = ['💰 借貸列表（未結清）', ''];
+    outstanding.forEach((loan, i) => {
+      const label =
+        loan.direction === FinanceLoanDirection.LEND
+          ? `借給${loan.counterpartyName}`
+          : `跟${loan.counterpartyName}借`;
+      const principal = loan.initialTransaction?.amount ?? 0;
+      lines.push(
+        `${i + 1}. ${label}　還剩 ${loan.outstanding.toLocaleString('en-US')}（原 ${principal.toLocaleString('en-US')}）`,
+      );
+    });
+    lines.push('', '傳「還款 編號 金額」登記還款，例如「還款 1 1000」。');
+    await this.reply(replyToken, lines.join('\n'));
+  }
+
+  /** "還款 編號 金額" — references `lastLoanListIds` from the most recent
+   * "借貸列表". Which direction the cash actually moves (settling a LEND
+   * vs. a BORROW) is entirely `FinanceLoansService.addRepayment`'s call —
+   * this method doesn't need to know or care. */
+  private async repayLoanByNumber(linkId: string, text: string, replyToken: string) {
+    const match = text.match(/(\d+)\D+(\d+(?:\.\d+)?)/);
+    if (!match) {
+      await this.reply(
+        replyToken,
+        '請用「還款 編號 金額」，例如「還款 1 1000」，編號請先傳「借貸列表」查看。',
+      );
+      return;
+    }
+    const n = Number(match[1]);
+    const amount = Number(match[2]);
+
+    const link = await this.prisma.lineAccountLink.findUnique({ where: { id: linkId } });
+    const loanId = link?.lastLoanListIds[n - 1];
+    if (!link || !loanId) {
+      await this.reply(replyToken, `找不到編號 ${n}，請先傳「借貸列表」看目前的編號。`);
+      return;
+    }
+
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: link.userId },
+    });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+    const accounts = await this.prisma.financeAccount.findMany({
+      where: { spaceId: space.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    const accountId = accounts[0]?.id;
+    if (!accountId) {
+      await this.reply(replyToken, '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
+      return;
+    }
+
+    try {
+      const updated = await this.financeLoansService.addRepayment(link.userId, space.id, loanId, {
+        amount,
+        accountId,
+        date: new Date().toISOString(),
+      });
+      await this.reply(
+        replyToken,
+        `已登記還款 ${amount.toLocaleString('en-US')}，${updated.settled ? '這筆借貸已經結清了！' : `還剩 ${updated.outstanding.toLocaleString('en-US')} 未結清。`}`,
+      );
+    } catch (error) {
+      await this.reply(
+        replyToken,
+        error instanceof Error ? error.message : '登記還款失敗了，稍後再試一次。',
+      );
+    }
+  }
+
+  // --- 代墊（工作上先幫忙出錢，之後公司/專案還你）---
+
+  /** "代墊 金額 說明 [@專案名稱]" — 專案名稱 optional, matched (contains,
+   * case-sensitive) against company-space projects the caller belongs to;
+   * no match just means the advance isn't tied to any project, same as
+   * leaving it unset in the App. */
+  private async tryAdvanceCommand(
+    userId: string,
+    text: string,
+    respond: Responder,
+  ): Promise<boolean> {
+    if (!text.startsWith('代墊') || text.startsWith('代墊列表')) return false;
+
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
+    if (!space) {
+      await respond('找不到你的個人空間，請先到元序 App 登入一次。');
+      return true;
+    }
+
+    const parsed = this.parseAdvanceCommand(text);
+    if (!parsed) {
+      await respond('看不懂代墊格式，請用「代墊 5000 材料款」或加上「@專案名稱」這種格式。');
+      return true;
+    }
+
+    const accounts = await this.prisma.financeAccount.findMany({
+      where: { spaceId: space.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    const accountId = accounts[0]?.id;
+    if (!accountId) {
+      await respond('你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
+      return true;
+    }
+
+    let projectId: string | undefined;
+    let projectName: string | undefined;
+    if (parsed.projectNameHint) {
+      const memberships = await this.prisma.projectMember.findMany({
+        where: { userId },
+        include: { project: true },
+      });
+      const matched = memberships.find((m) => m.project.name.includes(parsed.projectNameHint!));
+      if (matched) {
+        projectId = matched.projectId;
+        projectName = matched.project.name;
+      }
+    }
+
+    await this.financeAdvancesService.create(userId, space.id, {
+      title: parsed.title,
+      amount: parsed.amount,
+      accountId,
+      date: new Date().toISOString(),
+      projectId,
+    });
+
+    await respond(
+      `已記錄代墊 ${parsed.amount.toLocaleString('en-US')}（${parsed.title}）${projectName ? `，掛在專案「${projectName}」` : ''}，傳「代墊列表」查看。`,
+    );
+    return true;
+  }
+
+  private parseAdvanceCommand(text: string): {
+    amount: number;
+    title: string;
+    projectNameHint: string | null;
+  } | null {
+    let rest = text.slice(2).replace(LEADING_SEPARATORS, '');
+    const amountMatch = rest.match(/^\d+(\.\d+)?/);
+    if (!amountMatch) return null;
+    const amount = Number(amountMatch[0]);
+    if (!(amount > 0)) return null;
+    rest = rest.slice(amountMatch[0].length).replace(LEADING_SEPARATORS, '');
+
+    const atIdx = rest.indexOf('@');
+    let title: string;
+    let projectNameHint: string | null = null;
+    if (atIdx !== -1) {
+      title = rest.slice(0, atIdx).replace(EDGE_SEPARATORS, '').trim();
+      projectNameHint = rest.slice(atIdx + 1).trim() || null;
+    } else {
+      title = rest.trim();
+    }
+    if (!title) return null;
+    return { amount, title, projectNameHint };
+  }
+
+  /** "代墊列表" — same shape as `sendLoanList`, unsettled-only + numbered
+   * for "收回代墊 N 金額". */
+  private async sendAdvanceList(linkId: string, userId: string, replyToken: string) {
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+
+    const advances = await this.financeAdvancesService.list(userId, space.id);
+    const outstanding = advances.filter((a) => !a.settled);
+
+    await this.prisma.lineAccountLink.update({
+      where: { id: linkId },
+      data: { lastAdvanceListIds: outstanding.map((a) => a.id) },
+    });
+
+    if (outstanding.length === 0) {
+      await this.reply(replyToken, '💸 代墊列表\n\n目前沒有未收回的代墊。');
+      return;
+    }
+
+    const lines = ['💸 代墊列表（未收回）', ''];
+    outstanding.forEach((advance, i) => {
+      const principal = advance.initialTransaction?.amount ?? 0;
+      lines.push(
+        `${i + 1}. ${advance.title}${advance.project ? `（${advance.project.name}）` : ''}　還剩 ${advance.outstanding.toLocaleString('en-US')}（原 ${principal.toLocaleString('en-US')}）`,
+      );
+    });
+    lines.push('', '傳「收回代墊 編號 金額」登記收回，例如「收回代墊 1 1000」。');
+    await this.reply(replyToken, lines.join('\n'));
+  }
+
+  /** "收回代墊 編號 金額" — references `lastAdvanceListIds`. */
+  private async repayAdvanceByNumber(linkId: string, text: string, replyToken: string) {
+    const match = text.match(/(\d+)\D+(\d+(?:\.\d+)?)/);
+    if (!match) {
+      await this.reply(
+        replyToken,
+        '請用「收回代墊 編號 金額」，例如「收回代墊 1 1000」，編號請先傳「代墊列表」查看。',
+      );
+      return;
+    }
+    const n = Number(match[1]);
+    const amount = Number(match[2]);
+
+    const link = await this.prisma.lineAccountLink.findUnique({ where: { id: linkId } });
+    const advanceId = link?.lastAdvanceListIds[n - 1];
+    if (!link || !advanceId) {
+      await this.reply(replyToken, `找不到編號 ${n}，請先傳「代墊列表」看目前的編號。`);
+      return;
+    }
+
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: link.userId },
+    });
+    if (!space) {
+      await this.reply(replyToken, '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
+    const accounts = await this.prisma.financeAccount.findMany({
+      where: { spaceId: space.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    const accountId = accounts[0]?.id;
+    if (!accountId) {
+      await this.reply(replyToken, '你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
+      return;
+    }
+
+    try {
+      const updated = await this.financeAdvancesService.addRepayment(
+        link.userId,
+        space.id,
+        advanceId,
+        { amount, accountId, date: new Date().toISOString() },
+      );
+      await this.reply(
+        replyToken,
+        `已登記收回 ${amount.toLocaleString('en-US')}，${updated.settled ? '這筆代墊已經全部收回了！' : `還剩 ${updated.outstanding.toLocaleString('en-US')} 未收回。`}`,
+      );
+    } catch (error) {
+      await this.reply(
+        replyToken,
+        error instanceof Error ? error.message : '登記收回失敗了，稍後再試一次。',
+      );
+    }
   }
 
   /** 個人財務總覽：every account's current balance, today's and this

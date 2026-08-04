@@ -54,10 +54,26 @@ enum FinanceCategoryKind {
   EXPENSE
 }
 
+/// LOAN_OUT/LOAN_IN and ADVANCE_OUT/ADVANCE_IN move real cash in/out of a
+/// FinanceAccount (computeBalanceDeltas must handle them) but are
+/// deliberately excluded from every 收入/支出 aggregation (monthlySummary,
+/// budgets, home dashboard, AI 問答 tools) — those all filter on an
+/// INCOME/EXPENSE allowlist, so a new type here is excluded automatically
+/// without needing to touch that filtering logic. Same reasoning as
+/// TRANSFER: money moved, but it isn't real income or spending.
 enum FinanceTransactionType {
   INCOME
   EXPENSE
   TRANSFER
+  LOAN_OUT
+  LOAN_IN
+  ADVANCE_OUT
+  ADVANCE_IN
+}
+
+enum FinanceLoanDirection {
+  LEND
+  BORROW
 }
 
 /// How a 定期交易 whose trigger date lands on a holiday (weekend or Taiwan
@@ -113,15 +129,15 @@ model User {
   /// a reinstall/new machine, same as every other piece of user data.
   homeLayoutConfig Json?
 
-  personalSpace      Space?              @relation("PersonalSpaceOwner")
-  calendarSpace      Space?              @relation("CalendarSpaceOwner")
-  memberships        CompanyMembership[]
-  projectMemberships ProjectMember[]
-  generatedDocuments GeneratedDocument[]
-  lineAccountLink    LineAccountLink?
-  assignedTodos      ProjectTodo[] @relation("TodoAssignee")
-  personalTodos      ProjectTodo[] @relation("TodoPersonalOwner")
-  googleCalendarConnections GoogleCalendarConnection[]
+  personalSpace              Space?                     @relation("PersonalSpaceOwner")
+  calendarSpace              Space?                     @relation("CalendarSpaceOwner")
+  memberships                CompanyMembership[]
+  projectMemberships         ProjectMember[]
+  generatedDocuments         GeneratedDocument[]
+  lineAccountLink            LineAccountLink?
+  assignedTodos              ProjectTodo[]              @relation("TodoAssignee")
+  personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
+  googleCalendarConnections  GoogleCalendarConnection[]
   documentApprovalsSubmitted DocumentApproval[]
   documentApprovalSteps      DocumentApprovalStep[]
   documentApprovalStepNotes  DocumentApprovalStepNote[]
@@ -154,20 +170,22 @@ model Space {
   calendarOwnerUserId String? @unique
   calendarOwner       User?   @relation("CalendarSpaceOwner", fields: [calendarOwnerUserId], references: [id])
 
-  memberships         CompanyMembership[]
-  projects            Project[]
-  propertyDefinitions ProjectPropertyDefinition[]
-  documentTemplates   DocumentTemplate[]
-  generatedDocuments  GeneratedDocument[]
-  financeAccounts     FinanceAccount[]
-  financeCategories   FinanceCategory[]
-  financeTransactions FinanceTransaction[]
-  financeBudgets      FinanceBudget[]
+  memberships                  CompanyMembership[]
+  projects                     Project[]
+  propertyDefinitions          ProjectPropertyDefinition[]
+  documentTemplates            DocumentTemplate[]
+  generatedDocuments           GeneratedDocument[]
+  financeAccounts              FinanceAccount[]
+  financeCategories            FinanceCategory[]
+  financeTransactions          FinanceTransaction[]
+  financeBudgets               FinanceBudget[]
   financeRecurringTransactions FinanceRecurringTransaction[]
-  calendarEvents      CalendarEvent[]
-  googleCalendarConnection GoogleCalendarConnection?
-  stockTransactions         StockTransaction[]
-  stockRecurringInvestments StockRecurringInvestment[]
+  financeLoans                 FinanceLoan[]
+  financeAdvances              FinanceAdvance[]
+  calendarEvents               CalendarEvent[]
+  googleCalendarConnection     GoogleCalendarConnection?
+  stockTransactions            StockTransaction[]
+  stockRecurringInvestments    StockRecurringInvestment[]
 }
 
 /// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
@@ -193,8 +211,8 @@ model CalendarEvent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([spaceId, startAt])
   @@unique([spaceId, googleEventId])
+  @@index([spaceId, startAt])
 }
 
 /// A CALENDAR space's link to one Google Calendar (always the connecting
@@ -230,9 +248,9 @@ model GoogleCalendarConnection {
 /// step needs a human (well, an AI) to actually read the document and
 /// figure out where the blanks are.
 model DocumentTemplate {
-  id       String @id @default(uuid())
-  spaceId  String
-  space    Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
 
   code     String // e.g. "JWD-3-1" — this space's own code, per its own numbering scheme
   name     String // e.g. "裝修工程承攬合約書"
@@ -329,7 +347,7 @@ model DocumentApproval {
   id String @id @default(uuid())
 
   generatedDocumentId String
-  generatedDocument    GeneratedDocument @relation(fields: [generatedDocumentId], references: [id], onDelete: Cascade)
+  generatedDocument   GeneratedDocument @relation(fields: [generatedDocumentId], references: [id], onDelete: Cascade)
 
   submittedByUserId String
   submittedBy       User   @relation(fields: [submittedByUserId], references: [id])
@@ -525,8 +543,8 @@ model Project {
   // each sub-field individually with ordinary class-validator decorators.
   weeklyOffDays               Int[]      @default([7]) // Dart DateTime.monday..sunday (1..7); default {Sunday=7}
   useTaiwanGovernmentCalendar Boolean    @default(true)
-  adHocHolidays                DateTime[] @db.Date @default([])
-  adHocWorkdays                 DateTime[] @db.Date @default([])
+  adHocHolidays               DateTime[] @default([]) @db.Date
+  adHocWorkdays               DateTime[] @default([]) @db.Date
 
   items              WorkItem[]
   members            ProjectMember[]
@@ -534,6 +552,7 @@ model Project {
   generatedDocuments GeneratedDocument[]
   todos              ProjectTodo[]
   lineActiveFor      LineAccountLink[]
+  financeAdvances    FinanceAdvance[]
 }
 
 model ProjectMember {
@@ -551,9 +570,9 @@ model ProjectMember {
 }
 
 model WorkItem {
-  id             String @id @default(uuid())
-  name           String
-  durationDays   Int
+  id           String @id @default(uuid())
+  name         String
+  durationDays Int
 
   // 實際開始日期／實際工期 — when this item actually started and how many
   // days it actually took, filled in separately from (and independently
@@ -684,7 +703,89 @@ model FinanceTransaction {
   note      String?
   createdAt DateTime @default(now())
 
+  // The following four are each set on exactly one row — the one
+  // FinanceTransaction that represents a 借貸/代墊's *initial* cash move, or
+  // one that represents a single repayment against it. Deliberately no
+  // duplicated amount/date/account/note on FinanceLoan*/FinanceAdvance*
+  // themselves — this transaction row is the single source of truth for
+  // those, same "derive, don't duplicate" preference as FinanceAccount's
+  // balance. onDelete: Cascade is defined here (the child) so deleting the
+  // parent FinanceLoan/FinanceLoanRepayment/etc. also removes this row.
+  financeLoanId String?      @unique
+  financeLoan   FinanceLoan? @relation("LoanInitialTransaction", fields: [financeLoanId], references: [id], onDelete: Cascade)
+
+  loanRepaymentId String?               @unique
+  loanRepayment   FinanceLoanRepayment? @relation(fields: [loanRepaymentId], references: [id], onDelete: Cascade)
+
+  financeAdvanceId String?         @unique
+  financeAdvance   FinanceAdvance? @relation("AdvanceInitialTransaction", fields: [financeAdvanceId], references: [id], onDelete: Cascade)
+
+  advanceRepaymentId String?                  @unique
+  advanceRepayment   FinanceAdvanceRepayment? @relation(fields: [advanceRepaymentId], references: [id], onDelete: Cascade)
+
   @@index([spaceId, date])
+}
+
+/// 跟人借錢/借錢給人 — a lightweight "receivable/payable" ledger, deliberately
+/// separate from 代墊 even though the underlying mechanic (cash moves now,
+/// settles later, never counted as real income/expense) is identical, per
+/// explicit user choice ("完全分開做兩個獨立功能"). `direction` decides which
+/// way both the initial transaction and every repayment's cash flows:
+/// LEND → initial LOAN_OUT, repayments are LOAN_IN (money comes back);
+/// BORROW → initial LOAN_IN, repayments are LOAN_OUT (money goes back out).
+/// "Outstanding"/"settled" is always derived (initialTransaction.amount
+/// minus the sum of repayments' transaction amounts), never stored.
+model FinanceLoan {
+  id               String               @id @default(uuid())
+  spaceId          String
+  space            Space                @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  direction        FinanceLoanDirection
+  // 跟誰借/借給誰 — free text, no contacts system.
+  counterpartyName String
+  createdAt        DateTime             @default(now())
+
+  initialTransaction FinanceTransaction?    @relation("LoanInitialTransaction")
+  repayments         FinanceLoanRepayment[]
+}
+
+model FinanceLoanRepayment {
+  id        String      @id @default(uuid())
+  loanId    String
+  loan      FinanceLoan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  transaction FinanceTransaction?
+}
+
+/// 工作上先幫忙出錢，之後公司/專案還你 — see FinanceLoan's doc comment for why
+/// this is a separate model rather than sharing one with a "purpose" field.
+/// Always one-directional (advance out, then reimbursed in — there's no
+/// "borrow" equivalent), so unlike FinanceLoan there's no direction field:
+/// the initial transaction is always ADVANCE_OUT, every repayment is
+/// always ADVANCE_IN. `projectId` is optional — set only when the user
+/// chooses to tie this advance to a specific project's cost tracking.
+model FinanceAdvance {
+  id        String   @id @default(uuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  // 說明/事由，例如「材料款」— not a reference to any DocumentTemplate/etc.,
+  // just a free-text label for what this advance was for.
+  title     String
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  initialTransaction FinanceTransaction?       @relation("AdvanceInitialTransaction")
+  repayments         FinanceAdvanceRepayment[]
+}
+
+model FinanceAdvanceRepayment {
+  id        String         @id @default(uuid())
+  advanceId String
+  advance   FinanceAdvance @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  transaction FinanceTransaction?
 }
 
 /// Standing monthly spending target per category — compared against that
@@ -856,12 +957,18 @@ model LineAccountLink {
   /// numbers don't shift after a completion within the same shown list.
   lastTodoListIds String[] @default([])
 
+  /// Same numbered-list-reference pattern as `lastTodoListIds`, one each
+  /// for 借貸/代墊 since "借貸列表"/"代墊列表" are two separate lists — lets
+  /// "還款 2 1000"/"收回代墊 2 1000" reference an item by number.
+  lastLoanListIds    String[] @default([])
+  lastAdvanceListIds String[] @default([])
+
   /// Which project "新增/完成/代辦" commands apply to — unlike 記帳 (always
   /// the user's own 1:1 personal space), a company-space project is
   /// ambiguous when the user belongs to more than one, so this has to be
   /// picked once via a LINE quick-reply and remembered here until changed.
   activeProjectId String?
-  activeProject    Project? @relation(fields: [activeProjectId], references: [id], onDelete: SetNull)
+  activeProject   Project? @relation(fields: [activeProjectId], references: [id], onDelete: SetNull)
 
   /// Set when the user picked "個人" (not a project) as their 代辦事項
   /// target — takes priority over activeProjectId when true. Mutually
@@ -906,8 +1013,8 @@ model ProjectTodo {
   personalOwnerUserId String?
   personalOwner       User?   @relation("TodoPersonalOwner", fields: [personalOwnerUserId], references: [id], onDelete: Cascade)
 
-  title    String
-  done     Boolean   @default(false)
+  title       String
+  done        Boolean   @default(false)
   completedAt DateTime?
 
   /// Every todo must have exactly one of dueDate/isOngoing set going
@@ -918,10 +1025,10 @@ model ProjectTodo {
   /// date, recurring/persistent task" marker — distinct from just leaving
   /// dueDate empty, which is why it's its own flag rather than dueDate
   /// staying implicitly optional.
-  dueDate    DateTime? @db.Date
-  isOngoing  Boolean   @default(false)
-  priority TodoPriority @default(MEDIUM)
-  notes    String?
+  dueDate   DateTime?    @db.Date
+  isOngoing Boolean      @default(false)
+  priority  TodoPriority @default(MEDIUM)
+  notes     String?
 
   assigneeUserId String?
   assignee       User?   @relation("TodoAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)

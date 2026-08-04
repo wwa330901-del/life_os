@@ -117,10 +117,18 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
     );
   }
 
+  // 借貸/代墊 transactions show up here too (real cash moved) — see
+  // FinanceLoansTab/FinanceAdvancesTab for the actual 借貸/代墊 management
+  // screens; this list just needs to render them sensibly alongside
+  // ordinary 收入/支出/轉帳 entries, not manage them.
   IconData _iconFor(FinanceTransactionType type) => switch (type) {
     FinanceTransactionType.income => Icons.arrow_downward,
     FinanceTransactionType.expense => Icons.arrow_upward,
     FinanceTransactionType.transfer => Icons.swap_horiz,
+    FinanceTransactionType.loanOut => Icons.call_made,
+    FinanceTransactionType.loanIn => Icons.call_received,
+    FinanceTransactionType.advanceOut => Icons.request_quote_outlined,
+    FinanceTransactionType.advanceIn => Icons.request_quote,
   };
 
   String _titleFor(
@@ -132,6 +140,16 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
     if (t.type == FinanceTransactionType.transfer) {
       final toName = accountNameOf[t.toAccountId] ?? '?';
       return '$accountName → $toName';
+    }
+    if (t.type == FinanceTransactionType.loanOut ||
+        t.type == FinanceTransactionType.loanIn ||
+        t.type == FinanceTransactionType.advanceOut ||
+        t.type == FinanceTransactionType.advanceIn) {
+      // Counterparty/借貸標題 lives on the FinanceLoan/FinanceAdvance row,
+      // not this transaction — 借貸/代墊 分頁 has the full detail, this list
+      // just shows the type label + note (if any) + account.
+      final label = t.note?.isNotEmpty == true ? t.note! : t.type.label;
+      return '$label · $accountName';
     }
     final categoryName = t.categoryId == null ? '未分類' : (categoryNameOf[t.categoryId] ?? '未分類');
     return '$categoryName · $accountName';

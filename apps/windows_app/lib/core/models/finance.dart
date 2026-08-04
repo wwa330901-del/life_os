@@ -34,12 +34,20 @@ extension FinanceCategoryKindJson on FinanceCategoryKind {
   String get label => this == FinanceCategoryKind.income ? '收入' : '支出';
 }
 
-enum FinanceTransactionType { income, expense, transfer }
+// loanOut/loanIn/advanceOut/advanceIn are real cash moves (借貸/代墊 — see
+// FinanceLoan/FinanceAdvance on the backend) that show up in the general
+// transaction list like any other entry, but never count toward
+// 收入/支出 totals — same reasoning as transfer.
+enum FinanceTransactionType { income, expense, transfer, loanOut, loanIn, advanceOut, advanceIn }
 
 extension FinanceTransactionTypeJson on FinanceTransactionType {
   static FinanceTransactionType fromJson(String value) => switch (value) {
     'INCOME' => FinanceTransactionType.income,
     'EXPENSE' => FinanceTransactionType.expense,
+    'LOAN_OUT' => FinanceTransactionType.loanOut,
+    'LOAN_IN' => FinanceTransactionType.loanIn,
+    'ADVANCE_OUT' => FinanceTransactionType.advanceOut,
+    'ADVANCE_IN' => FinanceTransactionType.advanceIn,
     _ => FinanceTransactionType.transfer,
   };
 
@@ -47,12 +55,20 @@ extension FinanceTransactionTypeJson on FinanceTransactionType {
     FinanceTransactionType.income => 'INCOME',
     FinanceTransactionType.expense => 'EXPENSE',
     FinanceTransactionType.transfer => 'TRANSFER',
+    FinanceTransactionType.loanOut => 'LOAN_OUT',
+    FinanceTransactionType.loanIn => 'LOAN_IN',
+    FinanceTransactionType.advanceOut => 'ADVANCE_OUT',
+    FinanceTransactionType.advanceIn => 'ADVANCE_IN',
   };
 
   String get label => switch (this) {
     FinanceTransactionType.income => '收入',
     FinanceTransactionType.expense => '支出',
     FinanceTransactionType.transfer => '轉帳',
+    FinanceTransactionType.loanOut => '借出',
+    FinanceTransactionType.loanIn => '借入/收回借款',
+    FinanceTransactionType.advanceOut => '代墊支出',
+    FinanceTransactionType.advanceIn => '收回代墊',
   };
 }
 
@@ -319,4 +335,147 @@ class FinanceBudgetStatus {
     monthlyAmount: (json['monthlyAmount'] as num).toDouble(),
     spent: (json['spent'] as num).toDouble(),
   );
+}
+
+enum FinanceLoanDirection { lend, borrow }
+
+extension FinanceLoanDirectionJson on FinanceLoanDirection {
+  static FinanceLoanDirection fromJson(String value) =>
+      value == 'LEND' ? FinanceLoanDirection.lend : FinanceLoanDirection.borrow;
+
+  String toJson() => this == FinanceLoanDirection.lend ? 'LEND' : 'BORROW';
+
+  String get label => this == FinanceLoanDirection.lend ? '借出' : '借入';
+}
+
+/// One repayment entry against a [FinanceLoan] or [FinanceAdvance] —
+/// amount/date/account/note all live on the linked `FinanceTransaction`
+/// row backend-side (see the schema doc comment), flattened here since the
+/// App never needs to distinguish "the repayment record" from "its
+/// transaction" the way the backend's FK relationship does.
+class FinanceSettlementEntry {
+  const FinanceSettlementEntry({
+    required this.id,
+    required this.amount,
+    required this.date,
+    required this.accountId,
+    this.note,
+  });
+
+  final String id;
+  final double amount;
+  final DateTime date;
+  final String accountId;
+  final String? note;
+
+  factory FinanceSettlementEntry.fromJson(Map<String, dynamic> json) {
+    final transaction = json['transaction'] as Map<String, dynamic>;
+    return FinanceSettlementEntry(
+      id: json['id'] as String,
+      amount: (transaction['amount'] as num).toDouble(),
+      date: DateTime.parse(transaction['date'] as String),
+      accountId: transaction['accountId'] as String,
+      note: transaction['note'] as String?,
+    );
+  }
+}
+
+/// 跟人借錢/借錢給人 — [amount]/[date]/[accountId]/[note] are the *initial*
+/// cash move (from the backend's `initialTransaction`); [outstanding]/
+/// [settled] are always server-computed (principal minus repayments so
+/// far), never something the App itself sums up.
+class FinanceLoan {
+  const FinanceLoan({
+    required this.id,
+    required this.direction,
+    required this.counterpartyName,
+    required this.amount,
+    required this.date,
+    required this.accountId,
+    required this.outstanding,
+    required this.settled,
+    required this.repayments,
+    this.note,
+  });
+
+  final String id;
+  final FinanceLoanDirection direction;
+  final String counterpartyName;
+  final double amount;
+  final DateTime date;
+  final String accountId;
+  final double outstanding;
+  final bool settled;
+  final List<FinanceSettlementEntry> repayments;
+  final String? note;
+
+  factory FinanceLoan.fromJson(Map<String, dynamic> json) {
+    final initial = json['initialTransaction'] as Map<String, dynamic>;
+    return FinanceLoan(
+      id: json['id'] as String,
+      direction: FinanceLoanDirectionJson.fromJson(json['direction'] as String),
+      counterpartyName: json['counterpartyName'] as String,
+      amount: (initial['amount'] as num).toDouble(),
+      date: DateTime.parse(initial['date'] as String),
+      accountId: initial['accountId'] as String,
+      note: initial['note'] as String?,
+      outstanding: (json['outstanding'] as num).toDouble(),
+      settled: json['settled'] as bool,
+      repayments: (json['repayments'] as List<dynamic>? ?? const [])
+          .map((e) => FinanceSettlementEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+/// 工作上先幫忙出錢，之後公司/專案還你 — same shape as [FinanceLoan] (see its
+/// doc comment for why this is a separate model despite the similarity),
+/// minus `direction` (always one-directional: advance out, reimbursed
+/// in), plus an optional [projectId]/[projectName] link.
+class FinanceAdvance {
+  const FinanceAdvance({
+    required this.id,
+    required this.title,
+    required this.amount,
+    required this.date,
+    required this.accountId,
+    required this.outstanding,
+    required this.settled,
+    required this.repayments,
+    this.note,
+    this.projectId,
+    this.projectName,
+  });
+
+  final String id;
+  final String title;
+  final double amount;
+  final DateTime date;
+  final String accountId;
+  final double outstanding;
+  final bool settled;
+  final List<FinanceSettlementEntry> repayments;
+  final String? note;
+  final String? projectId;
+  final String? projectName;
+
+  factory FinanceAdvance.fromJson(Map<String, dynamic> json) {
+    final initial = json['initialTransaction'] as Map<String, dynamic>;
+    final project = json['project'] as Map<String, dynamic>?;
+    return FinanceAdvance(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      amount: (initial['amount'] as num).toDouble(),
+      date: DateTime.parse(initial['date'] as String),
+      accountId: initial['accountId'] as String,
+      note: initial['note'] as String?,
+      outstanding: (json['outstanding'] as num).toDouble(),
+      settled: json['settled'] as bool,
+      repayments: (json['repayments'] as List<dynamic>? ?? const [])
+          .map((e) => FinanceSettlementEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      projectId: json['projectId'] as String?,
+      projectName: project?['name'] as String?,
+    );
+  }
 }
