@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { StocksAccessService } from './stocks-access.service';
+import { StocksHoldingsService } from './stocks-holdings.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { effectiveTriggerDate } from '../finance/finance-recurring-schedule';
 import { computeSettlementDate } from './stock-settlement-schedule';
@@ -17,6 +18,7 @@ export class StocksRecurringService {
     private readonly prisma: PrismaService,
     private readonly access: StocksAccessService,
     private readonly lineNotifier: LineNotifierService,
+    private readonly holdings: StocksHoldingsService,
   ) {}
 
   async list(userId: string, spaceId: string) {
@@ -156,6 +158,7 @@ export class StocksRecurringService {
       }),
       this.prisma.stockRecurringInvestment.update({ where: { id: plan.id }, data: { awaitingReply: false } }),
     ]);
+    await this.holdings.recompute(spaceId, stockCode);
     return { shares };
   }
 }

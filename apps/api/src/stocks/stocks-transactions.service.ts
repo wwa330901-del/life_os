@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StocksAccessService } from './stocks-access.service';
+import { StocksHoldingsService } from './stocks-holdings.service';
 import { CreateStockTransactionDto } from './dto/create-stock-transaction.dto';
 import { UpdateStockTransactionDto } from './dto/update-stock-transaction.dto';
 import { computeSettlementDate } from './stock-settlement-schedule';
@@ -10,15 +11,16 @@ export class StocksTransactionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: StocksAccessService,
+    private readonly holdings: StocksHoldingsService,
   ) {}
 
   /** Cursor-paginated (30/page) — used to fetch this space's entire trade
    * history unconditionally, the same unbounded-list problem fixed
    * elsewhere for 知識庫/代辦事項/文件簽核 (see 大系統V1.46.0). Unlike
-   * `StocksHoldingsService.list`, which reads the full history itself to
-   * compute average-cost-basis (order-dependent, can't be paginated away —
-   * left alone, deliberately), this is just a display list with nothing
-   * downstream depending on it being complete. */
+   * `StocksHoldingsService.list`, which now reads from the persisted
+   * `StockHolding` cache (see 大系統V1.53.0) rather than recomputing full
+   * history, this is just a display list with nothing downstream depending
+   * on it being complete. */
   async list(userId: string, spaceId: string, filter: { cursor?: string } = {}) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const take = 30;
@@ -43,7 +45,7 @@ export class StocksTransactionsService {
     await this.assertAccount(spaceId, dto.accountId);
 
     const tradeDate = new Date(dto.tradeDate);
-    return this.prisma.stockTransaction.create({
+    const transaction = await this.prisma.stockTransaction.create({
       data: {
         spaceId,
         stockCode: dto.stockCode,
@@ -57,6 +59,8 @@ export class StocksTransactionsService {
         note: dto.note,
       },
     });
+    await this.holdings.recompute(spaceId, dto.stockCode);
+    return transaction;
   }
 
   /// Blocked once settled, same reasoning as `remove` below — the real
@@ -78,7 +82,7 @@ export class StocksTransactionsService {
     const totalCost = dto.totalCost ?? existing.totalCost;
     const tradeDate = dto.tradeDate ? new Date(dto.tradeDate) : existing.tradeDate;
 
-    return this.prisma.stockTransaction.update({
+    const updated = await this.prisma.stockTransaction.update({
       where: { id },
       data: {
         ...(dto.stockCode !== undefined && { stockCode: dto.stockCode }),
@@ -91,6 +95,11 @@ export class StocksTransactionsService {
         settlementDate: computeSettlementDate(tradeDate),
       },
     });
+    await this.holdings.recompute(spaceId, existing.stockCode);
+    if (dto.stockCode !== undefined && dto.stockCode !== existing.stockCode) {
+      await this.holdings.recompute(spaceId, dto.stockCode);
+    }
+    return updated;
   }
 
   /// Deletion is blocked once a trade has settled — the real
@@ -105,6 +114,7 @@ export class StocksTransactionsService {
       throw new BadRequestException('已交割的股票交易不能刪除');
     }
     await this.prisma.stockTransaction.delete({ where: { id } });
+    await this.holdings.recompute(spaceId, existing.stockCode);
   }
 
   private async assertAccount(spaceId: string, accountId: string) {

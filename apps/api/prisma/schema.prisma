@@ -190,6 +190,7 @@ model Space {
   googleCalendarConnection     GoogleCalendarConnection?
   stockTransactions            StockTransaction[]
   stockRecurringInvestments    StockRecurringInvestment[]
+  stockHoldings                StockHolding[]
 }
 
 /// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
@@ -1016,6 +1017,34 @@ model StockRecurringInvestment {
 /// that feed isn't a published/versioned contract, so a fetch failure just
 /// leaves the last known value in place (UI falls back to
 /// `dailyClosePrice`) rather than erroring.
+/// 持股快取 (2026-08-05) — the average-cost-basis running total per
+/// (space, stockCode), replacing what used to be recomputed from this
+/// space's ENTIRE stock trade history on every single holdings read (same
+/// class of problem as the 知識庫/代辦事項 unbounded-query fixes, except
+/// here the fix can't be "just paginate" — average-cost-basis is
+/// order-dependent, see `StocksHoldingsService`'s doc comment for the
+/// hand-verified proof). `StocksTransactionsService.create` /
+/// `StocksRecurringService.fulfillPendingReply` update this incrementally
+/// (cheap: one BUY/SELL delta, no history scan); `update`/`remove` on an
+/// existing transaction instead trigger a full recompute scoped to just
+/// that one stockCode (rare — edits/deletes aren't the hot path — and
+/// still far cheaper than the old "recompute every code in the space").
+/// Deleted outright once `shares` rounds to ~0 rather than left at zero,
+/// so `StocksHoldingsService.list` can just return every row unfiltered.
+model StockHolding {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  stockCode String
+  shares    Float
+  costBasis Float
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([spaceId, stockCode])
+}
+
 model StockPriceCache {
   stockCode String  @id
   stockName String?
