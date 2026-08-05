@@ -24,6 +24,19 @@ type ItemWithRelations = Prisma.KnowledgeItemGetPayload<{
   include: typeof itemInclude;
 }>;
 
+/** Knowledge item lists have no upper bound otherwise (see 大系統 audit
+ * finding #7) — a caller with years of accumulated items would eventually
+ * fetch/render everything at once. Cursor pagination keyed on `id`, tie-broken
+ * against `orderBy`'s `createdAt desc, id desc` so equal-timestamp rows still
+ * page deterministically. */
+const DEFAULT_ITEMS_PAGE_SIZE = 30;
+
+function paginate<T extends { id: string }>(rows: T[], take: number) {
+  const hasMore = rows.length > take;
+  const items = hasMore ? rows.slice(0, take) : rows;
+  return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
+}
+
 @Injectable()
 export class KnowledgeItemsService {
   constructor(
@@ -237,9 +250,10 @@ export class KnowledgeItemsService {
 
   async listOwn(
     userId: string,
-    filter: { categoryId?: string; search?: string } = {},
+    filter: { categoryId?: string; search?: string; cursor?: string; take?: number } = {},
   ) {
-    return this.prisma.knowledgeItem.findMany({
+    const take = filter.take ?? DEFAULT_ITEMS_PAGE_SIZE;
+    const items = await this.prisma.knowledgeItem.findMany({
       where: {
         ownerUserId: userId,
         categoryId: filter.categoryId,
@@ -254,14 +268,24 @@ export class KnowledgeItemsService {
           : {}),
       },
       include: itemInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
+    return paginate(items, take);
   }
 
   async listPublicFromOthers(
     viewerUserId: string,
-    filter: { categoryId?: string; ownerUserId?: string; search?: string } = {},
+    filter: {
+      categoryId?: string;
+      ownerUserId?: string;
+      search?: string;
+      cursor?: string;
+      take?: number;
+    } = {},
   ) {
+    const take = filter.take ?? DEFAULT_ITEMS_PAGE_SIZE;
     const items = await this.prisma.knowledgeItem.findMany({
       where: {
         status: KnowledgeItemStatus.DONE,
@@ -279,11 +303,17 @@ export class KnowledgeItemsService {
           : {}),
       },
       include: itemInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
-    return items.filter(
-      (item) => !item.category?.blacklistedUserIds.includes(viewerUserId),
-    );
+    const page = paginate(items, take);
+    return {
+      ...page,
+      items: page.items.filter(
+        (item) => !item.category?.blacklistedUserIds.includes(viewerUserId),
+      ),
+    };
   }
 
   async getDetail(

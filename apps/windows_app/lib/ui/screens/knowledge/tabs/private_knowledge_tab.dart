@@ -18,6 +18,27 @@ class _PrivateKnowledgeTabState extends ConsumerState<PrivateKnowledgeTab> {
   String? _categoryId;
   String _search = '';
   bool _showSettings = false;
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels < _scrollController.position.maxScrollExtent - 200) return;
+    ref.read(knowledgeItemsProvider(_query).notifier).loadMore();
+  }
+
+  KnowledgeItemsQuery get _query => (categoryId: _categoryId, search: _search.isEmpty ? null : _search);
 
   @override
   Widget build(BuildContext context) {
@@ -26,9 +47,7 @@ class _PrivateKnowledgeTabState extends ConsumerState<PrivateKnowledgeTab> {
     }
 
     final categoriesAsync = ref.watch(knowledgeCategoriesProvider);
-    final itemsAsync = ref.watch(
-      knowledgeItemsProvider((categoryId: _categoryId, search: _search.isEmpty ? null : _search)),
-    );
+    final itemsAsync = ref.watch(knowledgeItemsProvider(_query));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -71,15 +90,24 @@ class _PrivateKnowledgeTabState extends ConsumerState<PrivateKnowledgeTab> {
         ),
         Expanded(
           child: itemsAsync.when(
-            data: (items) {
-              if (items.isEmpty) {
+            data: (page) {
+              if (page.items.isEmpty) {
                 return const Center(child: Text('目前沒有資料，傳連結給 LINE 開始收集吧'));
               }
               return ListView.separated(
+                controller: _scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: items.length,
+                itemCount: page.items.length + (page.hasMore ? 1 : 0),
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) => KnowledgeItemCard(item: items[index], isOwn: true),
+                itemBuilder: (context, index) {
+                  if (index >= page.items.length) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return KnowledgeItemCard(item: page.items[index], isOwn: true);
+                },
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),

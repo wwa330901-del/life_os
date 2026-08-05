@@ -587,20 +587,26 @@ class ApiClient {
     await _delete('/knowledge/categories/$categoryId/blacklist/$blockedUserId');
   }
 
-  Future<List<KnowledgeItem>> listKnowledgeItems({String? categoryId, String? search}) async {
-    final query = _queryString({'categoryId': categoryId, 'search': search});
-    final body = await _getList('/knowledge/items$query');
-    return body.map((e) => KnowledgeItem.fromJson(e as Map<String, dynamic>)).toList();
+  Future<KnowledgeItemsPage> listKnowledgeItems({String? categoryId, String? search, String? cursor}) async {
+    final query = _queryString({'categoryId': categoryId, 'search': search, 'cursor': cursor});
+    final body = await _get('/knowledge/items$query');
+    return KnowledgeItemsPage.fromJson(body);
   }
 
-  Future<List<KnowledgeItem>> listPublicKnowledgeItems({
+  Future<KnowledgeItemsPage> listPublicKnowledgeItems({
     String? categoryId,
     String? ownerUserId,
     String? search,
+    String? cursor,
   }) async {
-    final query = _queryString({'categoryId': categoryId, 'ownerUserId': ownerUserId, 'search': search});
-    final body = await _getList('/knowledge/items/public$query');
-    return body.map((e) => KnowledgeItem.fromJson(e as Map<String, dynamic>)).toList();
+    final query = _queryString({
+      'categoryId': categoryId,
+      'ownerUserId': ownerUserId,
+      'search': search,
+      'cursor': cursor,
+    });
+    final body = await _get('/knowledge/items/public$query');
+    return KnowledgeItemsPage.fromJson(body);
   }
 
   Future<KnowledgeItem> getKnowledgeItem(String itemId) async {

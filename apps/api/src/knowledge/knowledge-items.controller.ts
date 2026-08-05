@@ -29,8 +29,9 @@ export class KnowledgeItemsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('categoryId') categoryId?: string,
     @Query('search') search?: string,
+    @Query('cursor') cursor?: string,
   ) {
-    return this.itemsService.listOwn(user.id, { categoryId, search });
+    return this.itemsService.listOwn(user.id, { categoryId, search, cursor });
   }
 
   @Get('public')
@@ -39,11 +40,13 @@ export class KnowledgeItemsController {
     @Query('categoryId') categoryId?: string,
     @Query('ownerUserId') ownerUserId?: string,
     @Query('search') search?: string,
+    @Query('cursor') cursor?: string,
   ) {
     return this.itemsService.listPublicFromOthers(user.id, {
       categoryId,
       ownerUserId,
       search,
+      cursor,
     });
   }
 

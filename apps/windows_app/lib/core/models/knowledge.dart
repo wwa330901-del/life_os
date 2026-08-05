@@ -214,4 +214,20 @@ class KnowledgeItem {
   }
 }
 
+/// One page of a cursor-paginated `/knowledge/items` (or `/public`) fetch —
+/// `nextCursor` is null once there's nothing more to load.
+class KnowledgeItemsPage {
+  const KnowledgeItemsPage({required this.items, required this.nextCursor});
+
+  final List<KnowledgeItem> items;
+  final String? nextCursor;
+
+  factory KnowledgeItemsPage.fromJson(Map<String, dynamic> json) => KnowledgeItemsPage(
+    items: (json['items'] as List<dynamic>? ?? [])
+        .map((e) => KnowledgeItem.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    nextCursor: json['nextCursor'] as String?,
+  );
+}
+
 String _formatDate(DateTime date) => '${date.year}/${date.month}/${date.day}';
