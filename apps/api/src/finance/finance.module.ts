@@ -48,6 +48,7 @@ import { FinanceAdvancesService } from './finance-advances.service';
   // sync with it.
   exports: [
     FinanceAccountsService,
+    FinanceCategoriesService,
     FinanceTransactionsService,
     FinanceBudgetsService,
     FinanceLoansService,

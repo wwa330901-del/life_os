@@ -3,7 +3,12 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
-import { FinanceTransactionType, StockTransactionType } from '../../generated/prisma/client.js';
+import {
+  FinanceCategoriesService,
+  STOCK_BUY_CATEGORY_NAME,
+  STOCK_SELL_CATEGORY_NAME,
+} from '../finance/finance-categories.service';
+import { FinanceCategoryKind, FinanceTransactionType, StockTransactionType } from '../../generated/prisma/client.js';
 
 @Injectable()
 export class StocksSettlementService {
@@ -13,13 +18,18 @@ export class StocksSettlementService {
     private readonly prisma: PrismaService,
     private readonly lineNotifier: LineNotifierService,
     private readonly financeAccounts: FinanceAccountsService,
+    private readonly financeCategories: FinanceCategoriesService,
   ) {}
 
   /** Once a day: any unsettled StockTransaction whose T+2 settlementDate is
    * today or earlier (catch-up for a missed run) gets its real
    * FinanceTransaction created now — BUY debits the account, SELL credits
    * it — matching the day the money actually moves in a real brokerage
-   * account, not the day the trade was registered. */
+   * account, not the day the trade was registered. Every settlement gets
+   * auto-filed into the space's 股票買/股票賣 category (2026-08-05 — these
+   * used to have no category at all, invisible to 財務總覽/預算) —
+   * `findOrCreateSystemCategory` self-heals a pre-existing space that
+   * predates this feature, no backfill migration needed. */
   @Cron(CronExpression.EVERY_DAY_AT_9AM, { timeZone: 'Asia/Taipei' })
   async settleDueTransactions() {
     const today = utcDateOnly(new Date());
@@ -30,6 +40,18 @@ export class StocksSettlementService {
     for (const t of due) {
       try {
         const label = t.type === StockTransactionType.BUY ? '買入' : '賣出';
+        const category =
+          t.type === StockTransactionType.BUY
+            ? await this.financeCategories.findOrCreateSystemCategory(
+                t.spaceId,
+                STOCK_BUY_CATEGORY_NAME,
+                FinanceCategoryKind.EXPENSE,
+              )
+            : await this.financeCategories.findOrCreateSystemCategory(
+                t.spaceId,
+                STOCK_SELL_CATEGORY_NAME,
+                FinanceCategoryKind.INCOME,
+              );
         await this.prisma.$transaction([
           this.prisma.financeTransaction.create({
             data: {
@@ -37,6 +59,7 @@ export class StocksSettlementService {
               type: t.type === StockTransactionType.BUY ? FinanceTransactionType.EXPENSE : FinanceTransactionType.INCOME,
               amount: t.totalCost,
               accountId: t.accountId,
+              categoryId: category.id,
               date: today,
               note: `股票${label} ${t.stockCode}（交割入帳）`,
             },

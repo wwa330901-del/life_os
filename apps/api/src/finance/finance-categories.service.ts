@@ -13,9 +13,17 @@ const DEFAULT_CATEGORIES: { name: string; kind: FinanceCategoryKind }[] = [
   { name: '居住', kind: FinanceCategoryKind.EXPENSE },
   { name: '醫療', kind: FinanceCategoryKind.EXPENSE },
   { name: '其他支出', kind: FinanceCategoryKind.EXPENSE },
+  { name: '股票買', kind: FinanceCategoryKind.EXPENSE },
   { name: '薪資', kind: FinanceCategoryKind.INCOME },
   { name: '其他收入', kind: FinanceCategoryKind.INCOME },
+  { name: '股票賣', kind: FinanceCategoryKind.INCOME },
 ];
+
+/** 股票交割入帳自動套用的兩個分類名稱 — `StocksSettlementService` 用
+ * `findOrCreateSystemCategory` 查這兩個名字（見該方法註解）。集中定義在
+ * 這裡，不要在別的地方另外寫死字串。 */
+export const STOCK_BUY_CATEGORY_NAME = '股票買';
+export const STOCK_SELL_CATEGORY_NAME = '股票賣';
 
 /** 母分類/子分類 — exactly two levels, enforced here (not in the DB):
  * a category may only be set as someone's parent if it has no parent of
@@ -111,6 +119,27 @@ export class FinanceCategoriesService {
     await this.access.assertPersonalSpace(userId, spaceId);
     await this.getOrThrow(spaceId, id);
     await this.prisma.financeCategory.delete({ where: { id } });
+  }
+
+  /** Used by `StocksSettlementService` so every 股票買/股票賣 交割入帳 always
+   * lands in the right category, regardless of whether this space is
+   * brand new (already seeded via `DEFAULT_CATEGORIES`) or predates this
+   * feature (missing it — self-heals here instead of needing a one-off
+   * backfill migration). Top-level only (no parent) — matches how the
+   * rest of `DEFAULT_CATEGORIES` is seeded. Internal — not exposed over
+   * HTTP, callers never pick a name/kind combination the user didn't ask
+   * for. */
+  async findOrCreateSystemCategory(spaceId: string, name: string, kind: FinanceCategoryKind) {
+    const existing = await this.prisma.financeCategory.findFirst({ where: { spaceId, name, kind } });
+    if (existing) return existing;
+
+    const maxSortOrder = await this.prisma.financeCategory.aggregate({
+      where: { spaceId },
+      _max: { sortOrder: true },
+    });
+    return this.prisma.financeCategory.create({
+      data: { spaceId, name, kind, sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1 },
+    });
   }
 
   private async assertUsableAsParent(spaceId: string, parentId: string, kind: FinanceCategoryKind) {
