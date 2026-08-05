@@ -447,6 +447,7 @@ export class LineService {
 
     const replyOnce: Responder = (msg) => this.reply(replyToken, msg);
     if (await this.tryFinanceCommand(userId, text, replyOnce)) return;
+    if (await this.tryTransferCommand(userId, text, replyOnce)) return;
     if (await this.tryLoanCommand(userId, text, replyOnce)) return;
     if (await this.tryAdvanceCommand(userId, text, replyOnce)) return;
     if (await this.tryStockCommand(userId, text, replyOnce)) return;
@@ -457,6 +458,7 @@ export class LineService {
       [
         '看不懂這個指令，可以試試：',
         '・記帳：例如「支出 300 午餐 現金」（傳「記帳」看完整格式跟你的分類/帳戶）',
+        '・轉帳：例如「轉帳 現金 1000 玉山銀行」（轉出帳戶 金額 轉入帳戶 備註）',
         '・財務總覽',
         '・借出 3000 給小明 / 借入 5000 跟小華',
         '・借貸列表、還款 2 1000（對第2筆登記還款）',
@@ -551,10 +553,13 @@ export class LineService {
       [
         '💰 記帳',
         '例如「支出300午餐現金」',
+        '帳戶名稱要打對，不然會回報帳戶錯誤',
         '',
         `支出分類：${expenseCats}`,
         `收入分類：${incomeCats}`,
         `帳戶：${accounts.length ? accounts.map((a) => a.name).join('、') : '（還沒有，請到 App 新增）'}`,
+        '',
+        '轉帳（帳戶間）：例如「轉帳 現金 1000 玉山銀行」',
       ].join('\n'),
     );
   }
@@ -631,11 +636,17 @@ export class LineService {
       return true;
     }
 
-    const accountId = parsed.accountId ?? accounts[0]?.id;
-    if (!accountId) {
+    if (accounts.length === 0) {
       await respond('你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
       return true;
     }
+    if (!parsed.accountId) {
+      await respond(
+        `帳戶錯誤，請在指令裡包含正確的帳戶名稱：${accounts.map((a) => a.name).join('、')}`,
+      );
+      return true;
+    }
+    const accountId = parsed.accountId;
 
     const transactionDate = new Date();
     await this.prisma.financeTransaction.create({
@@ -677,7 +688,13 @@ export class LineService {
    * unrelated "餐" if both existed) rather than by position — this is what
    * makes zero-separator input parseable at all, and incidentally is also
    * what fixes the older one-line command's "分類會變成備註" complaint
-   * without needing a multi-step flow. Whatever's left becomes the note. */
+   * without needing a multi-step flow. Whatever's left becomes the note.
+   * 帳戶 is required (2026-08-06) — `accountId` staying null here (no
+   * substring in the message matched any of the caller's real accounts)
+   * makes `tryFinanceCommand` reply with an error instead of silently
+   * filing the transaction under the first account; there's no way to
+   * tell "帳戶沒打" apart from "帳戶打錯字" with substring matching, so
+   * both are now treated the same — say the right name. */
   private parseFinanceCommand(
     text: string,
     categories: { id: string; name: string; kind: FinanceCategoryKind }[],
@@ -740,11 +757,124 @@ export class LineService {
     return { type, amount, categoryId, accountId, note };
   }
 
+  // --- 轉帳（自己帳戶間）---
+
+  /** "轉帳 轉出帳戶 金額 轉入帳戶 備註" (2026-08-06) — unlike 記帳's single
+   * account, this needs to identify TWO, so it can't just scan the whole
+   * remaining text for any account-name substring the way 記帳/股票買賣 do
+   * (no way to tell which occurrence is which). Splits on the amount
+   * instead — text before it is the 轉出帳戶 zone, text after is
+   * 轉入帳戶+備註 — and matches each zone independently. Both accounts are
+   * required (same "帳戶必填" reasoning as 記帳/股票買賣); actual business
+   * rules (can't transfer to the same account, etc.) are `
+   * FinanceTransactionsService.validate`'s job, not re-implemented here. */
+  private async tryTransferCommand(
+    userId: string,
+    text: string,
+    respond: Responder,
+  ): Promise<boolean> {
+    if (!text.startsWith('轉帳')) return false;
+
+    const space = await this.prisma.space.findUnique({
+      where: { ownerUserId: userId },
+    });
+    if (!space) {
+      await respond('找不到你的個人空間，請先到元序 App 登入一次。');
+      return true;
+    }
+    const accounts = await this.prisma.financeAccount.findMany({
+      where: { spaceId: space.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    if (accounts.length < 2) {
+      await respond('轉帳需要至少兩個記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增。');
+      return true;
+    }
+
+    const parsed = this.parseTransferCommand(text, accounts);
+    if (!parsed) {
+      await respond(
+        `看不懂轉帳格式，請用「轉帳 轉出帳戶 金額 轉入帳戶 備註」這種格式，例如「轉帳 現金 1000 玉山銀行」。目前帳戶：${accounts.map((a) => a.name).join('、')}`,
+      );
+      return true;
+    }
+
+    try {
+      await this.financeTransactionsService.create(userId, space.id, {
+        type: FinanceTransactionType.TRANSFER,
+        amount: parsed.amount,
+        accountId: parsed.fromAccountId,
+        toAccountId: parsed.toAccountId,
+        date: new Date().toISOString(),
+        note: parsed.note ?? undefined,
+      });
+      const from = accounts.find((a) => a.id === parsed.fromAccountId);
+      const to = accounts.find((a) => a.id === parsed.toAccountId);
+      await respond(
+        `已記錄轉帳 ${parsed.amount.toLocaleString('en-US')}（${from?.name ?? ''} → ${to?.name ?? ''}）${parsed.note ? ' · ' + parsed.note : ''}`,
+      );
+    } catch (error) {
+      await respond(error instanceof Error ? error.message : '轉帳記錄失敗了，稍後再試一次。');
+    }
+    return true;
+  }
+
+  private parseTransferCommand(
+    text: string,
+    accounts: { id: string; name: string }[],
+  ): { fromAccountId: string; amount: number; toAccountId: string; note: string | null } | null {
+    const rest = text.slice(2).replace(LEADING_SEPARATORS, '');
+
+    const amountMatch = rest.match(/\d+(\.\d+)?/);
+    if (!amountMatch || amountMatch.index === undefined) return null;
+    const before = rest.slice(0, amountMatch.index);
+    const amount = Number(amountMatch[0]);
+    if (!(amount > 0)) return null;
+    const after = rest
+      .slice(amountMatch.index + amountMatch[0].length)
+      .replace(LEADING_SEPARATORS, '');
+
+    const fromAccountId = this.matchAccountName(before, accounts);
+    if (!fromAccountId) return null;
+
+    const sortedByLength = [...accounts].sort((x, y) => y.name.length - x.name.length);
+    let toAccountId: string | null = null;
+    let toName = '';
+    for (const a of sortedByLength) {
+      const idx = after.indexOf(a.name);
+      if (idx !== -1) {
+        toAccountId = a.id;
+        toName = a.name;
+        break;
+      }
+    }
+    if (!toAccountId) return null;
+
+    const toIdx = after.indexOf(toName);
+    const note =
+      (after.slice(0, toIdx) + after.slice(toIdx + toName.length))
+        .replace(EDGE_SEPARATORS, '')
+        .trim() || null;
+
+    return { fromAccountId, amount, toAccountId, note };
+  }
+
+  /** Longest-name-first substring match, same technique 記帳/股票買賣 use
+   * for a single account — factored out here since 轉帳 needs it twice
+   * (once per zone) rather than duplicating the loop a third time. */
+  private matchAccountName(text: string, accounts: { id: string; name: string }[]): string | null {
+    for (const a of [...accounts].sort((x, y) => y.name.length - x.name.length)) {
+      if (text.indexOf(a.name) !== -1) return a.id;
+    }
+    return null;
+  }
+
   // --- 借貸（跟人借錢/借錢給人）---
 
   /** "借出/借入 金額 給/跟對象 [備註]" — always uses the caller's first
-   * finance account (same fallback `tryFinanceCommand` uses), since there's
-   * no room in this compact command to also name an account. */
+   * finance account, since there's no room in this compact command to also
+   * name an account (deliberate — unlike 記帳/股票買賣/轉帳, this format
+   * never asks for one, so there's nothing to fail to recognize). */
   private async tryLoanCommand(
     userId: string,
     text: string,
@@ -1293,11 +1423,17 @@ export class LineService {
       return true;
     }
 
-    const accountId = parsed.accountId ?? accounts[0]?.id;
-    if (!accountId) {
+    if (accounts.length === 0) {
       await respond('你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
       return true;
     }
+    if (!parsed.accountId) {
+      await respond(
+        `帳戶錯誤，請在指令裡包含正確的帳戶名稱：${accounts.map((a) => a.name).join('、')}`,
+      );
+      return true;
+    }
+    const accountId = parsed.accountId;
 
     const tradeDate = new Date();
     const shares = parsed.totalCost / parsed.pricePerShare;
@@ -1329,7 +1465,8 @@ export class LineService {
    * (totalCost / pricePerShare). Stock code is taken as a leading 4-6 digit
    * run (covers ordinary 4-digit tickers and 5-6 digit ETF codes like
    * 00929); 帳戶 is found the same substring-scan way accounts are in
-   * 記帳, defaulting to the first account if none matched. */
+   * 記帳, and is required the same way too (2026-08-06) — `tryStockCommand`
+   * errors instead of defaulting when nothing matched. */
   private parseStockCommand(
     text: string,
     accounts: { id: string; name: string }[],
