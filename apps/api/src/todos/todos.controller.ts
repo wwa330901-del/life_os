@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { TodosService } from './todos.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -14,6 +14,15 @@ export class TodosController {
   @Get()
   listAll(@CurrentUser() user: AuthenticatedUser) {
     return this.service.listAll(user.id);
+  }
+
+  @Get('completed')
+  listCompleted(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('search') search?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.service.listCompleted(user.id, { search, cursor });
   }
 
   @Post()

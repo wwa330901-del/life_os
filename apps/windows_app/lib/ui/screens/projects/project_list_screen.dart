@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/api_client.dart';
+import '../../../state/auth_provider.dart';
 import '../../../state/projects_provider.dart';
 import '../../shell/breadcrumb_bar.dart';
 import '../../widgets/projects/create_project_dialog.dart';
@@ -66,7 +68,24 @@ class ProjectListScreen extends ConsumerWidget {
                                 children: [
                                   Icon(Icons.folder_outlined, size: 18, color: scheme.primary),
                                   const Spacer(),
-                                  Icon(Icons.chevron_right, size: 18, color: scheme.onSurface.withValues(alpha: 0.4)),
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(999),
+                                    onTap: () => _confirmDelete(context, ref, spaceId, project.id, project.name),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(2),
+                                      child: Icon(
+                                        Icons.delete_outline,
+                                        size: 16,
+                                        color: scheme.onSurface.withValues(alpha: 0.4),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.chevron_right,
+                                    size: 18,
+                                    color: scheme.onSurface.withValues(alpha: 0.4),
+                                  ),
                                 ],
                               ),
                               const Spacer(),
@@ -109,6 +128,35 @@ class ProjectListScreen extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+Future<void> _confirmDelete(
+  BuildContext context,
+  WidgetRef ref,
+  String spaceId,
+  String projectId,
+  String projectName,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('刪除專案？'),
+      content: Text('刪除「$projectName」後，這個專案底下的工項、工期表、代辦事項、文件等所有資料也會一併刪除，無法復原。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('刪除')),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  try {
+    await ref.read(apiClientProvider).deleteProject(projectId);
+    ref.invalidate(spaceProjectsProvider(spaceId));
+  } on ApiException catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 }
 

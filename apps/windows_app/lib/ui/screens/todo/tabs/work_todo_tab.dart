@@ -189,6 +189,7 @@ class _ProjectSection extends ConsumerWidget {
     try {
       await ref.read(apiClientProvider).updateTodo(todoId: todo.id, done: done);
       ref.invalidate(todoOverviewProvider);
+      ref.invalidate(completedTodosProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));

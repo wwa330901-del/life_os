@@ -1,8 +1,19 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
+import { taipeiTodayRange } from '../common/taipei-date';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
+
+/** 代辦事項 has no upper bound otherwise — completed items just kept
+ * accumulating forever (same class of problem as the 知識庫 pagination fix,
+ * see 大系統V1.43.0), except here the fix is UX-driven rather than purely
+ * performance-driven: a completed item is only useful to see through the
+ * day it was completed, after that it's clutter, not history. `listAll`
+ * (the 個人/工作 live view) hides it starting the next Taipei calendar day;
+ * `listCompleted` (the 已完成 tab) is the paginated, searchable place it
+ * goes to remain findable. */
+const COMPLETED_TODOS_PAGE_SIZE = 10;
 
 /** 代辦事項 — split into 個人 (owned directly by a user, no project at all)
  * and 工作 (owned by a company-space project, same as the old project-scoped
@@ -19,9 +30,15 @@ export class TodosService {
   /** Grouped view for the top-level 代辦事項 screen: 個人 as one flat list,
    * 工作 as one list per project the user belongs to. */
   async listAll(userId: string) {
+    // A completed item stays visible through the day it was completed
+    // (Taipei calendar day), then drops out of this live view starting the
+    // next day — see `listCompleted` for where it goes after that.
+    const { start } = taipeiTodayRange();
+    const visibleDone = { OR: [{ done: false }, { done: true, completedAt: { gte: start } }] };
+
     const [personal, memberships] = await Promise.all([
       this.prisma.projectTodo.findMany({
-        where: { personalOwnerUserId: userId },
+        where: { personalOwnerUserId: userId, ...visibleDone },
         orderBy: [{ done: 'asc' }, { sortOrder: 'asc' }],
       }),
       this.prisma.projectMember.findMany({
@@ -34,7 +51,7 @@ export class TodosService {
     const projectIds = memberships.map((m) => m.projectId);
     const workTodos = projectIds.length
       ? await this.prisma.projectTodo.findMany({
-          where: { projectId: { in: projectIds } },
+          where: { projectId: { in: projectIds }, ...visibleDone },
           orderBy: [{ done: 'asc' }, { sortOrder: 'asc' }],
         })
       : [];
@@ -53,6 +70,44 @@ export class TodosService {
     }));
 
     return { personal, work };
+  }
+
+  /** 已完成代辦事項 — full history (個人 + 工作 combined, no date limit),
+   * cursor-paginated 10/page with an optional title search, replacing what
+   * used to just be the tail end of `listAll`'s ever-growing list. */
+  async listCompleted(
+    userId: string,
+    filter: { search?: string; cursor?: string } = {},
+  ) {
+    const take = COMPLETED_TODOS_PAGE_SIZE;
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId },
+      select: { projectId: true },
+    });
+    const projectIds = memberships.map((m) => m.projectId);
+
+    const rows = await this.prisma.projectTodo.findMany({
+      where: {
+        done: true,
+        OR: [{ personalOwnerUserId: userId }, { projectId: { in: projectIds } }],
+        ...(filter.search ? { title: { contains: filter.search, mode: 'insensitive' } } : {}),
+      },
+      include: { project: { include: { space: true } } },
+      orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
+    });
+
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    return {
+      items: page.map(({ project, ...todo }) => ({
+        ...todo,
+        projectName: project?.name ?? null,
+        spaceName: project?.space.name ?? null,
+      })),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+    };
   }
 
   async create(userId: string, dto: CreateTodoDto) {

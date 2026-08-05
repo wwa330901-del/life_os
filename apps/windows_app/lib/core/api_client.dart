@@ -1289,6 +1289,13 @@ class ApiClient {
     return TodoOverview.fromJson(body);
   }
 
+  /// 已完成代辦事項歷史——個人+工作合併、依完成時間新到舊分頁（10 筆一頁）。
+  Future<CompletedTodosPage> listCompletedTodos({String? search, String? cursor}) async {
+    final query = _queryString({'search': search, 'cursor': cursor});
+    final body = await _get('/todos/completed$query');
+    return CompletedTodosPage.fromJson(body);
+  }
+
   /// projectId 留空 = 個人事項（歸屬呼叫者本人）；有填 = 工作事項（歸屬該專
   /// 案，呼叫者需有該專案的存取權）。dueDate/isOngoing 必須恰好擇一（後端
   /// 會驗證）——傳 isOngoing: true 時就不用帶 dueDate。

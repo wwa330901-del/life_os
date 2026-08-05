@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'tabs/completed_todo_tab.dart';
 import 'tabs/personal_todo_tab.dart';
 import 'tabs/work_todo_tab.dart';
 
@@ -14,7 +15,7 @@ class TodoHomeScreen extends StatefulWidget {
 }
 
 class _TodoHomeScreenState extends State<TodoHomeScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 2, vsync: this);
+  late final TabController _tabController = TabController(length: 3, vsync: this);
 
   @override
   void dispose() {
@@ -32,6 +33,7 @@ class _TodoHomeScreenState extends State<TodoHomeScreen> with SingleTickerProvid
           tabs: const [
             Tab(text: '個人'),
             Tab(text: '工作'),
+            Tab(text: '已完成'),
           ],
         ),
         Expanded(
@@ -40,6 +42,7 @@ class _TodoHomeScreenState extends State<TodoHomeScreen> with SingleTickerProvid
             children: const [
               PersonalTodoTab(),
               WorkTodoTab(),
+              CompletedTodoTab(),
             ],
           ),
         ),

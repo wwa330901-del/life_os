@@ -13,12 +13,22 @@ class TodoTile extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     this.assigneeName,
+    this.contextLabel,
   });
 
   final ProjectTodo todo;
   final String? assigneeName;
+
+  /// 個人/工作 context this row belongs to — only set on the 已完成 history
+  /// tab, where 個人 and 工作 items are flattened into one combined list and
+  /// so need this to stay identifiable (personal/work's own tabs don't need
+  /// it, they're already scoped to one context).
+  final String? contextLabel;
   final ValueChanged<bool> onToggleDone;
-  final VoidCallback onEdit;
+
+  /// Null hides the edit button — the 已完成 history tab doesn't offer
+  /// editing, only un-completing (via the checkbox) or deleting.
+  final VoidCallback? onEdit;
   final VoidCallback onDelete;
 
   Color _priorityColor(BuildContext context) {
@@ -37,6 +47,7 @@ class TodoTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final subtitleParts = <String>[];
+    if (contextLabel != null) subtitleParts.add(contextLabel!);
     if (todo.isOngoing) {
       subtitleParts.add('持續性任務');
     } else if (todo.dueDate != null) {

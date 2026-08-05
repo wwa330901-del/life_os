@@ -107,3 +107,37 @@ class TodoOverview {
         .toList(),
   );
 }
+
+/// One row of the 已完成代辦事項 history tab — `GET /todos/completed` returns
+/// 個人 and 工作 items flattened into one list (unlike `TodoOverview`, which
+/// groups 工作 by project), so each row carries its own project/space name
+/// (both null for a 個人 item) instead of relying on which bucket it's in.
+class CompletedTodoEntry {
+  const CompletedTodoEntry({required this.todo, this.projectName, this.spaceName});
+
+  final ProjectTodo todo;
+  final String? projectName;
+  final String? spaceName;
+
+  factory CompletedTodoEntry.fromJson(Map<String, dynamic> json) => CompletedTodoEntry(
+    todo: ProjectTodo.fromJson(json),
+    projectName: json['projectName'] as String?,
+    spaceName: json['spaceName'] as String?,
+  );
+}
+
+/// One page of a cursor-paginated `/todos/completed` fetch — `nextCursor`
+/// is null once there's nothing more to load.
+class CompletedTodosPage {
+  const CompletedTodosPage({required this.items, required this.nextCursor});
+
+  final List<CompletedTodoEntry> items;
+  final String? nextCursor;
+
+  factory CompletedTodosPage.fromJson(Map<String, dynamic> json) => CompletedTodosPage(
+    items: (json['items'] as List<dynamic>? ?? [])
+        .map((e) => CompletedTodoEntry.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    nextCursor: json['nextCursor'] as String?,
+  );
+}

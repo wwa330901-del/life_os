@@ -310,6 +310,20 @@ export class LineService {
       await this.sendUpcomingExhibitions(userId, replyToken);
       return;
     }
+    if (text === '知識庫') {
+      await this.reply(
+        replyToken,
+        [
+          '📚 知識庫',
+          '',
+          '直接傳連結、圖片或影片給我，我會自動分析並幫你分類存起來，好了會再傳訊息通知你。',
+          '',
+          '・美食 / 景點：查詢附近記錄過的地點',
+          '・展覽：查看記錄中的展覽',
+        ].join('\n'),
+      );
+      return;
+    }
 
     const url = this.extractUrl(text);
     if (url) {
@@ -435,6 +449,7 @@ export class LineService {
         '・代辦事項 / 代辦事項總覽',
         '・新增行事曆 7/31 14:00 開會 @地點',
         '・今日行事曆',
+        '・知識庫：傳連結/圖片/影片給我就會自動收藏（傳「知識庫」看完整說明）',
         '・查詢 <問題>：例如「查詢 這個月餐飲花多少」（AI 問答，不含投資/股票）',
         '',
         '想一次記多筆，貼多行文字（一行一筆）就會逐行處理，例如：',
@@ -1905,12 +1920,20 @@ export class LineService {
       memberships.map((m) => [m.projectId, m.project.name]),
     );
 
+    // Bounded to what the four buckets below can actually use (still-open,
+    // or completed today) — this used to fetch the caller's entire todo
+    // history unconditionally and filter in memory, the same unbounded-list
+    // problem as TodosService.listAll (see 大系統V1.44.0).
+    const { start: todayStart, end: todayEnd } = taipeiTodayRange();
     const todos = await this.prisma.projectTodo.findMany({
-      where: { OR: [{ projectId: { in: projectIds } }, { personalOwnerUserId: userId }] },
+      where: {
+        AND: [
+          { OR: [{ projectId: { in: projectIds } }, { personalOwnerUserId: userId }] },
+          { OR: [{ done: false }, { done: true, completedAt: { gte: todayStart } }] },
+        ],
+      },
       orderBy: [{ dueDate: 'asc' }, { sortOrder: 'asc' }],
     });
-
-    const { start: todayStart, end: todayEnd } = taipeiTodayRange();
     const weekEnd = new Date(todayStart.getTime() + 7 * 86400000);
     const isSameDay = (d: Date) => d >= todayStart && d < todayEnd;
 
