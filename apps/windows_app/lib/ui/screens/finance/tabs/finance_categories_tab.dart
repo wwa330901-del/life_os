@@ -165,7 +165,10 @@ class FinanceCategoriesTab extends ConsumerWidget {
   }
 }
 
-class _CategoryGroup extends StatelessWidget {
+/// 子分類預設收起——分類一多畫面會拉得很長，展開只在使用者想看細節時才
+/// 需要（2026-08-05 使用者回報）。展開狀態只存在這個 widget 自己的 State
+/// 裡，不記憶跨畫面/跨重啟，每次進來都是全部收起的乾淨畫面。
+class _CategoryGroup extends StatefulWidget {
   const _CategoryGroup({
     required this.parent,
     required this.categories,
@@ -179,39 +182,62 @@ class _CategoryGroup extends StatelessWidget {
   final String spaceId;
 
   @override
+  State<_CategoryGroup> createState() => _CategoryGroupState();
+}
+
+class _CategoryGroupState extends State<_CategoryGroup> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final parent = widget.parent;
+    final categories = widget.categories;
+    final ref = widget.ref;
+    final spaceId = widget.spaceId;
     final children = categories.childrenOf(parent.id);
+
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _CategoryTile(category: parent, ref: ref, spaceId: spaceId, categories: categories, isParent: true),
-          for (final child in children)
+          _CategoryTile(
+            category: parent,
+            ref: ref,
+            spaceId: spaceId,
+            categories: categories,
+            isParent: true,
+            childCount: children.length,
+            expanded: children.isEmpty ? null : _expanded,
+            onToggleExpanded: children.isEmpty ? null : () => setState(() => _expanded = !_expanded),
+          ),
+          if (children.isEmpty || _expanded) ...[
+            for (final child in children)
+              Padding(
+                padding: const EdgeInsets.only(left: 24),
+                child: _CategoryTile(category: child, ref: ref, spaceId: spaceId, categories: categories),
+              ),
             Padding(
-              padding: const EdgeInsets.only(left: 24),
-              child: _CategoryTile(category: child, ref: ref, spaceId: spaceId, categories: categories),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(left: 24, bottom: 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => FinanceCategoriesTab._openEditor(
-                  context,
-                  ref,
-                  spaceId,
-                  existing: null,
-                  kind: parent.kind,
-                  categories: categories,
-                  parentId: parent.id,
+              padding: const EdgeInsets.only(left: 24, bottom: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => FinanceCategoriesTab._openEditor(
+                    context,
+                    ref,
+                    spaceId,
+                    existing: null,
+                    kind: parent.kind,
+                    categories: categories,
+                    parentId: parent.id,
+                  ),
+                  icon: const Icon(Icons.add, size: 14),
+                  label: const Text('新增子分類', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                 ),
-                icon: const Icon(Icons.add, size: 14),
-                label: const Text('新增子分類', style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -225,6 +251,9 @@ class _CategoryTile extends StatelessWidget {
     required this.spaceId,
     required this.categories,
     this.isParent = false,
+    this.childCount = 0,
+    this.expanded,
+    this.onToggleExpanded,
   });
 
   final FinanceCategory category;
@@ -232,6 +261,13 @@ class _CategoryTile extends StatelessWidget {
   final String spaceId;
   final List<FinanceCategory> categories;
   final bool isParent;
+
+  /// The three below are parent-only, and only meaningful when the parent
+  /// actually has children to hide/show (`onToggleExpanded` is null
+  /// otherwise, and no chevron is rendered).
+  final int childCount;
+  final bool? expanded;
+  final VoidCallback? onToggleExpanded;
 
   Future<void> _delete(BuildContext context) async {
     final hasChildren = categories.hasChildren(category.id);
@@ -272,13 +308,17 @@ class _CategoryTile extends StatelessWidget {
       color: isParent ? scheme.surfaceContainerHighest.withValues(alpha: 0.4) : null,
       child: ListTile(
         dense: !isParent,
+        onTap: onToggleExpanded,
         title: Text(
           category.name,
           style: TextStyle(fontWeight: isParent ? FontWeight.w700 : FontWeight.normal),
         ),
+        subtitle: expanded == null ? null : Text('$childCount 個子分類', style: const TextStyle(fontSize: 12)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (expanded != null)
+              Icon(expanded! ? Icons.expand_less : Icons.expand_more, color: scheme.onSurface.withValues(alpha: 0.6)),
             IconButton(
               icon: const Icon(Icons.edit_outlined, size: 18),
               onPressed: () => FinanceCategoriesTab._openEditor(
