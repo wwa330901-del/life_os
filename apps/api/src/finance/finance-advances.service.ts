@@ -5,6 +5,8 @@ import { ProjectsService } from '../projects/projects.service';
 import { FinanceTransactionType } from '../../generated/prisma/client.js';
 import { CreateFinanceAdvanceDto } from './dto/create-finance-advance.dto';
 import { CreateFinanceAdvanceRepaymentDto } from './dto/create-finance-advance-repayment.dto';
+import { UpdateFinanceAdvanceDto } from './dto/update-finance-advance.dto';
+import { UpdateFinanceAdvanceRepaymentDto } from './dto/update-finance-advance-repayment.dto';
 
 const advanceInclude = {
   initialTransaction: true,
@@ -98,6 +100,85 @@ export class FinanceAdvancesService {
 
     const updated = await this.getOrThrow(spaceId, advanceId);
     return this.withOutstanding(updated);
+  }
+
+  /** `title`/`projectId` live on `FinanceAdvance` itself; amount/account/
+   * date/note all live on the linked `initialTransaction` (same "single
+   * source of truth on the transaction row" convention as
+   * `FinanceLoansService.update`). */
+  async update(userId: string, spaceId: string, advanceId: string, dto: UpdateFinanceAdvanceDto) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    const advance = await this.getOrThrow(spaceId, advanceId);
+    if (dto.accountId) await this.assertAccount(spaceId, dto.accountId);
+    if (dto.projectId) await this.assertProjectAccess(userId, dto.projectId);
+
+    if (dto.title !== undefined || dto.projectId !== undefined || dto.clearProjectId) {
+      await this.prisma.financeAdvance.update({
+        where: { id: advanceId },
+        data: {
+          ...(dto.title !== undefined && { title: dto.title }),
+          ...(dto.clearProjectId ? { projectId: null } : dto.projectId !== undefined && { projectId: dto.projectId }),
+        },
+      });
+    }
+
+    if (dto.amount !== undefined || dto.accountId !== undefined || dto.date !== undefined || dto.note !== undefined) {
+      if (dto.amount !== undefined) {
+        const repaid = advance.repayments.reduce((sum, r) => sum + (r.transaction?.amount ?? 0), 0);
+        if (dto.amount < repaid - 0.001) {
+          throw new BadRequestException(`金額不能低於已收回的 ${repaid} 元`);
+        }
+      }
+      await this.prisma.financeTransaction.update({
+        where: { id: advance.initialTransaction!.id },
+        data: {
+          ...(dto.amount !== undefined && { amount: dto.amount }),
+          ...(dto.accountId !== undefined && { accountId: dto.accountId }),
+          ...(dto.date !== undefined && { date: new Date(dto.date) }),
+          ...(dto.note !== undefined && { note: dto.note }),
+        },
+      });
+    }
+
+    return this.withOutstanding(await this.getOrThrow(spaceId, advanceId));
+  }
+
+  async updateRepayment(
+    userId: string,
+    spaceId: string,
+    advanceId: string,
+    repaymentId: string,
+    dto: UpdateFinanceAdvanceRepaymentDto,
+  ) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    if (dto.accountId) await this.assertAccount(spaceId, dto.accountId);
+    const advance = await this.getOrThrow(spaceId, advanceId);
+    const repayment = advance.repayments.find((r) => r.id === repaymentId);
+    if (!repayment?.transaction) {
+      throw new NotFoundException('收回紀錄不存在');
+    }
+
+    if (dto.amount !== undefined) {
+      const principal = advance.initialTransaction?.amount ?? 0;
+      const otherRepaid = advance.repayments
+        .filter((r) => r.id !== repaymentId)
+        .reduce((sum, r) => sum + (r.transaction?.amount ?? 0), 0);
+      if (otherRepaid + dto.amount > principal + 0.001) {
+        throw new BadRequestException(`收回總額不能超過金額 ${principal} 元`);
+      }
+    }
+
+    await this.prisma.financeTransaction.update({
+      where: { id: repayment.transaction.id },
+      data: {
+        ...(dto.amount !== undefined && { amount: dto.amount }),
+        ...(dto.accountId !== undefined && { accountId: dto.accountId }),
+        ...(dto.date !== undefined && { date: new Date(dto.date) }),
+        ...(dto.note !== undefined && { note: dto.note }),
+      },
+    });
+
+    return this.withOutstanding(await this.getOrThrow(spaceId, advanceId));
   }
 
   async remove(userId: string, spaceId: string, advanceId: string) {

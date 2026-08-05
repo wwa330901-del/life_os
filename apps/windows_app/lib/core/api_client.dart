@@ -1151,6 +1151,41 @@ class ApiClient {
     });
   }
 
+  Future<void> updateFinanceLoan({
+    required String spaceId,
+    required String id,
+    String? counterpartyName,
+    double? amount,
+    String? accountId,
+    DateTime? date,
+    String? note,
+  }) async {
+    await _patch('/spaces/$spaceId/finance/loans/$id', {
+      if (counterpartyName != null) 'counterpartyName': counterpartyName,
+      if (amount != null) 'amount': amount,
+      if (accountId != null) 'accountId': accountId,
+      if (date != null) 'date': _dateOnly(date),
+      if (note != null) 'note': note,
+    });
+  }
+
+  Future<void> updateFinanceLoanRepayment({
+    required String spaceId,
+    required String loanId,
+    required String repaymentId,
+    double? amount,
+    String? accountId,
+    DateTime? date,
+    String? note,
+  }) async {
+    await _patch('/spaces/$spaceId/finance/loans/$loanId/repayments/$repaymentId', {
+      if (amount != null) 'amount': amount,
+      if (accountId != null) 'accountId': accountId,
+      if (date != null) 'date': _dateOnly(date),
+      if (note != null) 'note': note,
+    });
+  }
+
   Future<void> deleteFinanceLoan({required String spaceId, required String id}) async {
     await _delete('/spaces/$spaceId/finance/loans/$id');
   }
@@ -1197,6 +1232,45 @@ class ApiClient {
     });
   }
 
+  Future<void> updateFinanceAdvance({
+    required String spaceId,
+    required String id,
+    String? title,
+    double? amount,
+    String? accountId,
+    DateTime? date,
+    String? note,
+    String? projectId,
+    bool clearProjectId = false,
+  }) async {
+    await _patch('/spaces/$spaceId/finance/advances/$id', {
+      if (title != null) 'title': title,
+      if (amount != null) 'amount': amount,
+      if (accountId != null) 'accountId': accountId,
+      if (date != null) 'date': _dateOnly(date),
+      if (note != null) 'note': note,
+      if (projectId != null) 'projectId': projectId,
+      if (clearProjectId) 'clearProjectId': true,
+    });
+  }
+
+  Future<void> updateFinanceAdvanceRepayment({
+    required String spaceId,
+    required String advanceId,
+    required String repaymentId,
+    double? amount,
+    String? accountId,
+    DateTime? date,
+    String? note,
+  }) async {
+    await _patch('/spaces/$spaceId/finance/advances/$advanceId/repayments/$repaymentId', {
+      if (amount != null) 'amount': amount,
+      if (accountId != null) 'accountId': accountId,
+      if (date != null) 'date': _dateOnly(date),
+      if (note != null) 'note': note,
+    });
+  }
+
   Future<void> deleteFinanceAdvance({required String spaceId, required String id}) async {
     await _delete('/spaces/$spaceId/finance/advances/$id');
   }
@@ -1235,6 +1309,26 @@ class ApiClient {
       'tradeDate': _dateOnlyIso(tradeDate),
       'accountId': accountId,
       if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> updateStockTransaction({
+    required String spaceId,
+    required String id,
+    String? stockCode,
+    double? pricePerShare,
+    double? totalCost,
+    DateTime? tradeDate,
+    String? accountId,
+    String? note,
+  }) async {
+    await _patch('/spaces/$spaceId/stocks/transactions/$id', {
+      if (stockCode != null) 'stockCode': stockCode,
+      if (pricePerShare != null) 'pricePerShare': pricePerShare,
+      if (totalCost != null) 'totalCost': totalCost,
+      if (tradeDate != null) 'tradeDate': _dateOnlyIso(tradeDate),
+      if (accountId != null) 'accountId': accountId,
+      if (note != null) 'note': note,
     });
   }
 

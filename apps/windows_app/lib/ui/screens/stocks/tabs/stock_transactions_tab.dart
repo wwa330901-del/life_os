@@ -95,9 +95,18 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
                         isThreeLine: true,
                         trailing: t.settled
                             ? null
-                            : IconButton(
-                                icon: const Icon(Icons.delete_outline, size: 18),
-                                onPressed: () => _delete(context, ref, t),
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined, size: 18),
+                                    onPressed: () => _openEditor(context, ref, accounts, existing: t),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 18),
+                                    onPressed: () => _delete(context, ref, t),
+                                  ),
+                                ],
                               ),
                       ),
                     );
@@ -139,23 +148,41 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
     }
   }
 
-  Future<void> _openEditor(BuildContext context, WidgetRef ref, List<FinanceAccount> accounts) async {
+  Future<void> _openEditor(
+    BuildContext context,
+    WidgetRef ref,
+    List<FinanceAccount> accounts, {
+    StockTransaction? existing,
+  }) async {
     final result = await showDialog<_StockTransactionEditorResult>(
       context: context,
-      builder: (_) => _StockTransactionEditorDialog(accounts: accounts),
+      builder: (_) => _StockTransactionEditorDialog(accounts: accounts, existing: existing),
     );
     if (result == null || !context.mounted) return;
 
     try {
-      await ref.read(apiClientProvider).createStockTransaction(
-            spaceId: widget.spaceId,
-            stockCode: result.stockCode,
-            type: result.type,
-            pricePerShare: result.pricePerShare,
-            totalCost: result.totalCost,
-            tradeDate: result.tradeDate,
-            accountId: result.accountId,
-          );
+      final api = ref.read(apiClientProvider);
+      if (existing == null) {
+        await api.createStockTransaction(
+          spaceId: widget.spaceId,
+          stockCode: result.stockCode,
+          type: result.type,
+          pricePerShare: result.pricePerShare,
+          totalCost: result.totalCost,
+          tradeDate: result.tradeDate,
+          accountId: result.accountId,
+        );
+      } else {
+        await api.updateStockTransaction(
+          spaceId: widget.spaceId,
+          id: existing.id,
+          stockCode: result.stockCode,
+          pricePerShare: result.pricePerShare,
+          totalCost: result.totalCost,
+          tradeDate: result.tradeDate,
+          accountId: result.accountId,
+        );
+      }
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
@@ -184,21 +211,31 @@ class _StockTransactionEditorResult {
 }
 
 class _StockTransactionEditorDialog extends StatefulWidget {
-  const _StockTransactionEditorDialog({required this.accounts});
+  const _StockTransactionEditorDialog({required this.accounts, this.existing});
 
   final List<FinanceAccount> accounts;
+
+  /// Non-null when editing an existing (unsettled) transaction — `type`
+  /// (買/賣) stays fixed, same reasoning as `StocksTransactionsService.
+  /// update`'s doc comment: changing it after the fact is a bigger
+  /// semantic flip than a plain field edit.
+  final StockTransaction? existing;
 
   @override
   State<_StockTransactionEditorDialog> createState() => _StockTransactionEditorDialogState();
 }
 
 class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDialog> {
-  StockTransactionType _type = StockTransactionType.buy;
-  late String? _accountId = widget.accounts.firstOrNull?.id;
-  DateTime _tradeDate = DateTime.now();
-  final _stockCodeController = TextEditingController();
-  final _priceController = TextEditingController();
-  final _costController = TextEditingController();
+  late StockTransactionType _type = widget.existing?.type ?? StockTransactionType.buy;
+  late String? _accountId = widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
+  late DateTime _tradeDate = widget.existing?.tradeDate ?? DateTime.now();
+  late final _stockCodeController = TextEditingController(text: widget.existing?.stockCode ?? '');
+  late final _priceController = TextEditingController(
+    text: widget.existing == null ? '' : widget.existing!.pricePerShare.toString(),
+  );
+  late final _costController = TextEditingController(
+    text: widget.existing == null ? '' : widget.existing!.totalCost.toString(),
+  );
 
   @override
   void dispose() {
@@ -250,8 +287,9 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
   @override
   Widget build(BuildContext context) {
     final shares = _shares;
+    final isEditing = widget.existing != null;
     return AlertDialog(
-      title: const Text('新增股票交易'),
+      title: Text(isEditing ? '編輯股票交易' : '新增股票交易'),
       content: SizedBox(
         width: 360,
         child: SingleChildScrollView(
@@ -265,7 +303,7 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
                   ButtonSegment(value: StockTransactionType.sell, label: Text('賣出')),
                 ],
                 selected: {_type},
-                onSelectionChanged: (selection) => setState(() => _type = selection.first),
+                onSelectionChanged: isEditing ? null : (selection) => setState(() => _type = selection.first),
               ),
               const SizedBox(height: 12),
               TextField(

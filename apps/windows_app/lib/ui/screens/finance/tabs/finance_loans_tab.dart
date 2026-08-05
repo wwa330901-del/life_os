@@ -77,6 +77,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
                                   onRepay: loan.settled
                                       ? null
                                       : () => _openRepayDialog(context, accounts, loan),
+                                  onEdit: () => _openEditDialog(context, accounts, loan),
                                   onDelete: () => _delete(context, loan),
                                 );
                               },
@@ -144,6 +145,33 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
     }
   }
 
+  Future<void> _openEditDialog(BuildContext context, List<FinanceAccount> accounts, FinanceLoan loan) async {
+    final result = await showDialog<_LoanCreateResult>(
+      context: context,
+      builder: (_) => _LoanCreateDialog(accounts: accounts, existing: loan),
+    );
+    if (result == null || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .updateFinanceLoan(
+            spaceId: widget.spaceId,
+            id: loan.id,
+            counterpartyName: result.counterpartyName,
+            amount: result.amount,
+            accountId: result.accountId,
+            date: result.date,
+            note: result.note ?? '',
+          );
+      _invalidate();
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   Future<void> _openRepayDialog(
     BuildContext context,
     List<FinanceAccount> accounts,
@@ -179,12 +207,14 @@ class _LoanCard extends StatelessWidget {
     required this.loan,
     required this.accountNameOf,
     required this.onRepay,
+    required this.onEdit,
     required this.onDelete,
   });
 
   final FinanceLoan loan;
   final Map<String, String> accountNameOf;
   final VoidCallback? onRepay;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   @override
@@ -218,6 +248,10 @@ class _LoanCard extends StatelessWidget {
                   const SizedBox(width: 4),
                 ] else if (onRepay != null)
                   TextButton(onPressed: onRepay, child: const Text('登記還款')),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  onPressed: onEdit,
+                ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 18),
                   onPressed: onDelete,
@@ -269,21 +303,29 @@ class _LoanCreateResult {
 }
 
 class _LoanCreateDialog extends StatefulWidget {
-  const _LoanCreateDialog({required this.accounts});
+  const _LoanCreateDialog({required this.accounts, this.existing});
 
   final List<FinanceAccount> accounts;
+
+  /// Non-null when editing an existing loan — `direction` stays fixed (see
+  /// `FinanceLoansService.update`'s doc comment for why: it decides which
+  /// way every repayment's `type` was recorded, so changing it after any
+  /// repayment exists would desync them).
+  final FinanceLoan? existing;
 
   @override
   State<_LoanCreateDialog> createState() => _LoanCreateDialogState();
 }
 
 class _LoanCreateDialogState extends State<_LoanCreateDialog> {
-  FinanceLoanDirection _direction = FinanceLoanDirection.lend;
-  late String? _accountId = widget.accounts.firstOrNull?.id;
-  final _counterpartyController = TextEditingController();
-  final _amountController = TextEditingController();
-  final _noteController = TextEditingController();
-  DateTime _date = DateTime.now();
+  late FinanceLoanDirection _direction = widget.existing?.direction ?? FinanceLoanDirection.lend;
+  late String? _accountId = widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
+  late final _counterpartyController = TextEditingController(text: widget.existing?.counterpartyName ?? '');
+  late final _amountController = TextEditingController(
+    text: widget.existing == null ? '' : widget.existing!.amount.toStringAsFixed(0),
+  );
+  late final _noteController = TextEditingController(text: widget.existing?.note ?? '');
+  late DateTime _date = widget.existing?.date ?? DateTime.now();
 
   @override
   void dispose() {
@@ -323,8 +365,9 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.existing != null;
     return AlertDialog(
-      title: const Text('新增借貸'),
+      title: Text(isEditing ? '編輯借貸' : '新增借貸'),
       content: SizedBox(
         width: 360,
         child: SingleChildScrollView(
@@ -338,7 +381,9 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
                   ButtonSegment(value: FinanceLoanDirection.borrow, label: Text('借進來')),
                 ],
                 selected: {_direction},
-                onSelectionChanged: (selection) => setState(() => _direction = selection.first),
+                onSelectionChanged: isEditing
+                    ? null
+                    : (selection) => setState(() => _direction = selection.first),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -384,7 +429,7 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
-        FilledButton(onPressed: _submit, child: const Text('儲存')),
+        FilledButton(onPressed: _submit, child: Text(isEditing ? '儲存' : '新增')),
       ],
     );
   }

@@ -1,18 +1,19 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
-import { taipeiTodayRange } from '../common/taipei-date';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
 
 /** 代辦事項 has no upper bound otherwise — completed items just kept
  * accumulating forever (same class of problem as the 知識庫 pagination fix,
  * see 大系統V1.43.0), except here the fix is UX-driven rather than purely
- * performance-driven: a completed item is only useful to see through the
- * day it was completed, after that it's clutter, not history. `listAll`
- * (the 個人/工作 live view) hides it starting the next Taipei calendar day;
- * `listCompleted` (the 已完成 tab) is the paginated, searchable place it
- * goes to remain findable. */
+ * performance-driven: a completed item stops being useful in the live list
+ * the moment it's checked off. `listAll` (the 個人/工作 live view) excludes
+ * every `done` item immediately (2026-08-05: changed from "stays visible
+ * through the day it was completed" after the user tried that and found it
+ * pointless — a same-day-completed item still cluttered the active list
+ * all day); `listCompleted` (the 已完成 tab) is the paginated, searchable
+ * place it goes to remain findable, effective immediately too. */
 const COMPLETED_TODOS_PAGE_SIZE = 10;
 
 /** 代辦事項 — split into 個人 (owned directly by a user, no project at all)
@@ -30,11 +31,9 @@ export class TodosService {
   /** Grouped view for the top-level 代辦事項 screen: 個人 as one flat list,
    * 工作 as one list per project the user belongs to. */
   async listAll(userId: string) {
-    // A completed item stays visible through the day it was completed
-    // (Taipei calendar day), then drops out of this live view starting the
-    // next day — see `listCompleted` for where it goes after that.
-    const { start } = taipeiTodayRange();
-    const visibleDone = { OR: [{ done: false }, { done: true, completedAt: { gte: start } }] };
+    // A completed item drops out of this live view the instant it's
+    // checked off — see `listCompleted` for where it goes after that.
+    const visibleDone = { done: false };
 
     const [personal, memberships] = await Promise.all([
       this.prisma.projectTodo.findMany({

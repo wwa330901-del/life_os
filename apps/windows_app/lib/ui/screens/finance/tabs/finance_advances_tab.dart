@@ -79,6 +79,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
                                   onRepay: advance.settled
                                       ? null
                                       : () => _openRepayDialog(context, accounts, advance),
+                                  onEdit: () => _openEditDialog(context, accounts, projects, advance),
                                   onDelete: () => _delete(context, advance),
                                 );
                               },
@@ -150,6 +151,40 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
     }
   }
 
+  Future<void> _openEditDialog(
+    BuildContext context,
+    List<FinanceAccount> accounts,
+    List<MyProjectSummary> projects,
+    FinanceAdvance advance,
+  ) async {
+    final result = await showDialog<_AdvanceCreateResult>(
+      context: context,
+      builder: (_) => _AdvanceCreateDialog(accounts: accounts, projects: projects, existing: advance),
+    );
+    if (result == null || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .updateFinanceAdvance(
+            spaceId: widget.spaceId,
+            id: advance.id,
+            title: result.title,
+            amount: result.amount,
+            accountId: result.accountId,
+            date: result.date,
+            note: result.note ?? '',
+            projectId: result.projectId,
+            clearProjectId: result.projectId == null,
+          );
+      _invalidate();
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   Future<void> _openRepayDialog(
     BuildContext context,
     List<FinanceAccount> accounts,
@@ -185,12 +220,14 @@ class _AdvanceCard extends StatelessWidget {
     required this.advance,
     required this.accountNameOf,
     required this.onRepay,
+    required this.onEdit,
     required this.onDelete,
   });
 
   final FinanceAdvance advance;
   final Map<String, String> accountNameOf;
   final VoidCallback? onRepay;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   @override
@@ -215,6 +252,7 @@ class _AdvanceCard extends StatelessWidget {
                   const SizedBox(width: 4),
                 ] else if (onRepay != null)
                   TextButton(onPressed: onRepay, child: const Text('登記收回')),
+                IconButton(icon: const Icon(Icons.edit_outlined, size: 18), onPressed: onEdit),
                 IconButton(icon: const Icon(Icons.delete_outline, size: 18), onPressed: onDelete),
               ],
             ),
@@ -267,22 +305,25 @@ class _AdvanceCreateResult {
 }
 
 class _AdvanceCreateDialog extends StatefulWidget {
-  const _AdvanceCreateDialog({required this.accounts, required this.projects});
+  const _AdvanceCreateDialog({required this.accounts, required this.projects, this.existing});
 
   final List<FinanceAccount> accounts;
   final List<MyProjectSummary> projects;
+  final FinanceAdvance? existing;
 
   @override
   State<_AdvanceCreateDialog> createState() => _AdvanceCreateDialogState();
 }
 
 class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
-  late String? _accountId = widget.accounts.firstOrNull?.id;
-  String? _projectId;
-  final _titleController = TextEditingController();
-  final _amountController = TextEditingController();
-  final _noteController = TextEditingController();
-  DateTime _date = DateTime.now();
+  late String? _accountId = widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
+  late String? _projectId = widget.existing?.projectId;
+  late final _titleController = TextEditingController(text: widget.existing?.title ?? '');
+  late final _amountController = TextEditingController(
+    text: widget.existing == null ? '' : widget.existing!.amount.toStringAsFixed(0),
+  );
+  late final _noteController = TextEditingController(text: widget.existing?.note ?? '');
+  late DateTime _date = widget.existing?.date ?? DateTime.now();
 
   @override
   void dispose() {
@@ -323,7 +364,7 @@ class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('新增代墊'),
+      title: Text(widget.existing == null ? '新增代墊' : '編輯代墊'),
       content: SizedBox(
         width: 360,
         child: SingleChildScrollView(

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { StocksAccessService } from './stocks-access.service';
 import { CreateStockTransactionDto } from './dto/create-stock-transaction.dto';
+import { UpdateStockTransactionDto } from './dto/update-stock-transaction.dto';
 import { computeSettlementDate } from './stock-settlement-schedule';
 
 @Injectable()
@@ -54,6 +55,40 @@ export class StocksTransactionsService {
         settlementDate: computeSettlementDate(tradeDate),
         accountId: dto.accountId,
         note: dto.note,
+      },
+    });
+  }
+
+  /// Blocked once settled, same reasoning as `remove` below — the real
+  /// FinanceTransaction it produced has no back-reference to this row (see
+  /// `StocksSettlementService`), so editing amount/date/account after that
+  /// point would silently desync from money that's already moved.
+  /// `type` (買/賣) is deliberately not editable — that's a bigger
+  /// semantic flip (changes EXPENSE↔INCOME at settlement); delete and
+  /// re-enter instead if it's genuinely wrong, same as before this existed.
+  async update(userId: string, spaceId: string, id: string, dto: UpdateStockTransactionDto) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    const existing = await this.getOrThrow(spaceId, id);
+    if (existing.settled) {
+      throw new BadRequestException('已交割的股票交易不能修改');
+    }
+    if (dto.accountId) await this.assertAccount(spaceId, dto.accountId);
+
+    const pricePerShare = dto.pricePerShare ?? existing.pricePerShare;
+    const totalCost = dto.totalCost ?? existing.totalCost;
+    const tradeDate = dto.tradeDate ? new Date(dto.tradeDate) : existing.tradeDate;
+
+    return this.prisma.stockTransaction.update({
+      where: { id },
+      data: {
+        ...(dto.stockCode !== undefined && { stockCode: dto.stockCode }),
+        ...(dto.accountId !== undefined && { accountId: dto.accountId }),
+        ...(dto.note !== undefined && { note: dto.note }),
+        pricePerShare,
+        totalCost,
+        shares: totalCost / pricePerShare,
+        tradeDate,
+        settlementDate: computeSettlementDate(tradeDate),
       },
     });
   }
