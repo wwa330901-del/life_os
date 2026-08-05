@@ -48,14 +48,45 @@ export class FinanceCategoriesService {
       where: { spaceId },
       orderBy: { sortOrder: 'asc' },
     });
-    if (existing.length > 0) return existing;
 
+    if (existing.length === 0) {
+      await this.prisma.financeCategory.createMany({
+        data: DEFAULT_CATEGORIES.map((c, index) => ({
+          spaceId,
+          name: c.name,
+          kind: c.kind,
+          sortOrder: index,
+        })),
+      });
+      return this.prisma.financeCategory.findMany({
+        where: { spaceId },
+        orderBy: { sortOrder: 'asc' },
+      });
+    }
+
+    // Self-heal (2026-08-06): 股票買/股票賣 was added to DEFAULT_CATEGORIES
+    // after plenty of spaces already had their one-time seed above run, so
+    // they never got it — findOrCreateSystemCategory only backfills a space
+    // lazily, at its first actual stock settlement, so until then it's
+    // simply missing from the category list/picker. Top up here too so an
+    // existing account sees it immediately, not just after its next trade.
+    const missing = DEFAULT_CATEGORIES.filter(
+      (c) =>
+        (c.name === STOCK_BUY_CATEGORY_NAME || c.name === STOCK_SELL_CATEGORY_NAME) &&
+        !existing.some((e) => e.name === c.name && e.kind === c.kind),
+    );
+    if (missing.length === 0) return existing;
+
+    const maxSortOrder = await this.prisma.financeCategory.aggregate({
+      where: { spaceId },
+      _max: { sortOrder: true },
+    });
     await this.prisma.financeCategory.createMany({
-      data: DEFAULT_CATEGORIES.map((c, index) => ({
+      data: missing.map((c, index) => ({
         spaceId,
         name: c.name,
         kind: c.kind,
-        sortOrder: index,
+        sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1 + index,
       })),
     });
     return this.prisma.financeCategory.findMany({
