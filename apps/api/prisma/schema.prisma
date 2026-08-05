@@ -144,6 +144,8 @@ model User {
   knowledgeCategories        KnowledgeCategory[]
   knowledgeItems             KnowledgeItem[]
   aiUsageLogs                AiUsageLog[]
+  calendarSharesGiven        CalendarShare[]            @relation("CalendarShareOwner")
+  calendarSharesReceived     CalendarShare[]            @relation("CalendarShareViewer")
 }
 
 model Space {
@@ -249,6 +251,47 @@ model GoogleCalendarConnection {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum CalendarShareDetailLevel {
+  FULL
+  BUSY_ONLY
+}
+
+/// 共用行事曆 (2026-08-05) — `ownerUserId` invites `viewerUserId` by email to
+/// see their calendar overlaid on the viewer's own 共用行事曆 view.
+/// Deliberately not modeled as a `Space` membership — this isn't "join my
+/// calendar space", it's a one-directional, revocable viewing grant that
+/// doesn't let the viewer edit anything. `accepted` starts false (a plain
+/// invite) and only ever flips true once, by the viewer's own action —
+/// there's no "declined" state, a decline (or a later revoke/remove) just
+/// deletes the row outright rather than tombstoning it (re-inviting later
+/// should feel like a fresh invite, not a resurrection). `detailLevel` is
+/// the owner's call (it's their information being exposed) and can be
+/// changed any time, not just at invite creation; `viewerColor` is the
+/// opposite — purely the viewer's own display preference for
+/// distinguishing whose events are whose on their combined view, the owner
+/// has no say in it.
+model CalendarShare {
+  id String @id @default(uuid())
+
+  ownerUserId String
+  owner       User   @relation("CalendarShareOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  viewerUserId String
+  viewer       User   @relation("CalendarShareViewer", fields: [viewerUserId], references: [id], onDelete: Cascade)
+
+  accepted    Boolean                  @default(false)
+  detailLevel CalendarShareDetailLevel @default(FULL)
+
+  /// Hex color, e.g. "#5B8DEF" — no enum/palette table, just a free string
+  /// the App's color picker writes.
+  viewerColor String @default("#5B8DEF")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerUserId, viewerUserId])
 }
 
 /// One document template a space can generate for its projects — a

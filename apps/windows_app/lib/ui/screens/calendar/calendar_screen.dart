@@ -5,10 +5,13 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../core/api_client.dart';
 import '../../../core/models/app_user.dart';
 import '../../../core/models/calendar_event.dart';
+import '../../../core/models/calendar_share.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../services/auth/google_oauth_service.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/calendar_provider.dart';
+import '../../../state/calendar_share_provider.dart';
+import 'calendar_share_dialog.dart';
 
 /// Month-grid view for a 行事曆空間 — CalendarEvents only (see module doc in
 /// 大系統 for why ProjectTodo due dates aren't overlaid here in v1). Google
@@ -26,16 +29,21 @@ class CalendarScreen extends ConsumerStatefulWidget {
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   late DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = _dateOnly(DateTime.now());
+  bool _showShared = false;
 
   static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
   DateTime get _monthStart => DateTime(_focusedDay.year, _focusedDay.month, 1);
+  DateTime get _monthEnd => DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final key = CalendarMonthKey(widget.space.id, _monthStart);
     final eventsAsync = ref.watch(calendarEventsProvider(key));
+    final sharedEntriesAsync = _showShared
+        ? ref.watch(combinedCalendarEventsProvider((from: _monthStart, to: _monthEnd)))
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -49,6 +57,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               children: [
                 Text(widget.space.name, style: Theme.of(context).textTheme.headlineMedium),
                 const Spacer(),
+                FilterChip(
+                  label: const Text('顯示共用行事曆'),
+                  selected: _showShared,
+                  onSelected: (v) => setState(() => _showShared = v),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: '共用行事曆設定',
+                  icon: const Icon(Icons.people_outline),
+                  onPressed: () => CalendarShareDialog.show(context),
+                ),
+                const SizedBox(width: 8),
                 _GoogleConnectButton(spaceId: widget.space.id),
               ],
             ),
@@ -58,6 +78,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           child: eventsAsync.when(
             data: (events) => _CalendarBody(
               events: events,
+              sharedEntries: sharedEntriesAsync?.value?.shared ?? const [],
               focusedDay: _focusedDay,
               selectedDay: _selectedDay,
               onPageChanged: (day) => setState(() => _focusedDay = day),
@@ -168,6 +189,7 @@ class _GoogleConnectButton extends ConsumerWidget {
 class _CalendarBody extends ConsumerWidget {
   const _CalendarBody({
     required this.events,
+    required this.sharedEntries,
     required this.focusedDay,
     required this.selectedDay,
     required this.onPageChanged,
@@ -177,6 +199,11 @@ class _CalendarBody extends ConsumerWidget {
   });
 
   final List<CalendarEvent> events;
+
+  /// 共用行事曆疊圖——只在「顯示共用行事曆」開啟時非空，只影響右側的
+  /// 單日行程面板（月曆格子本身維持只顯示自己的行程，不然要重寫整個
+  /// 月曆格子的渲染邏輯，範圍太大）。
+  final List<SharedCalendarEntry> sharedEntries;
   final DateTime focusedDay;
   final DateTime selectedDay;
   final ValueChanged<DateTime> onPageChanged;
@@ -186,6 +213,17 @@ class _CalendarBody extends ConsumerWidget {
 
   List<CalendarEvent> _eventsOn(DateTime day) {
     return events.where((e) {
+      final start = DateTime(e.startAt.year, e.startAt.month, e.startAt.day);
+      final end = e.endAt != null
+          ? DateTime(e.endAt!.year, e.endAt!.month, e.endAt!.day)
+          : start;
+      final d = DateTime(day.year, day.month, day.day);
+      return !d.isBefore(start) && !d.isAfter(end);
+    }).toList()..sort((a, b) => a.startAt.compareTo(b.startAt));
+  }
+
+  List<SharedCalendarEntry> _sharedEntriesOn(DateTime day) {
+    return sharedEntries.where((e) {
       final start = DateTime(e.startAt.year, e.startAt.month, e.startAt.day);
       final end = e.endAt != null
           ? DateTime(e.endAt!.year, e.endAt!.month, e.endAt!.day)
@@ -252,6 +290,7 @@ class _CalendarBody extends ConsumerWidget {
             child: _DayAgenda(
               day: selectedDay,
               events: _eventsOn(selectedDay),
+              sharedEntries: _sharedEntriesOn(selectedDay),
               spaceId: spaceId,
               monthKey: monthKey,
             ),
@@ -341,10 +380,17 @@ class _DayCell extends StatelessWidget {
 }
 
 class _DayAgenda extends ConsumerWidget {
-  const _DayAgenda({required this.day, required this.events, required this.spaceId, required this.monthKey});
+  const _DayAgenda({
+    required this.day,
+    required this.events,
+    required this.sharedEntries,
+    required this.spaceId,
+    required this.monthKey,
+  });
 
   final DateTime day;
   final List<CalendarEvent> events;
+  final List<SharedCalendarEntry> sharedEntries;
   final String spaceId;
   final CalendarMonthKey monthKey;
 
@@ -374,40 +420,64 @@ class _DayAgenda extends ConsumerWidget {
           ),
         ),
         Expanded(
-          child: events.isEmpty
+          child: events.isEmpty && sharedEntries.isEmpty
               ? Center(
                   child: Text('這天沒有行程', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5))),
                 )
-              : ListView.separated(
+              : ListView(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  itemCount: events.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 6),
-                  itemBuilder: (context, index) {
-                    final event = events[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text(event.title),
-                        subtitle: Text(_subtitle(event)),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined, size: 18),
-                              onPressed: () => _openEditor(context, ref, event),
+                  children: [
+                    for (final event in events)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Card(
+                          child: ListTile(
+                            title: Text(event.title),
+                            subtitle: Text(_subtitle(event)),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, size: 18),
+                                  onPressed: () => _openEditor(context, ref, event),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 18),
+                                  onPressed: () => _delete(context, ref, event),
+                                ),
+                              ],
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 18),
-                              onPressed: () => _delete(context, ref, event),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                    );
-                  },
+                    for (final entry in sharedEntries)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Card(
+                          child: ListTile(
+                            leading: Container(
+                              width: 4,
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Color(int.parse(entry.color.replaceFirst('#', '0xFF'))),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            title: Text(entry.title),
+                            subtitle: Text('${entry.ownerName} · ${_sharedSubtitle(entry)}'),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
         ),
       ],
     );
+  }
+
+  String _sharedSubtitle(SharedCalendarEntry entry) {
+    if (entry.allDay) return '全天';
+    return '${entry.startAt.hour.toString().padLeft(2, '0')}:${entry.startAt.minute.toString().padLeft(2, '0')}';
   }
 
   String _subtitle(CalendarEvent event) {

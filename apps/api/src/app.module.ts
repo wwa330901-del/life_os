@@ -14,6 +14,7 @@ import { FinanceModule } from './finance/finance.module';
 import { StocksModule } from './stocks/stocks.module';
 import { LineModule } from './line/line.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { CalendarSharesModule } from './calendar-shares/calendar-shares.module';
 import { HomeModule } from './home/home.module';
 import { ProjectDigestModule } from './project-digest/project-digest.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
@@ -35,6 +36,7 @@ import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
     StocksModule,
     LineModule,
     CalendarModule,
+    CalendarSharesModule,
     HomeModule,
     ProjectDigestModule,
     KnowledgeModule,

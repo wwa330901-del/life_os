@@ -8,6 +8,7 @@ import 'models/ai_usage.dart';
 import 'models/ai_assistant.dart';
 import 'models/app_user.dart';
 import 'models/calendar_event.dart';
+import 'models/calendar_share.dart';
 import 'models/document_approval.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
@@ -229,6 +230,51 @@ class ApiClient {
 
   Future<void> syncCalendarNow(String spaceId) async {
     await _post('/spaces/$spaceId/calendar/sync', {});
+  }
+
+  Future<CalendarShare> inviteCalendarShare(String email) async {
+    final body = await _post('/calendar-shares/invite', {'email': email});
+    return CalendarShare.fromJson(body);
+  }
+
+  Future<List<CalendarShare>> listCalendarSharesGiven() async {
+    final body = await _getList('/calendar-shares/given');
+    return body.map((e) => CalendarShare.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<CalendarShare>> listCalendarSharesReceived() async {
+    final body = await _getList('/calendar-shares/received');
+    return body.map((e) => CalendarShare.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> acceptCalendarShare(String id) async {
+    await _post('/calendar-shares/$id/accept', {});
+  }
+
+  Future<void> updateCalendarShareDetailLevel({required String id, required CalendarShareDetailLevel detailLevel}) async {
+    await _patchIgnoreBody('/calendar-shares/$id/detail-level', {'detailLevel': detailLevel.toJson()});
+  }
+
+  Future<void> updateCalendarShareColor({required String id, required String viewerColor}) async {
+    await _patchIgnoreBody('/calendar-shares/$id/color', {'viewerColor': viewerColor});
+  }
+
+  Future<void> removeCalendarShare(String id) async {
+    await _delete('/calendar-shares/$id');
+  }
+
+  Future<({List<CalendarEvent> own, List<SharedCalendarEntry> shared})> combinedCalendarEvents({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final body = await _get(
+      '/calendar-shares/combined-events?from=${from.toUtc().toIso8601String()}&to=${to.toUtc().toIso8601String()}',
+    );
+    final own = (body['own'] as List<dynamic>).map((e) => CalendarEvent.fromJson(e as Map<String, dynamic>)).toList();
+    final shared = (body['shared'] as List<dynamic>)
+        .map((e) => SharedCalendarEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (own: own, shared: shared);
   }
 
   Future<List<SpaceMember>> listSpaceMembers(String spaceId) async {
