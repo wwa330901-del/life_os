@@ -109,6 +109,8 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
                                       : () => _openRepayDialog(context, accounts, loan),
                                   onEdit: () => _openEditDialog(context, accounts, loan),
                                   onDelete: () => _delete(context, loan),
+                                  onEditRepayment: (r) =>
+                                      _openRepaymentEditDialog(context, accounts, loan, r),
                                   onInvite: loan.inviteSentToName == null
                                       ? () => _inviteConfirmation(context, loan)
                                       : null,
@@ -275,6 +277,38 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
       }
     }
   }
+
+  Future<void> _openRepaymentEditDialog(
+    BuildContext context,
+    List<FinanceAccount> accounts,
+    FinanceLoan loan,
+    FinanceSettlementEntry repayment,
+  ) async {
+    final result = await showDialog<_RepaymentEditResult>(
+      context: context,
+      builder: (_) => _RepaymentEditDialog(accounts: accounts, repayment: repayment),
+    );
+    if (result == null || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .updateFinanceLoanRepayment(
+            spaceId: widget.spaceId,
+            loanId: loan.id,
+            repaymentId: repayment.id,
+            amount: result.amount,
+            accountId: result.accountId,
+            date: result.date,
+            note: result.note ?? '',
+          );
+      _invalidate();
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
 }
 
 class _LoanCard extends StatelessWidget {
@@ -284,6 +318,7 @@ class _LoanCard extends StatelessWidget {
     required this.onRepay,
     required this.onEdit,
     required this.onDelete,
+    required this.onEditRepayment,
     required this.onInvite,
   });
 
@@ -292,6 +327,7 @@ class _LoanCard extends StatelessWidget {
   final VoidCallback? onRepay;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final void Function(FinanceSettlementEntry repayment) onEditRepayment;
 
   /// Null 表示已經邀請過對方（不管對方接受了沒），不再重複顯示邀請按鈕。
   final VoidCallback? onInvite;
@@ -348,7 +384,7 @@ class _LoanCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(loan.note!, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6))),
               ),
-            if (loan.repayments.isNotEmpty)
+            if (loan.repayments.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
@@ -356,6 +392,30 @@ class _LoanCard extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.55)),
                 ),
               ),
+              for (final r in loan.repayments)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${r.date.year}/${r.date.month}/${r.date.day} · ${formatAmount(r.amount)}'
+                          '（${accountNameOf[r.accountId] ?? '?'}）'
+                          '${r.note != null && r.note!.isNotEmpty ? ' · ${r.note}' : ''}',
+                          style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.55)),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 14),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(),
+                        padding: EdgeInsets.zero,
+                        onPressed: () => onEditRepayment(r),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: onInvite != null
@@ -617,6 +677,117 @@ class _RepayDialogState extends State<_RepayDialog> {
                 ),
                 child: Text('${_date.year}/${_date.month}/${_date.day}'),
               ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        FilledButton(onPressed: _submit, child: const Text('儲存')),
+      ],
+    );
+  }
+}
+
+class _RepaymentEditResult {
+  const _RepaymentEditResult({required this.amount, required this.accountId, required this.date, this.note});
+
+  final double amount;
+  final String accountId;
+  final DateTime date;
+  final String? note;
+}
+
+/// 編輯單筆還款紀錄——跟 `_RepayDialog`（新增）不同的是這裡是編輯既有的一筆，
+/// 所有欄位都預先帶入現值，也多了備註可以改（後端 `updateFinanceLoanRepayment`
+/// 本來就支援，之前只是 App 端沒有介面）。
+class _RepaymentEditDialog extends StatefulWidget {
+  const _RepaymentEditDialog({required this.accounts, required this.repayment});
+
+  final List<FinanceAccount> accounts;
+  final FinanceSettlementEntry repayment;
+
+  @override
+  State<_RepaymentEditDialog> createState() => _RepaymentEditDialogState();
+}
+
+class _RepaymentEditDialogState extends State<_RepaymentEditDialog> {
+  late String? _accountId = widget.repayment.accountId;
+  late final _amountController = TextEditingController(text: widget.repayment.amount.toStringAsFixed(0));
+  late final _noteController = TextEditingController(text: widget.repayment.note ?? '');
+  late DateTime _date = widget.repayment.date;
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  void _submit() {
+    final accountId = _accountId;
+    final amount = double.tryParse(_amountController.text.trim());
+    if (accountId == null || amount == null || amount <= 0) return;
+
+    Navigator.of(context).pop(
+      _RepaymentEditResult(
+        amount: amount,
+        accountId: accountId,
+        date: _date,
+        note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('編輯還款'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _amountController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: '還款金額'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _accountId,
+              decoration: const InputDecoration(labelText: '帳戶'),
+              items: widget.accounts
+                  .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
+                  .toList(),
+              onChanged: (value) => setState(() => _accountId = value),
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: '日期',
+                  suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
+                ),
+                child: Text('${_date.year}/${_date.month}/${_date.day}'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _noteController,
+              decoration: const InputDecoration(labelText: '備註（選填）'),
             ),
           ],
         ),

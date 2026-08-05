@@ -109,6 +109,8 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
                                       : () => _openRepayDialog(context, accounts, advance),
                                   onEdit: () => _openEditDialog(context, accounts, projects, advance),
                                   onDelete: () => _delete(context, advance),
+                                  onEditRepayment: (r) =>
+                                      _openRepaymentEditDialog(context, accounts, advance, r),
                                 );
                               },
                             ),
@@ -241,6 +243,38 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
       }
     }
   }
+
+  Future<void> _openRepaymentEditDialog(
+    BuildContext context,
+    List<FinanceAccount> accounts,
+    FinanceAdvance advance,
+    FinanceSettlementEntry repayment,
+  ) async {
+    final result = await showDialog<_AdvanceRepaymentEditResult>(
+      context: context,
+      builder: (_) => _AdvanceRepaymentEditDialog(accounts: accounts, repayment: repayment),
+    );
+    if (result == null || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .updateFinanceAdvanceRepayment(
+            spaceId: widget.spaceId,
+            advanceId: advance.id,
+            repaymentId: repayment.id,
+            amount: result.amount,
+            accountId: result.accountId,
+            date: result.date,
+            note: result.note ?? '',
+          );
+      _invalidate();
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
 }
 
 class _AdvanceCard extends StatelessWidget {
@@ -250,6 +284,7 @@ class _AdvanceCard extends StatelessWidget {
     required this.onRepay,
     required this.onEdit,
     required this.onDelete,
+    required this.onEditRepayment,
   });
 
   final FinanceAdvance advance;
@@ -257,6 +292,7 @@ class _AdvanceCard extends StatelessWidget {
   final VoidCallback? onRepay;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final void Function(FinanceSettlementEntry repayment) onEditRepayment;
 
   @override
   Widget build(BuildContext context) {
@@ -299,7 +335,7 @@ class _AdvanceCard extends StatelessWidget {
                   style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ),
-            if (advance.repayments.isNotEmpty)
+            if (advance.repayments.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
@@ -307,6 +343,30 @@ class _AdvanceCard extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.55)),
                 ),
               ),
+              for (final r in advance.repayments)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${r.date.year}/${r.date.month}/${r.date.day} · ${formatAmount(r.amount)}'
+                          '（${accountNameOf[r.accountId] ?? '?'}）'
+                          '${r.note != null && r.note!.isNotEmpty ? ' · ${r.note}' : ''}',
+                          style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.55)),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 14),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(),
+                        padding: EdgeInsets.zero,
+                        onPressed: () => onEditRepayment(r),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ],
         ),
       ),
@@ -545,6 +605,122 @@ class _AdvanceRepayDialogState extends State<_AdvanceRepayDialog> {
                 ),
                 child: Text('${_date.year}/${_date.month}/${_date.day}'),
               ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        FilledButton(onPressed: _submit, child: const Text('儲存')),
+      ],
+    );
+  }
+}
+
+class _AdvanceRepaymentEditResult {
+  const _AdvanceRepaymentEditResult({
+    required this.amount,
+    required this.accountId,
+    required this.date,
+    this.note,
+  });
+
+  final double amount;
+  final String accountId;
+  final DateTime date;
+  final String? note;
+}
+
+/// 編輯單筆收回紀錄——跟 `_AdvanceRepayDialog`（新增）不同的是這裡是編輯既有
+/// 的一筆，所有欄位都預先帶入現值，也多了備註可以改（後端
+/// `updateFinanceAdvanceRepayment` 本來就支援，之前只是 App 端沒有介面）。
+class _AdvanceRepaymentEditDialog extends StatefulWidget {
+  const _AdvanceRepaymentEditDialog({required this.accounts, required this.repayment});
+
+  final List<FinanceAccount> accounts;
+  final FinanceSettlementEntry repayment;
+
+  @override
+  State<_AdvanceRepaymentEditDialog> createState() => _AdvanceRepaymentEditDialogState();
+}
+
+class _AdvanceRepaymentEditDialogState extends State<_AdvanceRepaymentEditDialog> {
+  late String? _accountId = widget.repayment.accountId;
+  late final _amountController = TextEditingController(text: widget.repayment.amount.toStringAsFixed(0));
+  late final _noteController = TextEditingController(text: widget.repayment.note ?? '');
+  late DateTime _date = widget.repayment.date;
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  void _submit() {
+    final accountId = _accountId;
+    final amount = double.tryParse(_amountController.text.trim());
+    if (accountId == null || amount == null || amount <= 0) return;
+
+    Navigator.of(context).pop(
+      _AdvanceRepaymentEditResult(
+        amount: amount,
+        accountId: accountId,
+        date: _date,
+        note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('編輯收回'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _amountController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: '收回金額'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _accountId,
+              decoration: const InputDecoration(labelText: '帳戶'),
+              items: widget.accounts
+                  .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
+                  .toList(),
+              onChanged: (value) => setState(() => _accountId = value),
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: '日期',
+                  suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
+                ),
+                child: Text('${_date.year}/${_date.month}/${_date.day}'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _noteController,
+              decoration: const InputDecoration(labelText: '備註（選填）'),
             ),
           ],
         ),
