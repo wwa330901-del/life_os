@@ -75,6 +75,10 @@ final financeLoansProvider = FutureProvider.autoDispose.family<List<FinanceLoan>
   return ref.read(apiClientProvider).listFinanceLoans(spaceId);
 });
 
+final financeLoanInvitesReceivedProvider = FutureProvider.autoDispose<List<FinanceLoanInvite>>((ref) {
+  return ref.read(apiClientProvider).listReceivedFinanceLoanInvites();
+});
+
 final financeAdvancesProvider = FutureProvider.autoDispose.family<List<FinanceAdvance>, String>((
   ref,
   spaceId,

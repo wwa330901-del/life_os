@@ -412,6 +412,8 @@ class FinanceLoan {
     required this.settled,
     required this.repayments,
     this.note,
+    this.inviteSentToName,
+    this.inviteAccepted,
   });
 
   final String id;
@@ -424,6 +426,11 @@ class FinanceLoan {
   final bool settled;
   final List<FinanceSettlementEntry> repayments;
   final String? note;
+
+  /// 借出/借入互通——null 代表這筆借貸還沒邀請任何人確認；非 null 就是已經
+  /// 邀請過的對象名字，[inviteAccepted] 表示對方是否已經接受。
+  final String? inviteSentToName;
+  final bool? inviteAccepted;
 
   factory FinanceLoan.fromJson(Map<String, dynamic> json) {
     final initial = json['initialTransaction'] as Map<String, dynamic>;
@@ -440,6 +447,8 @@ class FinanceLoan {
       repayments: (json['repayments'] as List<dynamic>? ?? const [])
           .map((e) => FinanceSettlementEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
+      inviteSentToName: (json['inviteSent'] as Map<String, dynamic>?)?['toUser']?['name'] as String?,
+      inviteAccepted: (json['inviteSent'] as Map<String, dynamic>?)?['accepted'] as bool?,
     );
   }
 }
@@ -492,6 +501,46 @@ class FinanceAdvance {
           .toList(),
       projectId: json['projectId'] as String?,
       projectName: project?['name'] as String?,
+    );
+  }
+}
+
+/// 借出/借入互通——別人邀請你確認一筆借貸，接受後會在你自己的個人空間
+/// 自動建一筆方向相反的對應紀錄。`GET /finance-loan-invites/received` 用。
+class FinanceLoanInvite {
+  const FinanceLoanInvite({
+    required this.id,
+    required this.accepted,
+    required this.fromUserName,
+    required this.direction,
+    required this.counterpartyName,
+    required this.amount,
+    required this.date,
+  });
+
+  final String id;
+  final bool accepted;
+  final String fromUserName;
+
+  /// 邀請人那邊登記的方向——接受後你這邊會是相反的方向（他借出去，你就
+  /// 是借進來）。
+  final FinanceLoanDirection direction;
+  final String counterpartyName;
+  final double amount;
+  final DateTime date;
+
+  factory FinanceLoanInvite.fromJson(Map<String, dynamic> json) {
+    final fromLoan = json['fromLoan'] as Map<String, dynamic>;
+    final initial = fromLoan['initialTransaction'] as Map<String, dynamic>;
+    final fromUser = json['fromUser'] as Map<String, dynamic>;
+    return FinanceLoanInvite(
+      id: json['id'] as String,
+      accepted: json['accepted'] as bool,
+      fromUserName: fromUser['name'] as String,
+      direction: FinanceLoanDirectionJson.fromJson(fromLoan['direction'] as String),
+      counterpartyName: fromLoan['counterpartyName'] as String,
+      amount: (initial['amount'] as num).toDouble(),
+      date: DateTime.parse(initial['date'] as String),
     );
   }
 }

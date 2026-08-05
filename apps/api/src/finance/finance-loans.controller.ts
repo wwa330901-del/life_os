@@ -7,6 +7,7 @@ import { CreateFinanceLoanDto } from './dto/create-finance-loan.dto';
 import { CreateFinanceLoanRepaymentDto } from './dto/create-finance-loan-repayment.dto';
 import { UpdateFinanceLoanDto } from './dto/update-finance-loan.dto';
 import { UpdateFinanceLoanRepaymentDto } from './dto/update-finance-loan-repayment.dto';
+import { InviteFinanceLoanConfirmationDto } from './dto/invite-finance-loan-confirmation.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('spaces/:spaceId/finance/loans')
@@ -56,6 +57,16 @@ export class FinanceLoansController {
     @Body() dto: UpdateFinanceLoanRepaymentDto,
   ) {
     return this.service.updateRepayment(user.id, spaceId, id, repaymentId, dto);
+  }
+
+  @Post(':id/invite')
+  inviteConfirmation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Param('id') id: string,
+    @Body() dto: InviteFinanceLoanConfirmationDto,
+  ) {
+    return this.service.inviteConfirmation(user.id, spaceId, id, dto.email);
   }
 
   @Delete(':id')

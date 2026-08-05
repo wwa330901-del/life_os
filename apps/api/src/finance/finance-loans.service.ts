@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccessService } from './finance-access.service';
+import { UsersService } from '../users/users.service';
 import { FinanceLoanDirection, FinanceTransactionType } from '../../generated/prisma/client.js';
 import { CreateFinanceLoanDto } from './dto/create-finance-loan.dto';
 import { CreateFinanceLoanRepaymentDto } from './dto/create-finance-loan-repayment.dto';
@@ -10,6 +11,7 @@ import { UpdateFinanceLoanRepaymentDto } from './dto/update-finance-loan-repayme
 const loanInclude = {
   initialTransaction: true,
   repayments: { include: { transaction: true }, orderBy: { createdAt: 'asc' as const } },
+  inviteSent: { include: { toUser: { select: { id: true, name: true, email: true } } } },
 };
 
 /** 跟人借錢/借錢給人 — see the `FinanceLoan` schema doc comment for why this
@@ -24,6 +26,7 @@ export class FinanceLoansService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: FinanceAccessService,
+    private readonly usersService: UsersService,
   ) {}
 
   async list(userId: string, spaceId: string) {
@@ -186,6 +189,115 @@ export class FinanceLoansService {
     });
 
     return this.withOutstanding(await this.getOrThrow(spaceId, loanId));
+  }
+
+  /** 借出/借入互通 — invite another platform user (by email) to confirm this
+   * loan involves them, so their side gets a matching record once THEY
+   * accept (never unilaterally, see the schema doc comment on
+   * `FinanceLoanInvite`). One invite per loan (`fromLoanId` is unique). */
+  async inviteConfirmation(userId: string, spaceId: string, loanId: string, email: string) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    await this.getOrThrow(spaceId, loanId);
+
+    const target = await this.usersService.findByEmail(email);
+    if (!target) throw new NotFoundException('找不到這個 email 對應的帳號');
+    if (target.id === userId) throw new BadRequestException('不能邀請自己');
+
+    const existing = await this.prisma.financeLoanInvite.findUnique({ where: { fromLoanId: loanId } });
+    if (existing) throw new BadRequestException('這筆借貸已經邀請過對方確認了');
+
+    return this.prisma.financeLoanInvite.create({
+      data: { fromLoanId: loanId, fromUserId: userId, toUserId: target.id },
+      include: { toUser: { select: { id: true, name: true, email: true } } },
+    });
+  }
+
+  /** 我收到的邀請（含已接受的，方便回顧）。 */
+  async listReceivedInvites(userId: string) {
+    return this.prisma.financeLoanInvite.findMany({
+      where: { toUserId: userId },
+      include: {
+        fromUser: { select: { id: true, name: true, email: true } },
+        fromLoan: { include: loanInclude },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** 接受邀請——在自己的個人空間自動建立一筆方向相反的對應借貸（LEND↔
+   * BORROW），金額/日期/備註照抄對方那筆的 initialTransaction，帳戶用自己
+   * 排序第一個帳戶（跟 LINE 借貸指令同一套簡化邏輯，沒有更好的預設可選）。
+   * 只在接受當下建立一次，之後兩筆各自獨立，不會持續同步（見 schema doc
+   * comment）。 */
+  async acceptInvite(userId: string, inviteId: string) {
+    const invite = await this.prisma.financeLoanInvite.findUnique({
+      where: { id: inviteId },
+      include: { fromLoan: { include: loanInclude }, fromUser: { select: { id: true, name: true } } },
+    });
+    if (!invite || invite.toUserId !== userId) {
+      throw new ForbiddenException('這不是你收到的邀請');
+    }
+    if (invite.accepted) {
+      throw new BadRequestException('已經接受過這筆邀請了');
+    }
+
+    const mySpace = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!mySpace) throw new BadRequestException('找不到你的個人空間');
+
+    const account = await this.prisma.financeAccount.findFirst({
+      where: { spaceId: mySpace.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    if (!account) {
+      throw new BadRequestException('你還沒有任何記帳帳戶，請先到記帳的「帳戶」分頁新增一個再接受邀請');
+    }
+
+    const sourceLoan = invite.fromLoan;
+    const mirroredDirection =
+      sourceLoan.direction === FinanceLoanDirection.LEND ? FinanceLoanDirection.BORROW : FinanceLoanDirection.LEND;
+    const mirroredType =
+      mirroredDirection === FinanceLoanDirection.LEND ? FinanceTransactionType.LOAN_OUT : FinanceTransactionType.LOAN_IN;
+
+    const mirroredLoan = await this.prisma.financeLoan.create({
+      data: {
+        spaceId: mySpace.id,
+        direction: mirroredDirection,
+        counterpartyName: invite.fromUser.name,
+        initialTransaction: {
+          create: {
+            spaceId: mySpace.id,
+            type: mirroredType,
+            amount: sourceLoan.initialTransaction!.amount,
+            accountId: account.id,
+            date: sourceLoan.initialTransaction!.date,
+            note: sourceLoan.initialTransaction!.note,
+          },
+        },
+      },
+      include: loanInclude,
+    });
+
+    await this.prisma.financeLoanInvite.update({
+      where: { id: inviteId },
+      data: { accepted: true, createdLoanId: mirroredLoan.id },
+    });
+
+    return this.withOutstanding(mirroredLoan);
+  }
+
+  /** 拒絕（或撤銷還沒被接受的邀請）——直接刪除，不留痕跡，跟共用行事曆的
+   * 邀請機制同一套設計。已經接受過的邀請不能再撤銷（兩邊的借貸紀錄已經
+   * 各自獨立存在，撤銷邀請本身不會、也不該把已建立的紀錄拿掉）。 */
+  async removeInvite(userId: string, inviteId: string) {
+    const invite = await this.prisma.financeLoanInvite.findUnique({ where: { id: inviteId } });
+    if (!invite) throw new NotFoundException('找不到這筆邀請');
+    if (invite.fromUserId !== userId && invite.toUserId !== userId) {
+      throw new ForbiddenException('這不是你的借貸邀請');
+    }
+    if (invite.accepted) {
+      throw new BadRequestException('已經接受過的邀請不能撤銷');
+    }
+    await this.prisma.financeLoanInvite.delete({ where: { id: inviteId } });
   }
 
   async remove(userId: string, spaceId: string, loanId: string) {

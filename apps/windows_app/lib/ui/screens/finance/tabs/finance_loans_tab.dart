@@ -52,6 +52,8 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          const _PendingLoanInvitesButton(),
+                          const SizedBox(width: 8),
                           FilterChip(
                             label: const Text('顯示已結清'),
                             selected: _showSettled,
@@ -79,6 +81,9 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
                                       : () => _openRepayDialog(context, accounts, loan),
                                   onEdit: () => _openEditDialog(context, accounts, loan),
                                   onDelete: () => _delete(context, loan),
+                                  onInvite: loan.inviteSentToName == null
+                                      ? () => _inviteConfirmation(context, loan)
+                                      : null,
                                 );
                               },
                             ),
@@ -93,6 +98,48 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
   }
 
   void _invalidate() => ref.invalidate(financeLoansProvider(widget.spaceId));
+
+  Future<void> _inviteConfirmation(BuildContext context, FinanceLoan loan) async {
+    final controller = TextEditingController();
+    final email = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('邀請對方確認'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('對方要用元序帳號的 email、且接受邀請後，才會在他自己的帳戶自動建立一筆對應紀錄。'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: '對方的 email'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('送出邀請'),
+          ),
+        ],
+      ),
+    );
+    if (email == null || email.isEmpty || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .inviteFinanceLoanConfirmation(spaceId: widget.spaceId, id: loan.id, email: email);
+      _invalidate();
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
 
   Future<void> _delete(BuildContext context, FinanceLoan loan) async {
     final confirmed = await showDialog<bool>(
@@ -209,6 +256,7 @@ class _LoanCard extends StatelessWidget {
     required this.onRepay,
     required this.onEdit,
     required this.onDelete,
+    required this.onInvite,
   });
 
   final FinanceLoan loan;
@@ -216,6 +264,9 @@ class _LoanCard extends StatelessWidget {
   final VoidCallback? onRepay;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+
+  /// Null 表示已經邀請過對方（不管對方接受了沒），不再重複顯示邀請按鈕。
+  final VoidCallback? onInvite;
 
   @override
   Widget build(BuildContext context) {
@@ -277,6 +328,22 @@ class _LoanCard extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.55)),
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: onInvite != null
+                  ? OutlinedButton.icon(
+                      onPressed: onInvite,
+                      icon: const Icon(Icons.person_add_alt_outlined, size: 14),
+                      label: const Text('邀請對方確認', style: TextStyle(fontSize: 12)),
+                      style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                    )
+                  : Text(
+                      loan.inviteAccepted == true
+                          ? '✓ ${loan.inviteSentToName} 已接受，對方帳戶已建立對應紀錄'
+                          : '已邀請 ${loan.inviteSentToName} 確認，等待對方接受',
+                      style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.55)),
+                    ),
+            ),
           ],
         ),
       ),
@@ -531,5 +598,135 @@ class _RepayDialogState extends State<_RepayDialog> {
         FilledButton(onPressed: _submit, child: const Text('儲存')),
       ],
     );
+  }
+}
+
+/// 收到的借出/借入互通邀請——有待處理的就顯示數字徽章，點下去開對話框
+/// 接受/拒絕。
+class _PendingLoanInvitesButton extends ConsumerWidget {
+  const _PendingLoanInvitesButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final invitesAsync = ref.watch(financeLoanInvitesReceivedProvider);
+    final pendingCount = invitesAsync.value?.where((i) => !i.accepted).length ?? 0;
+
+    return Badge(
+      label: Text('$pendingCount'),
+      isLabelVisible: pendingCount > 0,
+      child: OutlinedButton.icon(
+        onPressed: () => _showDialog(context),
+        icon: const Icon(Icons.mail_outline, size: 16),
+        label: const Text('借貸邀請'),
+      ),
+    );
+  }
+
+  void _showDialog(BuildContext context) {
+    showDialog<void>(context: context, builder: (_) => const _LoanInvitesDialog());
+  }
+}
+
+class _LoanInvitesDialog extends ConsumerWidget {
+  const _LoanInvitesDialog();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final invitesAsync = ref.watch(financeLoanInvitesReceivedProvider);
+
+    return Dialog(
+      child: SizedBox(
+        width: 420,
+        height: 480,
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Align(alignment: Alignment.centerLeft, child: Text('收到的借貸邀請')),
+            ),
+            Expanded(
+              child: invitesAsync.when(
+                data: (invites) {
+                  if (invites.isEmpty) {
+                    return const Center(child: Text('目前沒有任何邀請'));
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: invites.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final invite = invites[index];
+                      // 對方登記的方向是「他」的視角，接受後在我這邊會是相反方向。
+                      final myDirection = invite.direction == FinanceLoanDirection.lend
+                          ? FinanceLoanDirection.borrow
+                          : FinanceLoanDirection.lend;
+                      final label = myDirection == FinanceLoanDirection.lend
+                          ? '你借給 ${invite.fromUserName}'
+                          : '你跟 ${invite.fromUserName} 借';
+                      return Card(
+                        child: ListTile(
+                          title: Text(label),
+                          subtitle: Text(
+                            '${formatAmount(invite.amount)} · ${invite.date.year}/${invite.date.month}/${invite.date.day}'
+                            '${invite.accepted ? '（已接受）' : ''}',
+                          ),
+                          trailing: invite.accepted
+                              ? null
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    TextButton(
+                                      onPressed: () => _accept(context, ref, invite),
+                                      child: const Text('接受'),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      tooltip: '拒絕',
+                                      onPressed: () => _decline(context, ref, invite),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      );
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Center(child: Text('讀取失敗：$error')),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _accept(BuildContext context, WidgetRef ref, FinanceLoanInvite invite) async {
+    try {
+      await ref.read(apiClientProvider).acceptFinanceLoanInvite(invite.id);
+      ref.invalidate(financeLoanInvitesReceivedProvider);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  Future<void> _decline(BuildContext context, WidgetRef ref, FinanceLoanInvite invite) async {
+    try {
+      await ref.read(apiClientProvider).removeFinanceLoanInvite(invite.id);
+      ref.invalidate(financeLoanInvitesReceivedProvider);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 }

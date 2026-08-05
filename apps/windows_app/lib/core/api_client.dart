@@ -1244,6 +1244,23 @@ class ApiClient {
     await _delete('/spaces/$spaceId/finance/loans/$id');
   }
 
+  Future<void> inviteFinanceLoanConfirmation({required String spaceId, required String id, required String email}) async {
+    await _post('/spaces/$spaceId/finance/loans/$id/invite', {'email': email});
+  }
+
+  Future<List<FinanceLoanInvite>> listReceivedFinanceLoanInvites() async {
+    final body = await _getList('/finance-loan-invites/received');
+    return body.map((e) => FinanceLoanInvite.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> acceptFinanceLoanInvite(String id) async {
+    await _post('/finance-loan-invites/$id/accept', {});
+  }
+
+  Future<void> removeFinanceLoanInvite(String id) async {
+    await _delete('/finance-loan-invites/$id');
+  }
+
   Future<List<FinanceAdvance>> listFinanceAdvances(String spaceId, {String? projectId}) async {
     final body = await _getList(
       '/spaces/$spaceId/finance/advances${_queryString({'projectId': projectId})}',

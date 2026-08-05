@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SpacesModule } from '../spaces/spaces.module';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { ProjectsModule } from '../projects/projects.module';
+import { UsersModule } from '../users/users.module';
 import { FinanceAccessService } from './finance-access.service';
 import { FinanceAccountsController } from './finance-accounts.controller';
 import { FinanceAccountsService } from './finance-accounts.service';
@@ -14,12 +15,13 @@ import { FinanceBudgetsService } from './finance-budgets.service';
 import { FinanceRecurringTransactionsController } from './finance-recurring-transactions.controller';
 import { FinanceRecurringTransactionsService } from './finance-recurring-transactions.service';
 import { FinanceLoansController } from './finance-loans.controller';
+import { FinanceLoanInvitesController } from './finance-loan-invites.controller';
 import { FinanceLoansService } from './finance-loans.service';
 import { FinanceAdvancesController } from './finance-advances.controller';
 import { FinanceAdvancesService } from './finance-advances.service';
 
 @Module({
-  imports: [SpacesModule, LineNotifierModule, ProjectsModule],
+  imports: [SpacesModule, LineNotifierModule, ProjectsModule, UsersModule],
   controllers: [
     FinanceAccountsController,
     FinanceCategoriesController,
@@ -27,6 +29,7 @@ import { FinanceAdvancesService } from './finance-advances.service';
     FinanceBudgetsController,
     FinanceRecurringTransactionsController,
     FinanceLoansController,
+    FinanceLoanInvitesController,
     FinanceAdvancesController,
   ],
   providers: [

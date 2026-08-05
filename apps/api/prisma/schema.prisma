@@ -146,6 +146,8 @@ model User {
   aiUsageLogs                AiUsageLog[]
   calendarSharesGiven        CalendarShare[]            @relation("CalendarShareOwner")
   calendarSharesReceived     CalendarShare[]            @relation("CalendarShareViewer")
+  financeLoanInvitesSent     FinanceLoanInvite[]        @relation("LoanInviteFrom")
+  financeLoanInvitesReceived FinanceLoanInvite[]        @relation("LoanInviteTo")
 }
 
 model Space {
@@ -800,6 +802,44 @@ model FinanceLoan {
 
   initialTransaction FinanceTransaction?    @relation("LoanInitialTransaction")
   repayments         FinanceLoanRepayment[]
+
+  /// This loan sent a 借出/借入互通 invite to another platform user (set at
+  /// most once — `FinanceLoanInvite.fromLoanId` is `@unique`).
+  inviteSent    FinanceLoanInvite? @relation("LoanInviteSource")
+  /// This loan WAS the counterpart record auto-created when someone else's
+  /// invite got accepted (set only on the mirrored side).
+  inviteCreated FinanceLoanInvite? @relation("LoanInviteCreatedLoan")
+}
+
+/// 借出/借入互通 (2026-08-05) — inviting another platform user to confirm a
+/// loan you recorded involving them, so their side automatically gets a
+/// matching record instead of relying on them to type it in themselves.
+/// **Requires their acceptance** (explicit user requirement, same
+/// consent-based pattern as CalendarShare) — nothing is created on
+/// `toUserId`'s side until `accepted` flips true. Deliberately a one-time
+/// mirror at acceptance, not an ongoing sync: once `createdLoanId` is set,
+/// the two `FinanceLoan` rows are independent going forward (each side's
+/// own repayments are tracked separately, not pushed to the other) — the
+/// user only asked for "the other side gets one matching record", not
+/// continuous two-way sync.
+model FinanceLoanInvite {
+  id String @id @default(uuid())
+
+  fromLoanId String      @unique
+  fromLoan   FinanceLoan @relation("LoanInviteSource", fields: [fromLoanId], references: [id], onDelete: Cascade)
+
+  fromUserId String
+  fromUser   User   @relation("LoanInviteFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+
+  toUserId String
+  toUser   User   @relation("LoanInviteTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  accepted Boolean @default(false)
+
+  createdLoanId String?      @unique
+  createdLoan   FinanceLoan? @relation("LoanInviteCreatedLoan", fields: [createdLoanId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
 }
 
 model FinanceLoanRepayment {
