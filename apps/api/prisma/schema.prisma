@@ -801,6 +801,16 @@ model FinanceLoan {
   counterpartyName String
   createdAt        DateTime             @default(now())
 
+  /// 大系統V1.54.0 — persisted mirror of `outstanding <= 0`, kept in sync by
+  /// `FinanceLoansService` on every write that can change the outstanding
+  /// balance (create/addRepayment/update/updateRepayment/acceptInvite).
+  /// Exists so `list()` can filter `WHERE settled = ...` at the query level
+  /// for cursor pagination — an old unsettled loan must always land on page
+  /// 1 of the "未結清" view regardless of `createdAt`, which a purely
+  /// in-memory-computed `settled` (the old approach) can't guarantee once
+  /// the list is paginated instead of loaded whole.
+  settled Boolean @default(false)
+
   initialTransaction FinanceTransaction?    @relation("LoanInitialTransaction")
   repayments         FinanceLoanRepayment[]
 
@@ -869,6 +879,10 @@ model FinanceAdvance {
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
+
+  /// See `FinanceLoan.settled`'s doc comment — same reasoning/sync pattern,
+  /// kept up to date by `FinanceAdvancesService`.
+  settled Boolean @default(false)
 
   initialTransaction FinanceTransaction?       @relation("AdvanceInitialTransaction")
   repayments         FinanceAdvanceRepayment[]

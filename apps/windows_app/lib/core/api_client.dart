@@ -1165,9 +1165,10 @@ class ApiClient {
     await _delete('/spaces/$spaceId/finance/recurring-transactions/$id');
   }
 
-  Future<List<FinanceLoan>> listFinanceLoans(String spaceId) async {
-    final body = await _getList('/spaces/$spaceId/finance/loans');
-    return body.map((e) => FinanceLoan.fromJson(e as Map<String, dynamic>)).toList();
+  Future<FinanceLoansPage> listFinanceLoans(String spaceId, {String? cursor, bool? settled}) async {
+    final query = _queryString({'cursor': cursor, 'settled': settled?.toString()});
+    final body = await _get('/spaces/$spaceId/finance/loans$query');
+    return FinanceLoansPage.fromJson(body);
   }
 
   Future<void> createFinanceLoan({
@@ -1261,11 +1262,19 @@ class ApiClient {
     await _delete('/finance-loan-invites/$id');
   }
 
-  Future<List<FinanceAdvance>> listFinanceAdvances(String spaceId, {String? projectId}) async {
-    final body = await _getList(
-      '/spaces/$spaceId/finance/advances${_queryString({'projectId': projectId})}',
-    );
-    return body.map((e) => FinanceAdvance.fromJson(e as Map<String, dynamic>)).toList();
+  Future<FinanceAdvancesPage> listFinanceAdvances(
+    String spaceId, {
+    String? projectId,
+    String? cursor,
+    bool? settled,
+  }) async {
+    final query = _queryString({
+      'projectId': projectId,
+      'cursor': cursor,
+      'settled': settled?.toString(),
+    });
+    final body = await _get('/spaces/$spaceId/finance/advances$query');
+    return FinanceAdvancesPage.fromJson(body);
   }
 
   Future<void> createFinanceAdvance({

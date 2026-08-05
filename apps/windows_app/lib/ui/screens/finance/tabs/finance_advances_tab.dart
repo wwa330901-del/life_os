@@ -23,10 +23,31 @@ class FinanceAdvancesTab extends ConsumerStatefulWidget {
 
 class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
   bool _showSettled = false;
+  final _scrollController = ScrollController();
+
+  FinanceAdvancesQuery get _query => (spaceId: widget.spaceId, settled: _showSettled ? null : false);
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels < _scrollController.position.maxScrollExtent - 200) return;
+    ref.read(financeAdvancesProvider(_query).notifier).loadMore();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final advancesAsync = ref.watch(financeAdvancesProvider(widget.spaceId));
+    final advancesAsync = ref.watch(financeAdvancesProvider(_query));
     final accountsAsync = ref.watch(financeAccountsProvider(widget.spaceId));
     final projectsAsync = ref.watch(myProjectsProvider);
     final accounts = accountsAsync.value ?? const [];
@@ -44,8 +65,8 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
       body: accounts.isEmpty
           ? const Center(child: Text('要先在「帳戶」分頁新增至少一個帳戶'))
           : advancesAsync.when(
-              data: (advances) {
-                final visible = _showSettled ? advances : advances.where((a) => !a.settled).toList();
+              data: (page) {
+                final visible = page.items;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -68,10 +89,17 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
                               child: Text(_showSettled ? '還沒有任何代墊' : '目前沒有未收回的代墊'),
                             )
                           : ListView.separated(
+                              controller: _scrollController,
                               padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                              itemCount: visible.length,
+                              itemCount: visible.length + (page.hasMore ? 1 : 0),
                               separatorBuilder: (_, _) => const SizedBox(height: 8),
                               itemBuilder: (context, index) {
+                                if (index >= visible.length) {
+                                  return const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                    child: Center(child: CircularProgressIndicator()),
+                                  );
+                                }
                                 final advance = visible[index];
                                 return _AdvanceCard(
                                   advance: advance,
@@ -94,7 +122,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
     );
   }
 
-  void _invalidate() => ref.invalidate(financeAdvancesProvider(widget.spaceId));
+  void _invalidate() => ref.invalidate(financeAdvancesProvider(_query));
 
   Future<void> _delete(BuildContext context, FinanceAdvance advance) async {
     final confirmed = await showDialog<bool>(

@@ -29,14 +29,33 @@ export class FinanceLoansService {
     private readonly usersService: UsersService,
   ) {}
 
-  async list(userId: string, spaceId: string) {
+  /** Cursor-paginated (30/page), optionally filtered by `settled` — filtering
+   * at the query level (backed by the real `settled` column, not the
+   * in-memory `withOutstanding` computation) is what makes this safe to
+   * paginate at all: an old unsettled loan must always land on page 1 of
+   * the "未結清" view regardless of `createdAt`, which it wouldn't if
+   * pagination were applied to the unfiltered list and settled/unsettled
+   * were sorted out client-side after the fact. */
+  async list(
+    userId: string,
+    spaceId: string,
+    filter: { cursor?: string; settled?: boolean } = {},
+  ) {
     await this.access.assertPersonalSpace(userId, spaceId);
-    const loans = await this.prisma.financeLoan.findMany({
-      where: { spaceId },
+    const take = 30;
+    const rows = await this.prisma.financeLoan.findMany({
+      where: { spaceId, ...(filter.settled !== undefined && { settled: filter.settled }) },
       include: loanInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
-    return loans.map((loan) => this.withOutstanding(loan));
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    return {
+      items: page.map((loan) => this.withOutstanding(loan)),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+    };
   }
 
   async create(userId: string, spaceId: string, dto: CreateFinanceLoanDto) {
@@ -66,6 +85,7 @@ export class FinanceLoansService {
       },
       include: loanInclude,
     });
+    await this.syncSettled(loan.id, loan);
     return this.withOutstanding(loan);
   }
 
@@ -110,6 +130,7 @@ export class FinanceLoansService {
     });
 
     const updated = await this.getOrThrow(spaceId, loanId);
+    await this.syncSettled(loanId, updated);
     return this.withOutstanding(updated);
   }
 
@@ -150,7 +171,9 @@ export class FinanceLoansService {
       });
     }
 
-    return this.withOutstanding(await this.getOrThrow(spaceId, loanId));
+    const updatedAmount = await this.getOrThrow(spaceId, loanId);
+    await this.syncSettled(loanId, updatedAmount);
+    return this.withOutstanding(updatedAmount);
   }
 
   async updateRepayment(
@@ -188,7 +211,9 @@ export class FinanceLoansService {
       },
     });
 
-    return this.withOutstanding(await this.getOrThrow(spaceId, loanId));
+    const updatedRepayment = await this.getOrThrow(spaceId, loanId);
+    await this.syncSettled(loanId, updatedRepayment);
+    return this.withOutstanding(updatedRepayment);
   }
 
   /** 借出/借入互通 — invite another platform user (by email) to confirm this
@@ -281,6 +306,7 @@ export class FinanceLoansService {
       where: { id: inviteId },
       data: { accepted: true, createdLoanId: mirroredLoan.id },
     });
+    await this.syncSettled(mirroredLoan.id, mirroredLoan);
 
     return this.withOutstanding(mirroredLoan);
   }
@@ -341,5 +367,21 @@ export class FinanceLoansService {
   >(loan: T) {
     const outstanding = this.outstandingOf(loan);
     return { ...loan, outstanding, settled: outstanding <= 0 };
+  }
+
+  /** Persists the real `settled` column so `list()` can filter on it at the
+   * query level (see `list`'s doc comment) — called after every write that
+   * can change a loan's outstanding balance. */
+  private async syncSettled(
+    loanId: string,
+    loan: {
+      initialTransaction: { amount: number } | null;
+      repayments: { transaction: { amount: number } | null }[];
+    },
+  ) {
+    await this.prisma.financeLoan.update({
+      where: { id: loanId },
+      data: { settled: this.outstandingOf(loan) <= 0 },
+    });
   }
 }

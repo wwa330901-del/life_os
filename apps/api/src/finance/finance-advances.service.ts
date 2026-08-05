@@ -27,14 +27,34 @@ export class FinanceAdvancesService {
     private readonly projectsService: ProjectsService,
   ) {}
 
-  async list(userId: string, spaceId: string, projectId?: string) {
+  /** Cursor-paginated (30/page), optionally filtered by `projectId`/`settled`
+   * — see `FinanceLoansService.list`'s doc comment for why `settled` filters
+   * at the query level against a persisted column rather than being sorted
+   * out client-side after an unfiltered page load. */
+  async list(
+    userId: string,
+    spaceId: string,
+    filter: { projectId?: string; cursor?: string; settled?: boolean } = {},
+  ) {
     await this.access.assertPersonalSpace(userId, spaceId);
-    const advances = await this.prisma.financeAdvance.findMany({
-      where: { spaceId, ...(projectId && { projectId }) },
+    const take = 30;
+    const rows = await this.prisma.financeAdvance.findMany({
+      where: {
+        spaceId,
+        ...(filter.projectId && { projectId: filter.projectId }),
+        ...(filter.settled !== undefined && { settled: filter.settled }),
+      },
       include: advanceInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
-    return advances.map((advance) => this.withOutstanding(advance));
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    return {
+      items: page.map((advance) => this.withOutstanding(advance)),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+    };
   }
 
   async create(userId: string, spaceId: string, dto: CreateFinanceAdvanceDto) {
@@ -62,6 +82,7 @@ export class FinanceAdvancesService {
       },
       include: advanceInclude,
     });
+    await this.syncSettled(advance.id, advance);
     return this.withOutstanding(advance);
   }
 
@@ -99,6 +120,7 @@ export class FinanceAdvancesService {
     });
 
     const updated = await this.getOrThrow(spaceId, advanceId);
+    await this.syncSettled(advanceId, updated);
     return this.withOutstanding(updated);
   }
 
@@ -140,7 +162,9 @@ export class FinanceAdvancesService {
       });
     }
 
-    return this.withOutstanding(await this.getOrThrow(spaceId, advanceId));
+    const updatedAmount = await this.getOrThrow(spaceId, advanceId);
+    await this.syncSettled(advanceId, updatedAmount);
+    return this.withOutstanding(updatedAmount);
   }
 
   async updateRepayment(
@@ -178,7 +202,9 @@ export class FinanceAdvancesService {
       },
     });
 
-    return this.withOutstanding(await this.getOrThrow(spaceId, advanceId));
+    const updatedRepayment = await this.getOrThrow(spaceId, advanceId);
+    await this.syncSettled(advanceId, updatedRepayment);
+    return this.withOutstanding(updatedRepayment);
   }
 
   async remove(userId: string, spaceId: string, advanceId: string) {
@@ -227,5 +253,21 @@ export class FinanceAdvancesService {
   >(advance: T) {
     const outstanding = this.outstandingOf(advance);
     return { ...advance, outstanding, settled: outstanding <= 0 };
+  }
+
+  /** Persists the real `settled` column so `list()` can filter on it at the
+   * query level (see `list`'s doc comment) — called after every write that
+   * can change an advance's outstanding balance. */
+  private async syncSettled(
+    advanceId: string,
+    advance: {
+      initialTransaction: { amount: number } | null;
+      repayments: { transaction: { amount: number } | null }[];
+    },
+  ) {
+    await this.prisma.financeAdvance.update({
+      where: { id: advanceId },
+      data: { settled: this.outstandingOf(advance) <= 0 },
+    });
   }
 }

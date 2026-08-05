@@ -68,23 +68,120 @@ final financeRecurringTransactionsProvider = FutureProvider.autoDispose
       return ref.read(apiClientProvider).listFinanceRecurringTransactions(spaceId);
     });
 
-final financeLoansProvider = FutureProvider.autoDispose.family<List<FinanceLoan>, String>((
-  ref,
-  spaceId,
-) {
-  return ref.read(apiClientProvider).listFinanceLoans(spaceId);
-});
+/// (spaceId, settled) — `settled: false`/`true` filters at the query level
+/// (backed by the real `settled` column so an old unsettled loan always
+/// lands on page 1, see 大系統V1.54.0); `settled: null` = every loan,
+/// currently unused but kept for parity with the backend's optional filter.
+typedef FinanceLoansQuery = ({String spaceId, bool? settled});
+
+/// Cursor-paginated (30/page) — mirrors `StockTransactionsPageState`'s
+/// shape/loadMore pattern.
+class FinanceLoansPageState {
+  const FinanceLoansPageState({required this.items, required this.cursor, this.isLoadingMore = false});
+
+  final List<FinanceLoan> items;
+  final String? cursor;
+  final bool isLoadingMore;
+
+  bool get hasMore => cursor != null;
+
+  FinanceLoansPageState copyWith({List<FinanceLoan>? items, String? cursor, bool? isLoadingMore}) =>
+      FinanceLoansPageState(
+        items: items ?? this.items,
+        cursor: cursor ?? this.cursor,
+        isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      );
+}
+
+class FinanceLoansNotifier extends AsyncNotifier<FinanceLoansPageState> {
+  FinanceLoansNotifier(this.query);
+
+  final FinanceLoansQuery query;
+
+  @override
+  Future<FinanceLoansPageState> build() async {
+    final page = await ref
+        .read(apiClientProvider)
+        .listFinanceLoans(query.spaceId, settled: query.settled);
+    return FinanceLoansPageState(items: page.items, cursor: page.nextCursor);
+  }
+
+  Future<void> loadMore() async {
+    final current = state.value;
+    if (current == null || !current.hasMore || current.isLoadingMore) return;
+    state = AsyncData(current.copyWith(isLoadingMore: true));
+    final page = await ref
+        .read(apiClientProvider)
+        .listFinanceLoans(query.spaceId, settled: query.settled, cursor: current.cursor);
+    state = AsyncData(
+      FinanceLoansPageState(items: [...current.items, ...page.items], cursor: page.nextCursor),
+    );
+  }
+}
+
+final financeLoansProvider =
+    AsyncNotifierProvider.autoDispose.family<FinanceLoansNotifier, FinanceLoansPageState, FinanceLoansQuery>(
+      FinanceLoansNotifier.new,
+    );
 
 final financeLoanInvitesReceivedProvider = FutureProvider.autoDispose<List<FinanceLoanInvite>>((ref) {
   return ref.read(apiClientProvider).listReceivedFinanceLoanInvites();
 });
 
-final financeAdvancesProvider = FutureProvider.autoDispose.family<List<FinanceAdvance>, String>((
-  ref,
-  spaceId,
-) {
-  return ref.read(apiClientProvider).listFinanceAdvances(spaceId);
-});
+/// (spaceId, settled) — same shape/reasoning as [FinanceLoansQuery].
+typedef FinanceAdvancesQuery = ({String spaceId, bool? settled});
+
+/// Cursor-paginated (30/page) — mirrors [FinanceLoansPageState].
+class FinanceAdvancesPageState {
+  const FinanceAdvancesPageState({required this.items, required this.cursor, this.isLoadingMore = false});
+
+  final List<FinanceAdvance> items;
+  final String? cursor;
+  final bool isLoadingMore;
+
+  bool get hasMore => cursor != null;
+
+  FinanceAdvancesPageState copyWith({
+    List<FinanceAdvance>? items,
+    String? cursor,
+    bool? isLoadingMore,
+  }) => FinanceAdvancesPageState(
+    items: items ?? this.items,
+    cursor: cursor ?? this.cursor,
+    isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+  );
+}
+
+class FinanceAdvancesNotifier extends AsyncNotifier<FinanceAdvancesPageState> {
+  FinanceAdvancesNotifier(this.query);
+
+  final FinanceAdvancesQuery query;
+
+  @override
+  Future<FinanceAdvancesPageState> build() async {
+    final page = await ref
+        .read(apiClientProvider)
+        .listFinanceAdvances(query.spaceId, settled: query.settled);
+    return FinanceAdvancesPageState(items: page.items, cursor: page.nextCursor);
+  }
+
+  Future<void> loadMore() async {
+    final current = state.value;
+    if (current == null || !current.hasMore || current.isLoadingMore) return;
+    state = AsyncData(current.copyWith(isLoadingMore: true));
+    final page = await ref
+        .read(apiClientProvider)
+        .listFinanceAdvances(query.spaceId, settled: query.settled, cursor: current.cursor);
+    state = AsyncData(
+      FinanceAdvancesPageState(items: [...current.items, ...page.items], cursor: page.nextCursor),
+    );
+  }
+}
+
+final financeAdvancesProvider = AsyncNotifierProvider.autoDispose
+    .family<FinanceAdvancesNotifier, FinanceAdvancesPageState, FinanceAdvancesQuery>(
+      FinanceAdvancesNotifier.new,
+    );
 
 /// Cross-space — every project the user belongs to, for 代墊's optional
 /// project picker (see `MyProjectSummary`'s doc comment for why this isn't

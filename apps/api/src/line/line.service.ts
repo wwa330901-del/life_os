@@ -852,8 +852,9 @@ export class LineService {
       return;
     }
 
-    const loans = await this.financeLoansService.list(userId, space.id);
-    const outstanding = loans.filter((l) => !l.settled);
+    const { items: outstanding } = await this.financeLoansService.list(userId, space.id, {
+      settled: false,
+    });
 
     await this.prisma.lineAccountLink.update({
       where: { id: linkId },
@@ -1039,8 +1040,9 @@ export class LineService {
       return;
     }
 
-    const advances = await this.financeAdvancesService.list(userId, space.id);
-    const outstanding = advances.filter((a) => !a.settled);
+    const { items: outstanding } = await this.financeAdvancesService.list(userId, space.id, {
+      settled: false,
+    });
 
     await this.prisma.lineAccountLink.update({
       where: { id: linkId },

@@ -505,6 +505,36 @@ class FinanceAdvance {
   }
 }
 
+/// Cursor-paginated (30/page) — mirrors `StockTransactionsPage`'s shape.
+class FinanceLoansPage {
+  const FinanceLoansPage({required this.items, required this.nextCursor});
+
+  final List<FinanceLoan> items;
+  final String? nextCursor;
+
+  factory FinanceLoansPage.fromJson(Map<String, dynamic> json) => FinanceLoansPage(
+    items: (json['items'] as List<dynamic>? ?? [])
+        .map((e) => FinanceLoan.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    nextCursor: json['nextCursor'] as String?,
+  );
+}
+
+/// Cursor-paginated (30/page) — mirrors `StockTransactionsPage`'s shape.
+class FinanceAdvancesPage {
+  const FinanceAdvancesPage({required this.items, required this.nextCursor});
+
+  final List<FinanceAdvance> items;
+  final String? nextCursor;
+
+  factory FinanceAdvancesPage.fromJson(Map<String, dynamic> json) => FinanceAdvancesPage(
+    items: (json['items'] as List<dynamic>? ?? [])
+        .map((e) => FinanceAdvance.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    nextCursor: json['nextCursor'] as String?,
+  );
+}
+
 /// 借出/借入互通——別人邀請你確認一筆借貸，接受後會在你自己的個人空間
 /// 自動建一筆方向相反的對應紀錄。`GET /finance-loan-invites/received` 用。
 class FinanceLoanInvite {

@@ -18,8 +18,14 @@ export class FinanceAdvancesController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('spaceId') spaceId: string,
     @Query('projectId') projectId?: string,
+    @Query('cursor') cursor?: string,
+    @Query('settled') settled?: string,
   ) {
-    return this.service.list(user.id, spaceId, projectId);
+    return this.service.list(user.id, spaceId, {
+      projectId,
+      cursor,
+      settled: settled === undefined ? undefined : settled === 'true',
+    });
   }
 
   @Post()
