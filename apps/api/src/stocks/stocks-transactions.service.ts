@@ -11,12 +11,25 @@ export class StocksTransactionsService {
     private readonly access: StocksAccessService,
   ) {}
 
-  async list(userId: string, spaceId: string) {
+  /** Cursor-paginated (30/page) — used to fetch this space's entire trade
+   * history unconditionally, the same unbounded-list problem fixed
+   * elsewhere for 知識庫/代辦事項/文件簽核 (see 大系統V1.46.0). Unlike
+   * `StocksHoldingsService.list`, which reads the full history itself to
+   * compute average-cost-basis (order-dependent, can't be paginated away —
+   * left alone, deliberately), this is just a display list with nothing
+   * downstream depending on it being complete. */
+  async list(userId: string, spaceId: string, filter: { cursor?: string } = {}) {
     await this.access.assertPersonalSpace(userId, spaceId);
-    return this.prisma.stockTransaction.findMany({
+    const take = 30;
+    const rows = await this.prisma.stockTransaction.findMany({
       where: { spaceId },
-      orderBy: { tradeDate: 'desc' },
+      orderBy: [{ tradeDate: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    return { items: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   }
 
   /// `shares` is always derived (`totalCost / pricePerShare`) — the caller

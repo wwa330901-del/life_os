@@ -57,6 +57,22 @@ class StockTransaction {
   );
 }
 
+/// One page of a cursor-paginated `GET /spaces/:spaceId/stocks/transactions`
+/// fetch — `nextCursor` is null once there's nothing more to load.
+class StockTransactionsPage {
+  const StockTransactionsPage({required this.items, required this.nextCursor});
+
+  final List<StockTransaction> items;
+  final String? nextCursor;
+
+  factory StockTransactionsPage.fromJson(Map<String, dynamic> json) => StockTransactionsPage(
+    items: (json['items'] as List<dynamic>? ?? [])
+        .map((e) => StockTransaction.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    nextCursor: json['nextCursor'] as String?,
+  );
+}
+
 /// A 定期定額（DCA）計畫 — same 每月第幾天＋遇假日調整 shape as
 /// [FinanceRecurringTransaction]. Never auto-records an amount (a DCA fill
 /// price is different every round) — the due day just sends a LINE

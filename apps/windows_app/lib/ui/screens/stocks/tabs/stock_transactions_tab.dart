@@ -13,13 +13,39 @@ import '../../finance/widgets/finance_format.dart';
 /// buy/sell. [pricePerShare]／[totalCost] are what the user actually types;
 /// 股數 is always server-derived and shown read-only. Settlement (T+2) is
 /// automatic — this tab just shows whether it's happened yet.
-class StockTransactionsTab extends ConsumerWidget {
+class StockTransactionsTab extends ConsumerStatefulWidget {
   const StockTransactionsTab({super.key, required this.spaceId});
 
   final String spaceId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<StockTransactionsTab> createState() => _StockTransactionsTabState();
+}
+
+class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels < _scrollController.position.maxScrollExtent - 200) return;
+    ref.read(stockTransactionsProvider(widget.spaceId).notifier).loadMore();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final spaceId = widget.spaceId;
     final transactionsAsync = ref.watch(stockTransactionsProvider(spaceId));
     final accountsAsync = ref.watch(financeAccountsProvider(spaceId));
     final accounts = accountsAsync.value ?? const [];
@@ -36,16 +62,23 @@ class StockTransactionsTab extends ConsumerWidget {
       body: accounts.isEmpty
           ? const Center(child: Text('要先在「記帳」的「帳戶」分頁新增至少一個帳戶'))
           : transactionsAsync.when(
-              data: (transactions) {
-                if (transactions.isEmpty) {
+              data: (page) {
+                if (page.items.isEmpty) {
                   return const Center(child: Text('還沒有任何股票交易'));
                 }
                 return ListView.separated(
+                  controller: _scrollController,
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                  itemCount: transactions.length,
+                  itemCount: page.items.length + (page.hasMore ? 1 : 0),
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
-                    final t = transactions[index];
+                    if (index >= page.items.length) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    final t = page.items[index];
                     return Card(
                       child: ListTile(
                         leading: Icon(
@@ -78,8 +111,8 @@ class StockTransactionsTab extends ConsumerWidget {
   }
 
   void _invalidate(WidgetRef ref) {
-    ref.invalidate(stockTransactionsProvider(spaceId));
-    ref.invalidate(stockHoldingsProvider(spaceId));
+    ref.invalidate(stockTransactionsProvider(widget.spaceId));
+    ref.invalidate(stockHoldingsProvider(widget.spaceId));
   }
 
   Future<void> _delete(BuildContext context, WidgetRef ref, StockTransaction t) async {
@@ -97,7 +130,7 @@ class StockTransactionsTab extends ConsumerWidget {
     if (confirmed != true || !context.mounted) return;
 
     try {
-      await ref.read(apiClientProvider).deleteStockTransaction(spaceId: spaceId, id: t.id);
+      await ref.read(apiClientProvider).deleteStockTransaction(spaceId: widget.spaceId, id: t.id);
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
@@ -115,7 +148,7 @@ class StockTransactionsTab extends ConsumerWidget {
 
     try {
       await ref.read(apiClientProvider).createStockTransaction(
-            spaceId: spaceId,
+            spaceId: widget.spaceId,
             stockCode: result.stockCode,
             type: result.type,
             pricePerShare: result.pricePerShare,

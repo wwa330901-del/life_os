@@ -188,8 +188,24 @@ export class HomeService {
     const projectNameOf = new Map(memberships.map((m) => [m.projectId, m.project.name]));
 
     const { start: todayStart, end: todayEnd } = todayRange();
+    // Bounded to exactly what the two buckets below need (completed today,
+    // or still-open with a due date today) — this used to fetch the
+    // caller's entire todo history unconditionally and filter in memory,
+    // the same unbounded-list bug fixed elsewhere in TodosService.listAll
+    // and LineService.sendTodoOverviewAllProjects (see 大系統V1.46.0) —
+    // this was the third, previously-missed copy of it.
     const todos = await this.prisma.projectTodo.findMany({
-      where: { OR: [{ projectId: { in: projectIds } }, { personalOwnerUserId: userId }] },
+      where: {
+        AND: [
+          { OR: [{ projectId: { in: projectIds } }, { personalOwnerUserId: userId }] },
+          {
+            OR: [
+              { completedAt: { gte: todayStart, lt: todayEnd } },
+              { done: false, dueDate: { gte: todayStart, lt: todayEnd } },
+            ],
+          },
+        ],
+      },
     });
 
     const isSameDay = (d: Date) => d >= todayStart && d < todayEnd;

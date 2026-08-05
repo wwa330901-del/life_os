@@ -120,6 +120,22 @@ class DocumentApprovalSummary {
   );
 }
 
+/// One page of a cursor-paginated `GET /document-approvals/mine` fetch —
+/// `nextCursor` is null once there's nothing more to load.
+class DocumentApprovalsPage {
+  const DocumentApprovalsPage({required this.items, required this.nextCursor});
+
+  final List<DocumentApprovalSummary> items;
+  final String? nextCursor;
+
+  factory DocumentApprovalsPage.fromJson(Map<String, dynamic> json) => DocumentApprovalsPage(
+    items: (json['items'] as List<dynamic>? ?? [])
+        .map((e) => DocumentApprovalSummary.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    nextCursor: json['nextCursor'] as String?,
+  );
+}
+
 /// One row of 待我簽核 — a step currently awaiting this user's action
 /// specifically (already filtered server-side to "it's your turn").
 class PendingApprovalStep {

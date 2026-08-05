@@ -9,23 +9,57 @@ import '../../../../state/auth_provider.dart';
 /// 我送出的 — every approval the caller has submitted (cross-project), with
 /// full step detail so they can see "目前卡在誰那裡" and reply to any
 /// 提問 note left by the currently-active approver.
-class MyApprovalSubmissionsTab extends ConsumerWidget {
+class MyApprovalSubmissionsTab extends ConsumerStatefulWidget {
   const MyApprovalSubmissionsTab({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final approvalsAsync = ref.watch(myApprovalSubmissionsProvider);
+  ConsumerState<MyApprovalSubmissionsTab> createState() => _MyApprovalSubmissionsTabState();
+}
 
-    return approvalsAsync.when(
-      data: (approvals) {
-        if (approvals.isEmpty) {
+class _MyApprovalSubmissionsTabState extends ConsumerState<MyApprovalSubmissionsTab> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels < _scrollController.position.maxScrollExtent - 200) return;
+    ref.read(myApprovalSubmissionsProvider.notifier).loadMore();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pageAsync = ref.watch(myApprovalSubmissionsProvider);
+
+    return pageAsync.when(
+      data: (page) {
+        if (page.items.isEmpty) {
           return const Center(child: Text('你還沒有送出過任何簽核'));
         }
         return ListView.separated(
+          controller: _scrollController,
           padding: const EdgeInsets.all(16),
-          itemCount: approvals.length,
+          itemCount: page.items.length + (page.hasMore ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) => _SubmissionCard(approval: approvals[index]),
+          itemBuilder: (context, index) {
+            if (index >= page.items.length) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return _SubmissionCard(approval: page.items[index]);
+          },
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),

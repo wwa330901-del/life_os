@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { DocumentApprovalsService } from './document-approvals.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -22,8 +22,8 @@ export class DocumentApprovalStepsController {
   }
 
   @Get('mine')
-  mySubmissions(@CurrentUser() user: AuthenticatedUser) {
-    return this.service.mySubmissions(user.id);
+  mySubmissions(@CurrentUser() user: AuthenticatedUser, @Query('cursor') cursor?: string) {
+    return this.service.mySubmissions(user.id, { cursor });
   }
 
   @Post('steps/:stepId/approve')

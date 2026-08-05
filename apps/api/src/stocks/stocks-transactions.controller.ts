@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { StocksTransactionsService } from './stocks-transactions.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -11,8 +11,12 @@ export class StocksTransactionsController {
   constructor(private readonly service: StocksTransactionsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string) {
-    return this.service.list(user.id, spaceId);
+  list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.service.list(user.id, spaceId, { cursor });
   }
 
   @Post()

@@ -228,8 +228,16 @@ export class DocumentApprovalsService {
 
   /** Cross-project — every approval this user has submitted, with full
    * step/note detail so the app can show "目前卡在誰那裡". */
-  async mySubmissions(userId: string) {
-    const approvals = await this.prisma.documentApproval.findMany({
+  /** Cursor-paginated (30/page) — this used to fetch every approval the
+   * caller has ever submitted unconditionally, each with a fairly deep
+   * nested include (every step + every note), the same unbounded-list
+   * problem fixed elsewhere for 知識庫/代辦事項 (see 大系統V1.46.0). Unlike
+   * `finance-loans.service.ts`'s equivalent list, nothing else in the
+   * codebase depends on this returning a complete unfiltered set, so plain
+   * cursor pagination is safe here. */
+  async mySubmissions(userId: string, filter: { cursor?: string } = {}) {
+    const take = 30;
+    const rows = await this.prisma.documentApproval.findMany({
       where: { submittedByUserId: userId },
       include: {
         generatedDocument: true,
@@ -238,9 +246,16 @@ export class DocumentApprovalsService {
           include: { approver: { select: { name: true } }, notes: { orderBy: { createdAt: 'asc' } } },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
-    return approvals.map((a) => this.toApprovalSummary(a));
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    return {
+      items: page.map((a) => this.toApprovalSummary(a)),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+    };
   }
 
   async historyForDocument(userId: string, projectId: string, documentId: string) {

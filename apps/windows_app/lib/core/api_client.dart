@@ -495,9 +495,10 @@ class ApiClient {
     return body.map((e) => PendingApprovalStep.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<List<DocumentApprovalSummary>> listMyApprovalSubmissions() async {
-    final body = await _getList('/document-approvals/mine');
-    return body.map((e) => DocumentApprovalSummary.fromJson(e as Map<String, dynamic>)).toList();
+  Future<DocumentApprovalsPage> listMyApprovalSubmissions({String? cursor}) async {
+    final query = _queryString({'cursor': cursor});
+    final body = await _get('/document-approvals/mine$query');
+    return DocumentApprovalsPage.fromJson(body);
   }
 
   Future<void> approveDocumentApprovalStep({required String stepId, String? comment}) async {
@@ -1210,9 +1211,10 @@ class ApiClient {
     return body.map((e) => StockHolding.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<List<StockTransaction>> listStockTransactions(String spaceId) async {
-    final body = await _getList('/spaces/$spaceId/stocks/transactions');
-    return body.map((e) => StockTransaction.fromJson(e as Map<String, dynamic>)).toList();
+  Future<StockTransactionsPage> listStockTransactions(String spaceId, {String? cursor}) async {
+    final query = _queryString({'cursor': cursor});
+    final body = await _get('/spaces/$spaceId/stocks/transactions$query');
+    return StockTransactionsPage.fromJson(body);
   }
 
   Future<void> createStockTransaction({

@@ -73,22 +73,51 @@ export class FinanceAccountsService {
     return account;
   }
 
+  /** Used to fetch every transaction the space had ever had and sum them in
+   * Node — the hottest, fastest-growing unbounded query in the app (every
+   * 記帳 screen open, every LINE 記帳/財務總覽 command hits this). Since a
+   * plain linear sum-per-(account,type) has no order dependency (unlike
+   * stock holdings' average-cost-basis, which does — see
+   * `StocksHoldingsService`, deliberately NOT rewritten this way), it's
+   * safe to push the summation into two grouped DB aggregates instead:
+   * bounded by (account count × transaction type count), not by how many
+   * transactions have ever been recorded. */
   private async computeBalanceDeltas(spaceId: string): Promise<Map<string, number>> {
-    const transactions = await this.prisma.financeTransaction.findMany({ where: { spaceId } });
     const deltas = new Map<string, number>();
     const add = (accountId: string, amount: number) =>
       deltas.set(accountId, (deltas.get(accountId) ?? 0) + amount);
 
-    for (const t of transactions) {
-      if (t.type === FinanceTransactionType.INCOME || t.type === FinanceTransactionType.LOAN_IN || t.type === FinanceTransactionType.ADVANCE_IN) {
-        add(t.accountId, t.amount);
-      } else if (t.type === FinanceTransactionType.EXPENSE || t.type === FinanceTransactionType.LOAN_OUT || t.type === FinanceTransactionType.ADVANCE_OUT) {
-        add(t.accountId, -t.amount);
-      } else if (t.type === FinanceTransactionType.TRANSFER) {
-        add(t.accountId, -t.amount);
-        if (t.toAccountId) add(t.toAccountId, t.amount);
+    const bySourceAccount = await this.prisma.financeTransaction.groupBy({
+      by: ['accountId', 'type'],
+      where: { spaceId },
+      _sum: { amount: true },
+    });
+    for (const row of bySourceAccount) {
+      const sum = row._sum.amount ?? 0;
+      if (
+        row.type === FinanceTransactionType.INCOME ||
+        row.type === FinanceTransactionType.LOAN_IN ||
+        row.type === FinanceTransactionType.ADVANCE_IN
+      ) {
+        add(row.accountId, sum);
+      } else {
+        // EXPENSE/LOAN_OUT/ADVANCE_OUT/TRANSFER all debit the source
+        // account — TRANSFER's credit to the destination side is a
+        // separate query below, since `groupBy` can only bucket by one FK
+        // column at a time.
+        add(row.accountId, -sum);
       }
     }
+
+    const transferDestinations = await this.prisma.financeTransaction.groupBy({
+      by: ['toAccountId'],
+      where: { spaceId, type: FinanceTransactionType.TRANSFER, toAccountId: { not: null } },
+      _sum: { amount: true },
+    });
+    for (const row of transferDestinations) {
+      if (row.toAccountId) add(row.toAccountId, row._sum.amount ?? 0);
+    }
+
     return deltas;
   }
 }
