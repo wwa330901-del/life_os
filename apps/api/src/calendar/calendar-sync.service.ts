@@ -47,7 +47,11 @@ export class CalendarSyncService {
       data: { syncToken: nextSyncToken, lastSyncedAt: new Date() },
     });
 
-    const unpushed = await this.prisma.calendarEvent.findMany({ where: { spaceId, googleEventId: null } });
+    // Recurring series (行事曆循環事件, 2026-08-05) are never pushed — see
+    // CalendarEventsService.pushToGoogleInBackground's doc comment.
+    const unpushed = await this.prisma.calendarEvent.findMany({
+      where: { spaceId, googleEventId: null, recurrenceFrequency: 'NONE' },
+    });
     for (const local of unpushed) {
       try {
         const googleEventId = await this.google.insertEvent(connection, {

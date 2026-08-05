@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
+import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { CalendarShareDetailLevel } from '../../generated/prisma/client.js';
 
 const userSummary = { select: { id: true, name: true, email: true } } as const;
@@ -13,6 +14,7 @@ export class CalendarSharesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
+    private readonly calendarEvents: CalendarEventsService,
   ) {}
 
   async invite(ownerUserId: string, email: string) {
@@ -93,15 +95,8 @@ export class CalendarSharesService {
    * detailLevel 決定要不要透出標題/地點/備註），每筆都標上是誰的、檢視者
    * 選的顏色，讓 App 疊圖時能分辨。 */
   async combinedEvents(viewerUserId: string, from: string, to: string) {
-    const range = { gte: new Date(from), lt: new Date(to) };
-
     const ownSpace = await this.prisma.space.findUnique({ where: { calendarOwnerUserId: viewerUserId } });
-    const ownEvents = ownSpace
-      ? await this.prisma.calendarEvent.findMany({
-          where: { spaceId: ownSpace.id, startAt: range },
-          orderBy: { startAt: 'asc' },
-        })
-      : [];
+    const ownEvents = ownSpace ? await this.calendarEvents.listForSpace(ownSpace.id, from, to) : [];
 
     const shares = await this.prisma.calendarShare.findMany({
       where: { viewerUserId, accepted: true },
@@ -114,10 +109,7 @@ export class CalendarSharesService {
           where: { calendarOwnerUserId: share.ownerUserId },
         });
         if (!ownerSpace) return [];
-        const events = await this.prisma.calendarEvent.findMany({
-          where: { spaceId: ownerSpace.id, startAt: range },
-          orderBy: { startAt: 'asc' },
-        });
+        const events = await this.calendarEvents.listForSpace(ownerSpace.id, from, to);
         const full = share.detailLevel === CalendarShareDetailLevel.FULL;
         return events.map((e) => ({
           id: e.id,

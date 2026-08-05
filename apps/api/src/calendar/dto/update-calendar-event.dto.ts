@@ -1,4 +1,5 @@
-import { IsBoolean, IsDateString, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { CalendarRecurrenceFrequency } from '../../../generated/prisma/client.js';
 
 // Every field optional; nullable fields (endAt/location/notes) accept an
 // explicit `null` to clear them — same "not sent vs. sent as null"
@@ -28,4 +29,12 @@ export class UpdateCalendarEventDto {
   @IsOptional()
   @IsString()
   notes?: string | null;
+
+  @IsOptional()
+  @IsEnum(CalendarRecurrenceFrequency)
+  recurrenceFrequency?: CalendarRecurrenceFrequency;
+
+  @IsOptional()
+  @IsDateString()
+  recurrenceUntil?: string | null;
 }

@@ -432,6 +432,9 @@ class _DayAgenda extends ConsumerWidget {
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Card(
                           child: ListTile(
+                            leading: event.isRecurring
+                                ? const Icon(Icons.repeat, size: 18)
+                                : null,
                             title: Text(event.title),
                             subtitle: Text(_subtitle(event)),
                             trailing: Row(
@@ -439,11 +442,11 @@ class _DayAgenda extends ConsumerWidget {
                               children: [
                                 IconButton(
                                   icon: const Icon(Icons.edit_outlined, size: 18),
-                                  onPressed: () => _openEditor(context, ref, event),
+                                  onPressed: () => _editRequested(context, ref, event),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete_outline, size: 18),
-                                  onPressed: () => _delete(context, ref, event),
+                                  onPressed: () => _deleteRequested(context, ref, event),
                                 ),
                               ],
                             ),
@@ -492,6 +495,30 @@ class _DayAgenda extends ConsumerWidget {
     return parts.join(' · ');
   }
 
+  /// 非循環的一般事件——維持原本行為，一個確認對話框就刪了。
+  Future<void> _deleteRequested(BuildContext context, WidgetRef ref, CalendarEvent event) async {
+    if (!event.isRecurring) return _delete(context, ref, event);
+
+    final scope = await _pickScope(context, actionLabel: '刪除');
+    if (scope == null || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .deleteCalendarEventOccurrence(
+            spaceId: spaceId,
+            seriesId: event.seriesId!,
+            occurrenceDate: event.occurrenceDate!,
+            scope: scope,
+          );
+      ref.invalidate(calendarEventsProvider(monthKey));
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   Future<void> _delete(BuildContext context, WidgetRef ref, CalendarEvent event) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -516,7 +543,39 @@ class _DayAgenda extends ConsumerWidget {
     }
   }
 
-  Future<void> _openEditor(BuildContext context, WidgetRef ref, CalendarEvent? existing) async {
+  /// 循環事件的某次發生——先問 只改這次／這次以後／全部，再開編輯表單；
+  /// 非循環事件維持原本行為，直接開表單。
+  Future<void> _editRequested(BuildContext context, WidgetRef ref, CalendarEvent event) async {
+    if (!event.isRecurring) return _openEditor(context, ref, event);
+
+    final scope = await _pickScope(context, actionLabel: '編輯');
+    if (scope == null || !context.mounted) return;
+    await _openEditor(context, ref, event, scope: scope);
+  }
+
+  /// Google Calendar 風格的三選一——用在編輯或刪除循環事件的某次發生之前。
+  Future<CalendarOccurrenceScope?> _pickScope(BuildContext context, {required String actionLabel}) {
+    return showDialog<CalendarOccurrenceScope>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('$actionLabel循環事件'),
+        children: [
+          for (final scope in CalendarOccurrenceScope.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(scope),
+              child: Text(scope.label),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openEditor(
+    BuildContext context,
+    WidgetRef ref,
+    CalendarEvent? existing, {
+    CalendarOccurrenceScope? scope,
+  }) async {
     final titleController = TextEditingController(text: existing?.title ?? '');
     final locationController = TextEditingController(text: existing?.location ?? '');
     final notesController = TextEditingController(text: existing?.notes ?? '');
@@ -527,12 +586,23 @@ class _DayAgenda extends ConsumerWidget {
     var endTime = existing?.endAt != null
         ? TimeOfDay(hour: existing!.endAt!.hour, minute: existing.endAt!.minute)
         : TimeOfDay(hour: (time.hour + 1) % 24, minute: time.minute);
+    var recurrence = existing?.recurrenceFrequency ?? CalendarRecurrenceFrequency.none;
+    var recurrenceUntil = existing?.recurrenceUntil;
+    // 只改這次不能連帶改循環規則本身——這裡只收「這次」的標題/時間/地點/
+    // 備註，循環頻率/結束日對這個 scope 沒有意義，介面上直接不顯示。
+    final showRecurrenceFields = scope != CalendarOccurrenceScope.thisOne;
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: Text(existing == null ? '新增行程' : '編輯行程'),
+          title: Text(
+            existing == null
+                ? '新增行程'
+                : scope != null
+                ? '編輯行程（${scope.label}）'
+                : '編輯行程',
+          ),
           content: SizedBox(
             width: 360,
             child: SingleChildScrollView(
@@ -623,6 +693,47 @@ class _DayAgenda extends ConsumerWidget {
                     maxLines: 3,
                     decoration: const InputDecoration(labelText: '備註（選填）'),
                   ),
+                  if (showRecurrenceFields) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<CalendarRecurrenceFrequency>(
+                      initialValue: recurrence,
+                      decoration: const InputDecoration(labelText: '循環'),
+                      items: CalendarRecurrenceFrequency.values
+                          .map((f) => DropdownMenuItem(value: f, child: Text(f.label)))
+                          .toList(),
+                      onChanged: (value) => setState(() => recurrence = value ?? CalendarRecurrenceFrequency.none),
+                    ),
+                    if (recurrence != CalendarRecurrenceFrequency.none) ...[
+                      const SizedBox(height: 12),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: recurrenceUntil ?? eventDate,
+                            firstDate: eventDate,
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) setState(() => recurrenceUntil = picked);
+                        },
+                        child: InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: '結束於（選填）',
+                            suffixIcon: recurrenceUntil == null
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.clear, size: 16),
+                                    onPressed: () => setState(() => recurrenceUntil = null),
+                                  ),
+                          ),
+                          child: Text(
+                            recurrenceUntil == null
+                                ? '一直重複'
+                                : '${recurrenceUntil!.year}/${recurrenceUntil!.month}/${recurrenceUntil!.day}',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ],
               ),
             ),
@@ -649,7 +760,26 @@ class _DayAgenda extends ConsumerWidget {
 
     try {
       final api = ref.read(apiClientProvider);
-      if (existing == null) {
+      if (existing != null && existing.isRecurring && scope != null) {
+        await api.updateCalendarEventOccurrence(
+          spaceId: spaceId,
+          seriesId: existing.seriesId!,
+          occurrenceDate: existing.occurrenceDate!,
+          scope: scope,
+          title: title,
+          startAt: startAt,
+          endAt: endAt,
+          clearEndAt: allDay,
+          allDay: allDay,
+          location: location.isEmpty ? null : location,
+          clearLocation: location.isEmpty,
+          notes: notes.isEmpty ? null : notes,
+          clearNotes: notes.isEmpty,
+          recurrenceFrequency: showRecurrenceFields ? recurrence : null,
+          recurrenceUntil: showRecurrenceFields ? recurrenceUntil : null,
+          clearRecurrenceUntil: showRecurrenceFields && recurrenceUntil == null,
+        );
+      } else if (existing == null) {
         await api.createCalendarEvent(
           spaceId: spaceId,
           title: title,
@@ -658,6 +788,8 @@ class _DayAgenda extends ConsumerWidget {
           allDay: allDay,
           location: location.isEmpty ? null : location,
           notes: notes.isEmpty ? null : notes,
+          recurrenceFrequency: recurrence,
+          recurrenceUntil: recurrenceUntil,
         );
       } else {
         await api.updateCalendarEvent(
@@ -672,6 +804,9 @@ class _DayAgenda extends ConsumerWidget {
           clearLocation: location.isEmpty,
           notes: notes.isEmpty ? null : notes,
           clearNotes: notes.isEmpty,
+          recurrenceFrequency: recurrence,
+          recurrenceUntil: recurrenceUntil,
+          clearRecurrenceUntil: recurrenceUntil == null,
         );
       }
       ref.invalidate(calendarEventsProvider(monthKey));

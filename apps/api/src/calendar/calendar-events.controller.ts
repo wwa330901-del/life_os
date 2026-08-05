@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from '../auth/jwt-payload';
 import { CalendarEventsService } from './calendar-events.service';
 import { CreateCalendarEventDto } from './dto/create-calendar-event.dto';
 import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto';
+import { UpdateCalendarEventOccurrenceDto } from './dto/update-calendar-event-occurrence.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('spaces/:spaceId/calendar/events')
@@ -39,5 +40,30 @@ export class CalendarEventsController {
   @Delete(':id')
   remove(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string, @Param('id') id: string) {
     return this.service.remove(user.id, spaceId, id);
+  }
+
+  /// `:id` here is always the SERIES id (the recurring event's own base
+  /// row) — 只改這次／這次以後／全部 all reference the series plus a
+  /// specific occurrence date, never a per-occurrence id (most occurrences
+  /// aren't their own row — see CalendarEventsService.list's doc comment).
+  @Patch(':id/occurrence')
+  updateOccurrence(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateCalendarEventOccurrenceDto,
+  ) {
+    return this.service.updateOccurrence(user.id, spaceId, id, dto);
+  }
+
+  @Delete(':id/occurrence')
+  removeOccurrence(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Param('id') id: string,
+    @Query('occurrenceDate') occurrenceDate: string,
+    @Query('scope') scope: 'THIS' | 'FOLLOWING' | 'ALL',
+  ) {
+    return this.service.removeOccurrence(user.id, spaceId, id, occurrenceDate, scope);
   }
 }

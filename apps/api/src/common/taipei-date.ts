@@ -52,3 +52,39 @@ export function formatTaipeiDateTime(date: Date, allDay: boolean): string {
   const minute = String(shifted.getUTCMinutes()).padStart(2, '0');
   return `${month}/${day} ${hour}:${minute}`;
 }
+
+/** A stored UTC instant's own Taipei calendar date, as "YYYY-MM-DD" — the
+ * key type 行事曆循環事件's occurrence generation (calendar-recurrence.ts)
+ * uses throughout, since occurrence dates are always Taipei calendar days,
+ * never UTC ones. */
+export function taipeiDateKey(date: Date): string {
+  const shifted = new Date(date.getTime() + TAIPEI_OFFSET_MS);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** Inverse-ish of `taipeiDateKey` — midnight UTC of the given Taipei
+ * calendar date, i.e. what a `@db.Date` "which occurrence" column (like
+ * `CalendarEventException.occurrenceDate`) stores. Not the same instant as
+ * that day's actual midnight in Taipei (`taipeiWallClockToUtc(y, m, d, 0,
+ * 0)` is) — this is purely a date-identity key, comparable with `<`/`>`/
+ * `===` against other values produced the same way, never displayed. */
+export function taipeiDateKeyToUtcMidnight(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+/** Reads a `@db.Date`-style "pure date key" column (like
+ * `CalendarEventException.occurrenceDate`, always written via
+ * `taipeiDateKeyToUtcMidnight`) back out as the same "YYYY-MM-DD" key —
+ * NOT `taipeiDateKey`, which is for real timestamped instants and would
+ * apply an unwanted +8h shift here (harmless by coincidence for a
+ * midnight-UTC value, but the wrong function to reach for). */
+export function utcDateKey(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}

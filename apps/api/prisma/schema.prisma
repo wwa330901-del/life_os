@@ -224,11 +224,70 @@ model CalendarEvent {
   sourceTodoId String?      @unique
   sourceTodo   ProjectTodo? @relation("TodoSyncedEvent", fields: [sourceTodoId], references: [id], onDelete: Cascade)
 
+  /// 行事曆循環事件 (2026-08-05) — NONE means a plain one-off event (unchanged
+  /// behavior). Anything else makes this row a SERIES definition rather than
+  /// a single occurrence: occurrences are generated on the fly for whatever
+  /// date range is being queried (see calendar-recurrence.ts), never
+  /// materialized as their own rows, except where a `CalendarEventException`
+  /// records a deviation. `recurrenceUntil` null means "repeats forever";
+  /// non-null is inclusive (the occurrence ON that date is still included).
+  /// A series never gets pushed to Google Calendar (see
+  /// CalendarEventsService.pushToGoogleInBackground/CalendarSyncService) —
+  /// out of scope for this round, `googleEventId` stays null on these rows.
+  recurrenceFrequency CalendarRecurrenceFrequency @default(NONE)
+  recurrenceUntil     DateTime?
+
+  exceptions CalendarEventException[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([spaceId, googleEventId])
   @@index([spaceId, startAt])
+}
+
+enum CalendarRecurrenceFrequency {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+/// Per-occurrence deviation from a recurring CalendarEvent's generated
+/// pattern — see the doc comment on `CalendarEvent.recurrenceFrequency` for
+/// how occurrences are generated, and `CalendarEventsService.
+/// updateOccurrence`/`removeOccurrence` for how the three edit scopes
+/// (只改這次／這次以後／全部) map onto this table:
+/// - 只改這次 (THIS) — upserts a row here (`cancelled: false` + override
+///   fields for an edit, `cancelled: true` for a delete). Every other field
+///   stays null when cancelled.
+/// - 這次以後 (FOLLOWING) — never touches this table for the split point
+///   itself; truncates the original series' `recurrenceUntil` and (for an
+///   edit) creates a brand new CalendarEvent series starting there. Only
+///   reparents (or removes) exceptions dated on/after the split.
+/// - 全部 (ALL) — edits the series row directly, doesn't touch exceptions.
+model CalendarEventException {
+  id       String        @id @default(uuid())
+  seriesId String
+  series   CalendarEvent @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  /// Which generated occurrence this overrides, as that occurrence's own
+  /// Taipei calendar date (midnight UTC of that day — see
+  /// taipeiDateKeyToUtc()), NOT the series' own start date.
+  occurrenceDate DateTime @db.Date
+
+  cancelled Boolean @default(false)
+  title     String?
+  startAt   DateTime?
+  endAt     DateTime?
+  allDay    Boolean?
+  location  String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([seriesId, occurrenceDate])
 }
 
 /// A CALENDAR space's link to one Google Calendar (always the connecting

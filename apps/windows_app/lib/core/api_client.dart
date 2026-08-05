@@ -167,6 +167,8 @@ class ApiClient {
     bool allDay = false,
     String? location,
     String? notes,
+    CalendarRecurrenceFrequency recurrenceFrequency = CalendarRecurrenceFrequency.none,
+    DateTime? recurrenceUntil,
   }) async {
     final body = await _post('/spaces/$spaceId/calendar/events', {
       'title': title,
@@ -175,6 +177,9 @@ class ApiClient {
       'allDay': allDay,
       if (location != null) 'location': location,
       if (notes != null) 'notes': notes,
+      if (recurrenceFrequency != CalendarRecurrenceFrequency.none)
+        'recurrenceFrequency': recurrenceFrequency.toJson(),
+      if (recurrenceUntil != null) 'recurrenceUntil': _dateOnly(recurrenceUntil),
     });
     return CalendarEvent.fromJson(body);
   }
@@ -191,6 +196,9 @@ class ApiClient {
     bool clearLocation = false,
     String? notes,
     bool clearNotes = false,
+    CalendarRecurrenceFrequency? recurrenceFrequency,
+    DateTime? recurrenceUntil,
+    bool clearRecurrenceUntil = false,
   }) async {
     final effectiveAllDay = allDay ?? false;
     final body = await _patch('/spaces/$spaceId/calendar/events/$eventId', {
@@ -203,12 +211,72 @@ class ApiClient {
       if (allDay != null) 'allDay': allDay,
       if (location != null) 'location': location else if (clearLocation) 'location': null,
       if (notes != null) 'notes': notes else if (clearNotes) 'notes': null,
+      if (recurrenceFrequency != null) 'recurrenceFrequency': recurrenceFrequency.toJson(),
+      if (recurrenceUntil != null)
+        'recurrenceUntil': _dateOnly(recurrenceUntil)
+      else if (clearRecurrenceUntil)
+        'recurrenceUntil': null,
     });
     return CalendarEvent.fromJson(body);
   }
 
   Future<void> deleteCalendarEvent({required String spaceId, required String eventId}) async {
     await _delete('/spaces/$spaceId/calendar/events/$eventId');
+  }
+
+  /// 循環事件單一發生的 只改這次／這次以後／全部 編輯——`seriesId` 是循環
+  /// 事件本體的 id（不是這次發生自己的 id，大部分發生根本沒有自己的
+  /// row，見後端 `CalendarEventsService.list` 的說明），`occurrenceDate`
+  /// 是這次發生的日期（"YYYY-MM-DD"）。
+  Future<void> updateCalendarEventOccurrence({
+    required String spaceId,
+    required String seriesId,
+    required String occurrenceDate,
+    required CalendarOccurrenceScope scope,
+    String? title,
+    DateTime? startAt,
+    DateTime? endAt,
+    bool clearEndAt = false,
+    bool? allDay,
+    String? location,
+    bool clearLocation = false,
+    String? notes,
+    bool clearNotes = false,
+    CalendarRecurrenceFrequency? recurrenceFrequency,
+    DateTime? recurrenceUntil,
+    bool clearRecurrenceUntil = false,
+  }) async {
+    final effectiveAllDay = allDay ?? false;
+    await _patch('/spaces/$spaceId/calendar/events/$seriesId/occurrence', {
+      'occurrenceDate': occurrenceDate,
+      'scope': scope.toJson(),
+      if (title != null) 'title': title,
+      if (startAt != null) 'startAt': effectiveAllDay ? _dateOnlyIso(startAt) : startAt.toUtc().toIso8601String(),
+      if (endAt != null)
+        'endAt': effectiveAllDay ? _dateOnlyIso(endAt) : endAt.toUtc().toIso8601String()
+      else if (clearEndAt)
+        'endAt': null,
+      if (allDay != null) 'allDay': allDay,
+      if (location != null) 'location': location else if (clearLocation) 'location': null,
+      if (notes != null) 'notes': notes else if (clearNotes) 'notes': null,
+      if (recurrenceFrequency != null) 'recurrenceFrequency': recurrenceFrequency.toJson(),
+      if (recurrenceUntil != null)
+        'recurrenceUntil': _dateOnly(recurrenceUntil)
+      else if (clearRecurrenceUntil)
+        'recurrenceUntil': null,
+    });
+  }
+
+  Future<void> deleteCalendarEventOccurrence({
+    required String spaceId,
+    required String seriesId,
+    required String occurrenceDate,
+    required CalendarOccurrenceScope scope,
+  }) async {
+    await _delete(
+      '/spaces/$spaceId/calendar/events/$seriesId/occurrence'
+      '?occurrenceDate=${Uri.encodeComponent(occurrenceDate)}&scope=${scope.toJson()}',
+    );
   }
 
   Future<GoogleCalendarConnectionStatus> getCalendarConnectionStatus(String spaceId) async {
