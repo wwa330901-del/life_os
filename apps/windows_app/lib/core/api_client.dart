@@ -1399,6 +1399,7 @@ class ApiClient {
     String? projectId,
     required String title,
     DateTime? dueDate,
+    bool dueDateAllDay = true,
     bool isOngoing = false,
     TodoPriority? priority,
     String? notes,
@@ -1407,7 +1408,9 @@ class ApiClient {
     await _post('/todos', {
       if (projectId != null) 'projectId': projectId,
       'title': title,
-      if (dueDate != null) 'dueDate': _dateOnly(dueDate),
+      if (dueDate != null)
+        'dueDate': dueDateAllDay ? _dateOnly(dueDate) : dueDate.toUtc().toIso8601String(),
+      'dueDateAllDay': dueDateAllDay,
       'isOngoing': isOngoing,
       if (priority != null) 'priority': priority.toJson(),
       if (notes != null && notes.isNotEmpty) 'notes': notes,
@@ -1420,6 +1423,7 @@ class ApiClient {
     String? title,
     bool? done,
     DateTime? dueDate,
+    bool dueDateAllDay = true,
     bool clearDueDate = false,
     bool? isOngoing,
     TodoPriority? priority,
@@ -1434,7 +1438,8 @@ class ApiClient {
       if (clearDueDate)
         'dueDate': null
       else if (dueDate != null)
-        'dueDate': _dateOnly(dueDate),
+        'dueDate': dueDateAllDay ? _dateOnly(dueDate) : dueDate.toUtc().toIso8601String(),
+      if (dueDate != null || clearDueDate) 'dueDateAllDay': dueDateAllDay,
       if (isOngoing != null) 'isOngoing': isOngoing,
       if (priority != null) 'priority': priority.toJson(),
       if (clearNotes)

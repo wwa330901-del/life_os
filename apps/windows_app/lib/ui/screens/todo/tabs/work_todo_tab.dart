@@ -237,6 +237,9 @@ Future<void> showTodoFormDialog(
   // 每一筆代辦事項都必須是「有日期」或「持續性任務」二選一——沒有第三種
   // 「都不選」的狀態。
   var isOngoing = existing?.isOngoing ?? false;
+  // 2026-08-05：跟行事曆同一套「全天/指定時間」概念。
+  var allDay = existing?.dueDateAllDay ?? true;
+  var time = TimeOfDay(hour: existing?.dueDate?.hour ?? 9, minute: existing?.dueDate?.minute ?? 0);
   var priority = existing?.priority ?? TodoPriority.medium;
   var assigneeUserId = existing?.assigneeUserId;
 
@@ -291,6 +294,24 @@ Future<void> showTodoFormDialog(
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('全天'),
+                    value: allDay,
+                    onChanged: (v) => setState(() => allDay = v),
+                  ),
+                  if (!allDay)
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showTimePicker(context: context, initialTime: time);
+                        if (picked != null) setState(() => time = picked);
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(labelText: '時間'),
+                        child: Text(time.format(context)),
+                      ),
+                    ),
                 ],
                 const SizedBox(height: 12),
                 DropdownButtonFormField<TodoPriority>(
@@ -336,6 +357,11 @@ Future<void> showTodoFormDialog(
   final title = titleController.text.trim();
   if (title.isEmpty) return;
   final notes = notesController.text.trim();
+  final effectiveDueDate = dueDate == null
+      ? null
+      : allDay
+      ? DateTime(dueDate!.year, dueDate!.month, dueDate!.day)
+      : DateTime(dueDate!.year, dueDate!.month, dueDate!.day, time.hour, time.minute);
 
   try {
     final api = ref.read(apiClientProvider);
@@ -343,7 +369,8 @@ Future<void> showTodoFormDialog(
       await api.createTodo(
         projectId: projectId,
         title: title,
-        dueDate: dueDate,
+        dueDate: effectiveDueDate,
+        dueDateAllDay: allDay,
         isOngoing: isOngoing,
         priority: priority,
         notes: notes.isEmpty ? null : notes,
@@ -353,8 +380,9 @@ Future<void> showTodoFormDialog(
       await api.updateTodo(
         todoId: existing.id,
         title: title,
-        dueDate: dueDate,
-        clearDueDate: dueDate == null,
+        dueDate: effectiveDueDate,
+        dueDateAllDay: allDay,
+        clearDueDate: effectiveDueDate == null,
         isOngoing: isOngoing,
         priority: priority,
         notes: notes.isEmpty ? null : notes,

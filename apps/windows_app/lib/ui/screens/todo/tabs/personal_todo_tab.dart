@@ -92,6 +92,9 @@ class PersonalTodoTab extends ConsumerWidget {
     // 每一筆代辦事項都必須是「有日期」或「持續性任務」二選一——沒有第三種
     // 「都不選」的狀態，所以新增時預設落在「設定日期」而不是留空。
     var isOngoing = existing?.isOngoing ?? false;
+    // 2026-08-05：跟行事曆同一套「全天/指定時間」概念，讓代辦事項也能帶時間。
+    var allDay = existing?.dueDateAllDay ?? true;
+    var time = TimeOfDay(hour: existing?.dueDate?.hour ?? 9, minute: existing?.dueDate?.minute ?? 0);
 
     final saved = await showDialog<bool>(
       context: context,
@@ -143,6 +146,24 @@ class PersonalTodoTab extends ConsumerWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('全天'),
+                    value: allDay,
+                    onChanged: (v) => setState(() => allDay = v),
+                  ),
+                  if (!allDay)
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showTimePicker(context: context, initialTime: time);
+                        if (picked != null) setState(() => time = picked);
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(labelText: '時間'),
+                        child: Text(time.format(context)),
+                      ),
+                    ),
                 ],
               ],
             ),
@@ -161,17 +182,28 @@ class PersonalTodoTab extends ConsumerWidget {
 
     final title = titleController.text.trim();
     if (title.isEmpty) return;
+    final effectiveDueDate = dueDate == null
+        ? null
+        : allDay
+        ? DateTime(dueDate!.year, dueDate!.month, dueDate!.day)
+        : DateTime(dueDate!.year, dueDate!.month, dueDate!.day, time.hour, time.minute);
 
     try {
       final api = ref.read(apiClientProvider);
       if (existing == null) {
-        await api.createTodo(title: title, dueDate: dueDate, isOngoing: isOngoing);
+        await api.createTodo(
+          title: title,
+          dueDate: effectiveDueDate,
+          dueDateAllDay: allDay,
+          isOngoing: isOngoing,
+        );
       } else {
         await api.updateTodo(
           todoId: existing.id,
           title: title,
-          dueDate: dueDate,
-          clearDueDate: dueDate == null,
+          dueDate: effectiveDueDate,
+          dueDateAllDay: allDay,
+          clearDueDate: effectiveDueDate == null,
           isOngoing: isOngoing,
         );
       }

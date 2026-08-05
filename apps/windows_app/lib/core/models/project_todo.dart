@@ -34,6 +34,7 @@ class ProjectTodo {
     required this.done,
     required this.completedAt,
     required this.dueDate,
+    required this.dueDateAllDay,
     required this.isOngoing,
     required this.priority,
     required this.notes,
@@ -46,6 +47,11 @@ class ProjectTodo {
   final bool done;
   final DateTime? completedAt;
   final DateTime? dueDate;
+
+  /// Whether [dueDate] carries a meaningful time-of-day — same concept as
+  /// a calendar event's `allDay` (2026-08-05, added alongside the
+  /// 代辦事項→行事曆 sync). True (no time) for every pre-existing todo.
+  final bool dueDateAllDay;
   final bool isOngoing;
   final TodoPriority priority;
   final String? notes;
@@ -58,6 +64,7 @@ class ProjectTodo {
     done: json['done'] as bool,
     completedAt: json['completedAt'] == null ? null : DateTime.parse(json['completedAt'] as String),
     dueDate: json['dueDate'] == null ? null : DateTime.parse(json['dueDate'] as String),
+    dueDateAllDay: json['dueDateAllDay'] as bool? ?? true,
     isOngoing: json['isOngoing'] as bool? ?? false,
     priority: TodoPriorityJson.fromJson(json['priority'] as String),
     notes: json['notes'] as String?,

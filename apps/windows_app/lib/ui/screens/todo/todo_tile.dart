@@ -51,7 +51,10 @@ class TodoTile extends StatelessWidget {
     if (todo.isOngoing) {
       subtitleParts.add('持續性任務');
     } else if (todo.dueDate != null) {
-      subtitleParts.add('截止 ${todo.dueDate!.month}/${todo.dueDate!.day}');
+      final time = todo.dueDateAllDay
+          ? ''
+          : ' ${todo.dueDate!.hour.toString().padLeft(2, '0')}:${todo.dueDate!.minute.toString().padLeft(2, '0')}';
+      subtitleParts.add('截止 ${todo.dueDate!.month}/${todo.dueDate!.day}$time');
     }
     if (assigneeName != null) subtitleParts.add(assigneeName!);
     if (todo.notes != null && todo.notes!.isNotEmpty) subtitleParts.add(todo.notes!);
