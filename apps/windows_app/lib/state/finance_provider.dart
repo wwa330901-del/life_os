@@ -44,6 +44,11 @@ final financeSummaryProvider = FutureProvider.autoDispose
           .financeMonthlySummary(spaceId: query.spaceId, month: query.month);
     });
 
+final financeTrendProvider = FutureProvider.autoDispose
+    .family<List<FinanceMonthlyTrendPoint>, String>((ref, spaceId) {
+      return ref.read(apiClientProvider).financeMonthlyTrend(spaceId: spaceId);
+    });
+
 final financeBudgetsProvider = FutureProvider.autoDispose.family<List<FinanceBudget>, String>((
   ref,
   spaceId,

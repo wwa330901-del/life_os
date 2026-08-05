@@ -251,6 +251,22 @@ class FinanceMonthlySummary {
   );
 }
 
+/// One month's income/expense totals — one entry of the 財務總覽 report's
+/// 近6個月收支趨勢 chart (`GET .../finance/transactions/trend`).
+class FinanceMonthlyTrendPoint {
+  const FinanceMonthlyTrendPoint({required this.month, required this.totalIncome, required this.totalExpense});
+
+  final String month;
+  final double totalIncome;
+  final double totalExpense;
+
+  factory FinanceMonthlyTrendPoint.fromJson(Map<String, dynamic> json) => FinanceMonthlyTrendPoint(
+    month: json['month'] as String,
+    totalIncome: (json['totalIncome'] as num).toDouble(),
+    totalExpense: (json['totalExpense'] as num).toDouble(),
+  );
+}
+
 class FinanceBudget {
   const FinanceBudget({
     required this.id,

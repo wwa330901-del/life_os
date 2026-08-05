@@ -968,6 +968,14 @@ class ApiClient {
     return FinanceMonthlySummary.fromJson(body);
   }
 
+  Future<List<FinanceMonthlyTrendPoint>> financeMonthlyTrend({
+    required String spaceId,
+    int months = 6,
+  }) async {
+    final body = await _getList('/spaces/$spaceId/finance/transactions/trend?months=$months');
+    return body.map((e) => FinanceMonthlyTrendPoint.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   Future<void> createFinanceTransaction({
     required String spaceId,
     required FinanceTransactionType type,

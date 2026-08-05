@@ -37,6 +37,8 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
     final query = (spaceId: widget.spaceId, month: _month);
     final summaryAsync = ref.watch(financeSummaryProvider(query));
     final budgetStatusAsync = ref.watch(financeBudgetStatusProvider(query));
+    final accountsAsync = ref.watch(financeAccountsProvider(widget.spaceId));
+    final trendAsync = ref.watch(financeTrendProvider(widget.spaceId));
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -48,6 +50,16 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
             icon: const Icon(Icons.chat_bubble_outline, size: 16),
             label: const Text('連結 LINE 記帳'),
           ),
+        ),
+        accountsAsync.when(
+          data: (accounts) => accounts.isEmpty
+              ? const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: _TotalAssetsCard(accounts: accounts),
+                ),
+          loading: () => const SizedBox.shrink(),
+          error: (error, _) => Text('讀取帳戶總資產失敗：$error'),
         ),
         Center(child: FinanceMonthSelector(month: _month, onChanged: (m) => setState(() => _month = m))),
         const SizedBox(height: 16),
@@ -67,6 +79,17 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
           error: (error, _) => Text('讀取本月統計失敗：$error'),
         ),
         const SizedBox(height: 24),
+        Text('近 6 個月收支趨勢', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        trendAsync.when(
+          data: (trend) => _TrendChart(trend: trend),
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (error, _) => Text('讀取收支趨勢失敗：$error'),
+        ),
+        const SizedBox(height: 24),
         Text('預算進度', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         budgetStatusAsync.when(
@@ -77,7 +100,13 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
                 child: Text('還沒有設定任何預算，可以到「預算」分頁設定'),
               );
             }
-            return Column(children: [for (final s in statuses) _BudgetProgressTile(status: s)]);
+            return Column(
+              children: [
+                _BudgetTotalCard(statuses: statuses),
+                const SizedBox(height: 8),
+                for (final s in statuses) _BudgetProgressTile(status: s),
+              ],
+            );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Text('讀取預算進度失敗：$error'),
@@ -125,6 +154,189 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
     }
+  }
+}
+
+/// 總資產 — sum of every account's derived balance, across all months
+/// (not scoped to the selected month like everything else on this
+/// screen — "how much do I actually have right now" is always "right
+/// now"). 2026-08-05 財務總覽報告改版新增：使用者原本的總覽完全看不出跨帳戶
+/// 的資產全貌，只能一個一個帳戶自己加。
+class _TotalAssetsCard extends StatelessWidget {
+  const _TotalAssetsCard({required this.accounts});
+
+  final List<FinanceAccount> accounts;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = accounts.fold<double>(0, (sum, a) => sum + a.balance);
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      color: scheme.primaryContainer.withValues(alpha: 0.3),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('總資產（${accounts.length} 個帳戶）', style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 4),
+                  Text(formatAmount(total), style: Theme.of(context).textTheme.headlineMedium),
+                ],
+              ),
+            ),
+            Icon(Icons.account_balance_wallet_outlined, size: 32, color: scheme.primary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 全部預算加總 — sits above the per-category `_BudgetProgressTile` list,
+/// 2026-08-05 使用者要求「預算要有總和」新增。
+class _BudgetTotalCard extends StatelessWidget {
+  const _BudgetTotalCard({required this.statuses});
+
+  final List<FinanceBudgetStatus> statuses;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalBudget = statuses.fold<double>(0, (sum, s) => sum + s.monthlyAmount);
+    final totalSpent = statuses.fold<double>(0, (sum, s) => sum + s.spent);
+    final ratio = totalBudget <= 0 ? 0.0 : (totalSpent / totalBudget).clamp(0, 1.5);
+    final over = totalSpent > totalBudget;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('全部預算', style: TextStyle(fontWeight: FontWeight.w700))),
+                Text(
+                  '${formatAmount(totalSpent)} / ${formatAmount(totalBudget)}',
+                  style: TextStyle(color: over ? scheme.error : null, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: ratio > 1 ? 1 : ratio.toDouble(),
+                minHeight: 6,
+                color: over ? scheme.error : scheme.primary,
+                backgroundColor: scheme.surfaceContainerHighest,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 近 6 個月收支趨勢 — grouped bar chart (income vs expense per month),
+/// 2026-08-05 財務總覽報告改版新增：原本只能一次看一個月，看不出花費是在
+/// 增加還是減少。
+class _TrendChart extends StatelessWidget {
+  const _TrendChart({required this.trend});
+
+  final List<FinanceMonthlyTrendPoint> trend;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final maxValue = trend.fold<double>(
+      0,
+      (max, p) => [max, p.totalIncome, p.totalExpense].reduce((a, b) => a > b ? a : b),
+    );
+    final chartMax = maxValue <= 0 ? 100.0 : maxValue * 1.2;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _LegendDot(color: Colors.green, label: '收入'),
+                const SizedBox(width: 16),
+                _LegendDot(color: scheme.error, label: '支出'),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 220,
+              child: BarChart(
+                BarChartData(
+                  maxY: chartMax,
+                  barTouchData: BarTouchData(enabled: false),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index < 0 || index >= trend.length) return const SizedBox.shrink();
+                          final month = trend[index].month.split('-').last;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text('$month月', style: const TextStyle(fontSize: 11)),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  gridData: const FlGridData(show: false),
+                  barGroups: [
+                    for (var i = 0; i < trend.length; i++)
+                      BarChartGroupData(
+                        x: i,
+                        barRods: [
+                          BarChartRodData(toY: trend[i].totalIncome, color: Colors.green, width: 10),
+                          BarChartRodData(toY: trend[i].totalExpense, color: scheme.error, width: 10),
+                        ],
+                        barsSpace: 4,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ],
+    );
   }
 }
 

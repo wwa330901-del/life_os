@@ -29,6 +29,15 @@ export class FinanceTransactionsController {
     return this.service.monthlySummary(user.id, spaceId, month);
   }
 
+  @Get('trend')
+  trend(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Query('months') months?: string,
+  ) {
+    return this.service.trend(user.id, spaceId, months ? Number(months) : 6);
+  }
+
   @Post()
   create(
     @CurrentUser() user: AuthenticatedUser,

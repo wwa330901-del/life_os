@@ -5,6 +5,7 @@ import { FinanceBudgetsService } from './finance-budgets.service';
 import { FinanceTransactionType } from '../../generated/prisma/client.js';
 import { CreateFinanceTransactionDto } from './dto/create-finance-transaction.dto';
 import { UpdateFinanceTransactionDto } from './dto/update-finance-transaction.dto';
+import { taipeiCurrentMonth } from '../common/taipei-date';
 
 export interface ValidateInput {
   type: FinanceTransactionType;
@@ -133,6 +134,36 @@ export class FinanceTransactionsService {
     };
   }
 
+  /** 近 N 個月收支趨勢（含當月），2026-08-05 財務總覽報告改版新增——每個月
+   * 兩個 DB 端 `aggregate`（不是整批撈交易再加總，跟其他「無上限查詢」修法
+   * 同一個原則），N 通常是 6，成本很小。 */
+  async trend(userId: string, spaceId: string, months: number) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    const currentMonth = taipeiCurrentMonth();
+    const results: { month: string; totalIncome: number; totalExpense: number }[] = [];
+
+    for (let i = months - 1; i >= 0; i--) {
+      const month = shiftMonth(currentMonth, -i);
+      const range = monthRange(month);
+      const [income, expense] = await Promise.all([
+        this.prisma.financeTransaction.aggregate({
+          where: { spaceId, type: FinanceTransactionType.INCOME, date: { gte: range.start, lt: range.end } },
+          _sum: { amount: true },
+        }),
+        this.prisma.financeTransaction.aggregate({
+          where: { spaceId, type: FinanceTransactionType.EXPENSE, date: { gte: range.start, lt: range.end } },
+          _sum: { amount: true },
+        }),
+      ]);
+      results.push({
+        month,
+        totalIncome: income._sum.amount ?? 0,
+        totalExpense: expense._sum.amount ?? 0,
+      });
+    }
+    return results;
+  }
+
   private async getOrThrow(spaceId: string, id: string) {
     const transaction = await this.prisma.financeTransaction.findUnique({ where: { id } });
     if (!transaction || transaction.spaceId !== spaceId) {
@@ -183,4 +214,11 @@ function monthRange(month: string): { start: Date; end: Date } {
   const start = new Date(Date.UTC(year, m - 1, 1));
   const end = new Date(Date.UTC(year, m, 1));
   return { start, end };
+}
+
+/** "YYYY-MM" +/- `delta` months (negative = further in the past). */
+function shiftMonth(month: string, delta: number): string {
+  const [year, m] = month.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, m - 1 + delta, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
 }
