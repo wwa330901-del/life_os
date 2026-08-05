@@ -1458,6 +1458,20 @@ class ApiClient {
     await _delete('/spaces/$spaceId/stocks/recurring/$id');
   }
 
+  /// 登記成交——計畫在等待回覆時（`awaitingReply`），App 端直接補「成交價／
+  /// 投入成本」，跟回 LINE 訊息是同一套後端邏輯，只是不用透過 LINE。
+  Future<void> fulfillStockRecurringInvestment({
+    required String spaceId,
+    required String id,
+    required double pricePerShare,
+    required double totalCost,
+  }) async {
+    await _post('/spaces/$spaceId/stocks/recurring/$id/fulfill', {
+      'pricePerShare': pricePerShare,
+      'totalCost': totalCost,
+    });
+  }
+
   /// 代辦事項 is its own top-level space now (not nested under a project) —
   /// this returns 個人 + 工作（每個專案分組）合併的畫面資料一次拿齊。
   Future<TodoOverview> listAllTodos() async {

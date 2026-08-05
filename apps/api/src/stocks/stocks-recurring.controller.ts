@@ -5,6 +5,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload';
 import { CreateStockRecurringInvestmentDto } from './dto/create-stock-recurring-investment.dto';
 import { UpdateStockRecurringInvestmentDto } from './dto/update-stock-recurring-investment.dto';
+import { FulfillStockRecurringInvestmentDto } from './dto/fulfill-stock-recurring-investment.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('spaces/:spaceId/stocks/recurring')
@@ -33,6 +34,16 @@ export class StocksRecurringController {
     @Body() dto: UpdateStockRecurringInvestmentDto,
   ) {
     return this.service.update(user.id, spaceId, id, dto);
+  }
+
+  @Post(':id/fulfill')
+  fulfill(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Param('id') id: string,
+    @Body() dto: FulfillStockRecurringInvestmentDto,
+  ) {
+    return this.service.fulfillById(user.id, spaceId, id, dto.pricePerShare, dto.totalCost);
   }
 
   @Delete(':id')

@@ -124,10 +124,8 @@ export class StocksRecurringService {
 
   /** Called from LineService when a linked user replies "股票代碼 成交價
    * 投入成本" to a fired reminder. Finds the plan actually waiting on that
-   * stock code, records the real StockTransaction (which then flows
-   * through the same T+2 settlement cron as a manually-entered trade), and
-   * clears `awaitingReply`. Returns null if no plan is waiting on that
-   * code — the caller falls through to other command interpretations. */
+   * stock code. Returns null if no plan is waiting on that code — the
+   * caller falls through to other command interpretations. */
   async fulfillPendingReply(
     spaceId: string,
     stockCode: string,
@@ -138,14 +136,43 @@ export class StocksRecurringService {
       where: { spaceId, stockCode, awaitingReply: true },
     });
     if (!plan) return null;
+    return this.doFulfill(plan, pricePerShare, totalCost);
+  }
 
+  /** App 端登記成交 — same fill-in as `fulfillPendingReply`, but the caller
+   * already knows which specific plan (tapped a card showing "等待登記成交"
+   * in the App), so this looks up by id instead of "the one plan currently
+   * awaiting reply for this stock code". */
+  async fulfillById(
+    userId: string,
+    spaceId: string,
+    id: string,
+    pricePerShare: number,
+    totalCost: number,
+  ): Promise<{ shares: number }> {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    const plan = await this.getOrThrow(spaceId, id);
+    if (!plan.awaitingReply) {
+      throw new BadRequestException('這個計畫目前不是在等待登記成交的狀態');
+    }
+    return this.doFulfill(plan, pricePerShare, totalCost);
+  }
+
+  /** Records the real StockTransaction (which then flows through the same
+   * T+2 settlement cron as a manually-entered trade) and clears
+   * `awaitingReply`. */
+  private async doFulfill(
+    plan: { id: string; spaceId: string; stockCode: string; accountId: string },
+    pricePerShare: number,
+    totalCost: number,
+  ): Promise<{ shares: number }> {
     const tradeDate = new Date();
     const shares = totalCost / pricePerShare;
     await this.prisma.$transaction([
       this.prisma.stockTransaction.create({
         data: {
-          spaceId,
-          stockCode,
+          spaceId: plan.spaceId,
+          stockCode: plan.stockCode,
           type: StockTransactionType.BUY,
           pricePerShare,
           totalCost,
@@ -158,7 +185,7 @@ export class StocksRecurringService {
       }),
       this.prisma.stockRecurringInvestment.update({ where: { id: plan.id }, data: { awaitingReply: false } }),
     ]);
-    await this.holdings.recompute(spaceId, stockCode);
+    await this.holdings.recompute(plan.spaceId, plan.stockCode);
     return { shares };
   }
 }

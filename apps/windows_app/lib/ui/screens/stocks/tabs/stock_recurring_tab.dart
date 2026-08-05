@@ -9,8 +9,8 @@ import '../../../../state/finance_provider.dart';
 import '../../../../state/stocks_provider.dart';
 
 /// 定期定額（DCA）計畫 — 到期只發 LINE 提醒（金額每次都不同），使用者回覆
-/// 「代碼 成交價 投入成本」後系統才記一筆股票交易；[awaitingReply] 顯示這裡
-/// 讓使用者知道「提醒已經發出，正在等你回覆」。
+/// 「代碼 成交價 投入成本」或在 App 這裡按「登記成交」後系統才記一筆股票交易；
+/// [awaitingReply] 顯示這裡讓使用者知道「提醒已經發出，正在等你登記」。
 class StockRecurringTab extends ConsumerWidget {
   const StockRecurringTab({super.key, required this.spaceId});
 
@@ -66,6 +66,14 @@ class StockRecurringTab extends ConsumerWidget {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (p.awaitingReply)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: FilledButton.tonal(
+                                  onPressed: () => _openFulfillDialog(context, ref, p),
+                                  child: const Text('登記成交'),
+                                ),
+                              ),
                             Switch(
                               value: p.active,
                               onChanged: (value) => _toggleActive(context, ref, p, value),
@@ -93,6 +101,39 @@ class StockRecurringTab extends ConsumerWidget {
 
   void _invalidate(WidgetRef ref) {
     ref.invalidate(stockRecurringInvestmentsProvider(spaceId));
+  }
+
+  /// 登記成交也建立了一筆真的股票交易並改動持股，所以除了這個分頁本身，
+  /// 交易紀錄跟持股總覽也要一起刷新（跟 `StockTransactionsTab._invalidate`
+  /// 同一組 provider）。
+  Future<void> _openFulfillDialog(
+    BuildContext context,
+    WidgetRef ref,
+    StockRecurringInvestment p,
+  ) async {
+    final result = await showDialog<_FulfillResult>(
+      context: context,
+      builder: (_) => _FulfillDialog(stockCode: p.stockCode),
+    );
+    if (result == null || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .fulfillStockRecurringInvestment(
+            spaceId: spaceId,
+            id: p.id,
+            pricePerShare: result.pricePerShare,
+            totalCost: result.totalCost,
+          );
+      _invalidate(ref);
+      ref.invalidate(stockTransactionsProvider(spaceId));
+      ref.invalidate(stockHoldingsProvider(spaceId));
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 
   Future<void> _toggleActive(
@@ -300,6 +341,97 @@ class _StockRecurringEditorDialogState extends State<_StockRecurringEditorDialog
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(onPressed: _submit, child: const Text('儲存')),
+      ],
+    );
+  }
+}
+
+class _FulfillResult {
+  const _FulfillResult({required this.pricePerShare, required this.totalCost});
+
+  final double pricePerShare;
+  final double totalCost;
+}
+
+/// 登記成交——跟回 LINE「代碼 成交價 投入成本」問的是同一組數字，只是這裡
+/// 股票代碼已經知道了（來自被點的那張卡片），所以只問成交價跟投入成本。
+class _FulfillDialog extends StatefulWidget {
+  const _FulfillDialog({required this.stockCode});
+
+  final String stockCode;
+
+  @override
+  State<_FulfillDialog> createState() => _FulfillDialogState();
+}
+
+class _FulfillDialogState extends State<_FulfillDialog> {
+  final _priceController = TextEditingController();
+  final _costController = TextEditingController();
+
+  @override
+  void dispose() {
+    _priceController.dispose();
+    _costController.dispose();
+    super.dispose();
+  }
+
+  double? get _shares {
+    final price = double.tryParse(_priceController.text);
+    final cost = double.tryParse(_costController.text);
+    if (price == null || cost == null || price <= 0) return null;
+    return cost / price;
+  }
+
+  void _submit() {
+    final pricePerShare = double.tryParse(_priceController.text);
+    final totalCost = double.tryParse(_costController.text);
+    if (pricePerShare == null || pricePerShare <= 0) return;
+    if (totalCost == null || totalCost <= 0) return;
+
+    Navigator.of(
+      context,
+    ).pop(_FulfillResult(pricePerShare: pricePerShare, totalCost: totalCost));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shares = _shares;
+    return AlertDialog(
+      title: Text('登記成交 · ${widget.stockCode}'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _priceController,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: '成交價'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _costController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: '投入成本'),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (shares != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '約 ${shares.toStringAsFixed(2)} 股',
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        FilledButton(onPressed: _submit, child: const Text('登記')),
       ],
     );
   }
