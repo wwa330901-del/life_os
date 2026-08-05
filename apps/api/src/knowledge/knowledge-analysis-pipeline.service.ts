@@ -90,6 +90,31 @@ export class KnowledgeAnalysisPipeline {
     }
   }
 
+  /** 「分析 <文字>」— pasted plain text needs no fetch step at all (unlike a
+   * URL, the text itself already IS the content), so this skips
+   * `ContentFetcherService` entirely and goes straight to `runAnalysis`. */
+  async processTextSubmission(
+    itemId: string,
+    ownerUserId: string,
+    text: string,
+  ): Promise<void> {
+    try {
+      const apiKey = await this.requireApiKey(ownerUserId);
+      await this.itemsService.markProcessing(itemId);
+      await this.runAnalysis(itemId, ownerUserId, apiKey, {
+        sourcePlatform: '貼上文字',
+        extractedText: text,
+      });
+    } catch (error) {
+      this.logger.error(`知識庫文字分析失敗 item=${itemId}`, error as Error);
+      await this.itemsService.markFailed(itemId, this.errorMessage(error));
+      await this.lineNotifier.notifyByUser(
+        ownerUserId,
+        this.userFacingMessage(error),
+      );
+    }
+  }
+
   /** A screen recording/clip sent via LINE — distinct from a YouTube link
    * (which Gemini watches by URI reference, no upload needed here). */
   async processVideoSubmission(

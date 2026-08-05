@@ -208,6 +208,17 @@ model CalendarEvent {
   /// "not yet synced" or "this space has no Google connection".
   googleEventId String?
 
+  /// Set only for an event TodosService auto-created from a todo's due
+  /// date/time (one-way 代辦事項→行事曆 sync, 2026-08-05 — the reverse
+  /// direction is deliberately not a thing, editing this event directly
+  /// never writes back to the todo). onDelete: Cascade here means deleting
+  /// the source ProjectTodo takes this event with it as a DB-level
+  /// safety net, but TodosService.remove also explicitly calls
+  /// CalendarEventsService.remove first so the Google-side delete actually
+  /// fires (a raw cascade delete wouldn't reach Google).
+  sourceTodoId String?      @unique
+  sourceTodo   ProjectTodo? @relation("TodoSyncedEvent", fields: [sourceTodoId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1025,13 +1036,25 @@ model ProjectTodo {
   /// date, recurring/persistent task" marker — distinct from just leaving
   /// dueDate empty, which is why it's its own flag rather than dueDate
   /// staying implicitly optional.
-  dueDate   DateTime?    @db.Date
-  isOngoing Boolean      @default(false)
-  priority  TodoPriority @default(MEDIUM)
-  notes     String?
+  /// 2026-08-05: widened from date-only to a full timestamp so a todo can
+  /// optionally carry a time-of-day, same as CalendarEvent — existing rows
+  /// keep reading back as UTC-midnight-of-that-date (unchanged meaning,
+  /// just a wider column type), `dueDateAllDay` (default true, matching
+  /// every pre-existing row's actual "no time" reality) is the
+  /// CalendarEvent.allDay equivalent that says whether the time component
+  /// means anything.
+  dueDate       DateTime?
+  dueDateAllDay Boolean      @default(true)
+  isOngoing     Boolean      @default(false)
+  priority      TodoPriority @default(MEDIUM)
+  notes         String?
 
   assigneeUserId String?
   assignee       User?   @relation("TodoAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+
+  /// The auto-created 行事曆 event mirroring this todo's due date/time, if
+  /// any — see CalendarEvent.sourceTodoId for the full sync explanation.
+  syncedCalendarEvent CalendarEvent? @relation("TodoSyncedEvent")
 
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())

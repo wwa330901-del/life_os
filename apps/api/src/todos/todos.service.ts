@@ -1,8 +1,19 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
+import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
+
+interface SyncableTodo {
+  id: string;
+  title: string;
+  dueDate: Date | null;
+  dueDateAllDay: boolean;
+  isOngoing: boolean;
+  personalOwnerUserId: string | null;
+  assigneeUserId: string | null;
+}
 
 /** 代辦事項 has no upper bound otherwise — completed items just kept
  * accumulating forever (same class of problem as the 知識庫 pagination fix,
@@ -23,9 +34,12 @@ const COMPLETED_TODOS_PAGE_SIZE = 10;
  * enforce access for each. */
 @Injectable()
 export class TodosService {
+  private readonly logger = new Logger(TodosService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectsService: ProjectsService,
+    private readonly calendarEventsService: CalendarEventsService,
   ) {}
 
   /** Grouped view for the top-level 代辦事項 screen: 個人 as one flat list,
@@ -113,28 +127,32 @@ export class TodosService {
     this.assertDueDateXorOngoing(dto.dueDate ?? null, dto.isOngoing ?? false);
 
     if (!dto.projectId) {
-      return this.prisma.projectTodo.create({
+      const todo = await this.prisma.projectTodo.create({
         data: {
           personalOwnerUserId: userId,
           title: dto.title,
           dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+          dueDateAllDay: dto.dueDateAllDay ?? true,
           isOngoing: dto.isOngoing ?? false,
           priority: dto.priority,
           notes: dto.notes,
           sortOrder: await this.nextSortOrder({ personalOwnerUserId: userId }),
         },
       });
+      await this.syncCalendarEvent(todo);
+      return todo;
     }
 
     const project = await this.getAuthorizedProject(userId, dto.projectId);
     if (dto.assigneeUserId) {
       await this.assertProjectMember(project.id, dto.assigneeUserId);
     }
-    return this.prisma.projectTodo.create({
+    const todo = await this.prisma.projectTodo.create({
       data: {
         projectId: project.id,
         title: dto.title,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+        dueDateAllDay: dto.dueDateAllDay ?? true,
         isOngoing: dto.isOngoing ?? false,
         priority: dto.priority,
         notes: dto.notes,
@@ -142,6 +160,8 @@ export class TodosService {
         sortOrder: await this.nextSortOrder({ projectId: project.id }),
       },
     });
+    await this.syncCalendarEvent(todo);
+    return todo;
   }
 
   async update(userId: string, id: string, dto: UpdateTodoDto) {
@@ -163,7 +183,7 @@ export class TodosService {
     const justCompleted = dto.done === true && !existing.done;
     const justReopened = dto.done === false && existing.done;
 
-    return this.prisma.projectTodo.update({
+    const todo = await this.prisma.projectTodo.update({
       where: { id },
       data: {
         ...(dto.title !== undefined && { title: dto.title }),
@@ -171,12 +191,25 @@ export class TodosService {
         ...(justCompleted && { completedAt: new Date() }),
         ...(justReopened && { completedAt: null }),
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
+        ...(dto.dueDateAllDay !== undefined && { dueDateAllDay: dto.dueDateAllDay }),
         ...(dto.isOngoing !== undefined && { isOngoing: dto.isOngoing }),
         ...(dto.priority !== undefined && { priority: dto.priority }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
         ...(dto.assigneeUserId !== undefined && { assigneeUserId: dto.assigneeUserId }),
       },
     });
+    // 完成/取消完成、標題、優先順序、備註都不影響行事曆那筆——只有真的會改變
+    // 「這件事什麼時候、算誰的」的欄位才需要重新同步，其餘情況跳過這次多餘
+    // 的資料庫查詢。
+    if (
+      dto.dueDate !== undefined ||
+      dto.dueDateAllDay !== undefined ||
+      dto.isOngoing !== undefined ||
+      dto.assigneeUserId !== undefined
+    ) {
+      await this.syncCalendarEvent(todo);
+    }
+    return todo;
   }
 
   /** Every todo needs exactly one of a due date or the 持續性任務 flag —
@@ -195,7 +228,80 @@ export class TodosService {
 
   async remove(userId: string, id: string) {
     await this.getAuthorizedTodo(userId, id);
+    // Explicitly remove the synced event first (rather than relying on the
+    // DB's onDelete: Cascade) so the Google-side delete actually fires —
+    // a raw cascade delete only removes the local row, it can't reach
+    // Google's API.
+    const existing = await this.prisma.calendarEvent.findUnique({ where: { sourceTodoId: id } });
+    if (existing) await this.removeSyncedEvent(existing);
     await this.prisma.projectTodo.delete({ where: { id } });
+  }
+
+  /** 代辦事項→行事曆 one-way sync (2026-08-05, explicit user request): a
+   * todo with a due date/time gets a matching CalendarEvent in its
+   * owner's (個人 owner, or 工作 todo's assignee) 行事曆 space, kept in
+   * sync on every create/update. The reverse never happens — editing the
+   * CalendarEvent directly never writes back to the todo, and completing
+   * a todo deliberately leaves the calendar event alone (explicit user
+   * choice — it's a historical record, not something that should vanish
+   * just because the task is done). Best-effort: a sync failure is
+   * logged and swallowed, never thrown back to the caller — a todo write
+   * must never fail just because its calendar mirror couldn't be made,
+   * same "must not block the primary action" philosophy as
+   * `CalendarEventsService`'s own Google push. */
+  private async syncCalendarEvent(todo: SyncableTodo): Promise<void> {
+    try {
+      const ownerUserId = todo.personalOwnerUserId ?? todo.assigneeUserId;
+      const existing = await this.prisma.calendarEvent.findUnique({
+        where: { sourceTodoId: todo.id },
+      });
+
+      if (!ownerUserId || !todo.dueDate || todo.isOngoing) {
+        if (existing) await this.removeSyncedEvent(existing);
+        return;
+      }
+
+      const calendarSpace = await this.prisma.space.findUnique({
+        where: { calendarOwnerUserId: ownerUserId },
+      });
+      if (!calendarSpace) {
+        // No 行事曆 space yet (shouldn't normally happen — every user gets
+        // one at signup) — nothing to sync into, and nothing to clean up
+        // either since `ownerUserId` couldn't have created `existing` in
+        // a space that doesn't exist.
+        return;
+      }
+
+      const eventInput = {
+        title: `📋 ${todo.title}`,
+        startAt: todo.dueDate.toISOString(),
+        allDay: todo.dueDateAllDay,
+        notes: '同步自代辦事項，直接編輯這裡不會回寫代辦事項。',
+      };
+
+      if (!existing) {
+        await this.calendarEventsService.create(ownerUserId, calendarSpace.id, eventInput, todo.id);
+        return;
+      }
+
+      if (existing.spaceId !== calendarSpace.id) {
+        // Owner changed (a 工作代辦 got reassigned) — the old event lives
+        // in the previous owner's calendar space, can't just be moved.
+        await this.removeSyncedEvent(existing);
+        await this.calendarEventsService.create(ownerUserId, calendarSpace.id, eventInput, todo.id);
+        return;
+      }
+
+      await this.calendarEventsService.update(ownerUserId, calendarSpace.id, existing.id, eventInput);
+    } catch (error) {
+      this.logger.warn(`代辦事項同步行事曆失敗 todo=${todo.id}`, error as Error);
+    }
+  }
+
+  private async removeSyncedEvent(existing: { id: string; spaceId: string }): Promise<void> {
+    const space = await this.prisma.space.findUnique({ where: { id: existing.spaceId } });
+    if (!space?.calendarOwnerUserId) return;
+    await this.calendarEventsService.remove(space.calendarOwnerUserId, existing.spaceId, existing.id);
   }
 
   private async nextSortOrder(where: { projectId: string } | { personalOwnerUserId: string }) {

@@ -14,6 +14,7 @@ import { KnowledgeItemsService } from '../knowledge/knowledge-items.service';
 import { KnowledgeAnalysisPipeline } from '../knowledge/knowledge-analysis-pipeline.service';
 import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
 import { UsersService } from '../users/users.service';
+import { TodosService } from '../todos/todos.service';
 import {
   isInstagramUrl,
   INSTAGRAM_UNSUPPORTED_MESSAGE,
@@ -26,7 +27,12 @@ import {
   StockTransactionType,
 } from '../../generated/prisma/client.js';
 import type { LineAccountLink } from '../../generated/prisma/client.js';
-import { taipeiTodayRange, taipeiCurrentMonth } from '../common/taipei-date';
+import {
+  taipeiTodayRange,
+  taipeiCurrentMonth,
+  taipeiWallClockToUtc,
+  formatTaipeiDateTime,
+} from '../common/taipei-date';
 
 interface LineWebhookEvent {
   type: string;
@@ -126,6 +132,7 @@ export class LineService {
     private readonly knowledgeAnalysisPipeline: KnowledgeAnalysisPipeline,
     private readonly aiAssistantService: AiAssistantService,
     private readonly usersService: UsersService,
+    private readonly todosService: TodosService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -317,6 +324,7 @@ export class LineService {
           '📚 知識庫',
           '',
           '直接傳連結、圖片或影片給我，我會自動分析並幫你分類存起來，好了會再傳訊息通知你。',
+          '純文字（例如筆記、貼上的文章內容）要加「分析」開頭，例如「分析 <貼上的內容>」，不然會被當成一般指令。',
           '',
           '・美食 / 景點：查詢附近記錄過的地點',
           '・展覽：查看記錄中的展覽',
@@ -328,6 +336,16 @@ export class LineService {
     const url = this.extractUrl(text);
     if (url) {
       await this.captureKnowledgeUrl(userId, url, replyToken);
+      return;
+    }
+
+    // 「分析 <貼上的文字>」——知識庫的第四種擷取入口（網址/圖片/影片都不需要
+    // 前綴，但貼上的純文字沒有明確訊號分辨是要收藏還是打錯指令，所以這個入
+    // 口需要明確的「分析」前綴，2026-08-05 使用者明確選擇這個設計）。放在網
+    // 址擷取之後、批次多行判斷之前，理由跟網址擷取一樣——真實文章/筆記內容
+    // 常常是多行的，要在被誤判成批次逐行指令之前先攔下來當一整塊處理。
+    if (text.startsWith('分析')) {
+      await this.captureKnowledgeText(userId, text, replyToken);
       return;
     }
 
@@ -449,7 +467,7 @@ export class LineService {
         '・代辦事項 / 代辦事項總覽',
         '・新增行事曆 7/31 14:00 開會 @地點',
         '・今日行事曆',
-        '・知識庫：傳連結/圖片/影片給我就會自動收藏（傳「知識庫」看完整說明）',
+        '・知識庫：傳連結/圖片/影片給我就會自動收藏，純文字要加「分析」開頭（傳「知識庫」看完整說明）',
         '・查詢 <問題>：例如「查詢 這個月餐飲花多少」（AI 問答，不含投資/股票）',
         '',
         '想一次記多筆，貼多行文字（一行一筆）就會逐行處理，例如：',
@@ -1446,6 +1464,32 @@ export class LineService {
     );
   }
 
+  /** 「分析 <文字>」——貼上的純文字不像網址/圖片/影片，需要明確的「分析」前綴
+   * 才知道這是要收藏，不是打錯指令（2026-08-05 使用者明確選擇的設計）。跟
+   * `captureKnowledgeUrl`同樣的建立-pending-再丟給pipeline流程，只是完全不
+   * 需要`ContentFetcherService`——貼上的文字本身就是內容，不用另外抓取。 */
+  private async captureKnowledgeText(
+    userId: string,
+    text: string,
+    replyToken: string,
+  ) {
+    const content = text.replace(/^分析/, '').replace(LEADING_SEPARATORS, '').trim();
+    if (!content) {
+      await this.reply(replyToken, '請在「分析」後面接你想收藏的文字內容，例如「分析 <貼上的文章內容>」。');
+      return;
+    }
+
+    const item = await this.knowledgeItemsService.createPending(userId, {
+      sourcePlatform: '貼上文字',
+    });
+    await this.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
+    void this.knowledgeAnalysisPipeline.processTextSubmission(
+      item.id,
+      userId,
+      content,
+    );
+  }
+
   /** LINE image messages carry no URL — the bytes have to be pulled from
    * LINE's separate content-hosting API using the message id. */
   private async handleImageMessage(
@@ -2005,18 +2049,39 @@ export class LineService {
    * null if neither is found at the front. */
   private parseDateOrOngoingPrefix(
     text: string,
-  ): { dueDate: Date | null; isOngoing: boolean; rest: string } | null {
+  ): { dueDate: Date | null; dueDateAllDay: boolean; isOngoing: boolean; rest: string } | null {
     if (text.startsWith('持續')) {
-      return { dueDate: null, isOngoing: true, rest: text.slice(2).replace(LEADING_SEPARATORS, '') };
+      return {
+        dueDate: null,
+        dueDateAllDay: true,
+        isOngoing: true,
+        rest: text.slice(2).replace(LEADING_SEPARATORS, ''),
+      };
     }
     const dateMatch = text.match(/^(\d{1,4})\/(\d{1,2})(?:\/(\d{1,2}))?/);
     if (!dateMatch) return null;
     const year = dateMatch[3] ? Number(dateMatch[1]) : new Date().getFullYear();
     const month = Number(dateMatch[3] ? dateMatch[2] : dateMatch[1]);
     const day = Number(dateMatch[3] ?? dateMatch[2]);
-    const dueDate = new Date(year, month - 1, day);
+    let rest = text.slice(dateMatch[0].length).replace(LEADING_SEPARATORS, '');
+
+    // 可選的時間（跟「新增行事曆」同樣的 HH:MM 格式，2026-08-05 新增，讓代
+    // 辦事項也能跟行事曆一樣帶時間）——沒有就整天，維持原本的行為。
+    const timeMatch = rest.match(/^(\d{1,2}):(\d{2})/);
+    let dueDate: Date;
+    let dueDateAllDay: boolean;
+    if (timeMatch) {
+      const hour = Number(timeMatch[1]);
+      const minute = Number(timeMatch[2]);
+      dueDate = taipeiWallClockToUtc(year, month - 1, day, hour, minute);
+      dueDateAllDay = false;
+      rest = rest.slice(timeMatch[0].length).replace(LEADING_SEPARATORS, '');
+    } else {
+      dueDate = new Date(year, month - 1, day);
+      dueDateAllDay = true;
+    }
     if (Number.isNaN(dueDate.getTime())) return null;
-    return { dueDate, isOngoing: false, rest: text.slice(dateMatch[0].length).replace(LEADING_SEPARATORS, '') };
+    return { dueDate, dueDateAllDay, isOngoing: false, rest };
   }
 
   /** 每一筆代辦事項都必須是「有日期」或「持續性任務」二選一（2026-08-03 使
@@ -2025,7 +2090,10 @@ export class LineService {
    * 都沒有的項目。 */
   private parseTodoCommand(
     text: string,
-  ): { title: string; dueDate: Date | null; isOngoing: boolean } | null | 'needs_date' {
+  ):
+    | { title: string; dueDate: Date | null; dueDateAllDay: boolean; isOngoing: boolean }
+    | null
+    | 'needs_date' {
     const rest = text.replace(/^新增(代辦|待辦)?/, '').replace(LEADING_SEPARATORS, '');
     const parsed = this.parseDateOrOngoingPrefix(rest);
     if (!parsed) return 'needs_date';
@@ -2033,7 +2101,7 @@ export class LineService {
     const title = parsed.rest.replace(EDGE_SEPARATORS, '').trim();
     if (!title) return null;
 
-    return { title, dueDate: parsed.dueDate, isOngoing: parsed.isOngoing };
+    return { title, dueDate: parsed.dueDate, dueDateAllDay: parsed.dueDateAllDay, isOngoing: parsed.isOngoing };
   }
 
   private async createTodoFromText(
@@ -2047,29 +2115,26 @@ export class LineService {
     }
     const parsed = this.parseTodoCommand(text);
     if (parsed === 'needs_date') {
-      await respond('請加上日期或標記「持續」，例如「新增 8/10 買材料」或「新增 持續 每週檢查庫存」。');
+      await respond(
+        '請加上日期或標記「持續」，例如「新增 8/10 買材料」、「新增 8/10 14:00 買材料」或「新增 持續 每週檢查庫存」。',
+      );
       return;
     }
     if (!parsed) {
       await respond('請在「新增」後面接代辦事項的內容，例如「新增 8/10 買材料」。');
       return;
     }
-    const { title, dueDate, isOngoing } = parsed;
-    const dateLabel = isOngoing ? '持續' : `${dueDate!.getMonth() + 1}/${dueDate!.getDate()}`;
+    const { title, dueDate, dueDateAllDay, isOngoing } = parsed;
+    const dateLabel = isOngoing ? '持續' : formatTaipeiDateTime(dueDate!, dueDateAllDay);
 
+    // 透過 TodosService 而不是直接寫 Prisma——這樣才會一併觸發代辦事項→
+    // 行事曆的同步（2026-08-05），不用在這裡重複寫一次同步邏輯。
     if (link.activeTodoPersonal) {
-      const maxSortOrder = await this.prisma.projectTodo.aggregate({
-        where: { personalOwnerUserId: link.userId },
-        _max: { sortOrder: true },
-      });
-      await this.prisma.projectTodo.create({
-        data: {
-          personalOwnerUserId: link.userId,
-          title,
-          dueDate,
-          isOngoing,
-          sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
-        },
+      await this.todosService.create(link.userId, {
+        title,
+        dueDate: dueDate?.toISOString(),
+        dueDateAllDay,
+        isOngoing,
       });
       await respond(`已新增個人代辦事項「${title}」（${dateLabel}）。`);
       return;
@@ -2082,18 +2147,12 @@ export class LineService {
       await respond('這個專案好像不存在了，傳「切換專案」重新選一個。');
       return;
     }
-    const maxSortOrder = await this.prisma.projectTodo.aggregate({
-      where: { projectId: link.activeProjectId },
-      _max: { sortOrder: true },
-    });
-    await this.prisma.projectTodo.create({
-      data: {
-        projectId: link.activeProjectId,
-        title,
-        dueDate,
-        isOngoing,
-        sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
-      },
+    await this.todosService.create(link.userId, {
+      projectId: link.activeProjectId!,
+      title,
+      dueDate: dueDate?.toISOString(),
+      dueDateAllDay,
+      isOngoing,
     });
     await respond(`已新增代辦事項「${title}」（${project.name}，${dateLabel}）。`);
   }
@@ -2198,11 +2257,14 @@ export class LineService {
       await this.reply(replyToken, '這筆代辦事項好像已經被刪除了。');
       return;
     }
-    await this.prisma.projectTodo.update({
-      where: { id: todo.id },
-      data: { dueDate: parsed.dueDate, isOngoing: parsed.isOngoing },
+    // 透過 TodosService 而不是直接寫 Prisma，理由跟「新增」一樣——一併觸發
+    // 代辦事項→行事曆同步。
+    await this.todosService.update(link!.userId, todo.id, {
+      dueDate: parsed.dueDate?.toISOString() ?? null,
+      dueDateAllDay: parsed.dueDateAllDay,
+      isOngoing: parsed.isOngoing,
     });
-    const dateLabel = parsed.isOngoing ? '持續' : `${parsed.dueDate!.getMonth() + 1}/${parsed.dueDate!.getDate()}`;
+    const dateLabel = parsed.isOngoing ? '持續' : formatTaipeiDateTime(parsed.dueDate!, parsed.dueDateAllDay);
     await this.reply(
       replyToken,
       `已將「${todo.title}」（${todo.project?.name ?? '個人'}）改期為 ${dateLabel}。`,

@@ -26,3 +26,29 @@ export function taipeiCurrentMonth(): string {
   const shifted = new Date(Date.now() + TAIPEI_OFFSET_MS);
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
 }
+
+/** Given hour/minute the user typed as Taipei local time (e.g. LINE's
+ * "新增行事曆"/"新增 <date> <time>" commands), returns the UTC `Date`
+ * instant that actually represents — the inverse of `formatTaipeiDateTime`
+ * below. Taipei has no DST, so this is always a flat -8h shift; `Date.UTC`
+ * normalizes a negative hour into the previous UTC day on its own. */
+export function taipeiWallClockToUtc(year: number, month0: number, day: number, hour: number, minute: number): Date {
+  return new Date(Date.UTC(year, month0, day, hour - 8, minute));
+}
+
+/** Renders a stored UTC `Date` back as a Taipei-local "M/D" (allDay) or
+ * "M/D HH:MM" label for a LINE reply — same "+8h then read UTC parts"
+ * trick as `taipeiTodayRange`, generalized to an arbitrary instant rather
+ * than just "now". Never use the non-UTC `Date.getMonth`/`getHours`
+ * getters directly on a stored due-date/event time for a user-facing
+ * label — they read back in the *server's* local zone (UTC on Render),
+ * which silently shows the wrong day for any time before 08:00 Taipei. */
+export function formatTaipeiDateTime(date: Date, allDay: boolean): string {
+  const shifted = new Date(date.getTime() + TAIPEI_OFFSET_MS);
+  const month = shifted.getUTCMonth() + 1;
+  const day = shifted.getUTCDate();
+  if (allDay) return `${month}/${day}`;
+  const hour = String(shifted.getUTCHours()).padStart(2, '0');
+  const minute = String(shifted.getUTCMinutes()).padStart(2, '0');
+  return `${month}/${day} ${hour}:${minute}`;
+}

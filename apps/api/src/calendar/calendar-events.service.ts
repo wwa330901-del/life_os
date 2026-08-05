@@ -34,7 +34,10 @@ export class CalendarEventsService {
     });
   }
 
-  async create(userId: string, spaceId: string, dto: CreateCalendarEventDto) {
+  /** `sourceTodoId` is internal-only (never part of the public
+   * `CreateCalendarEventDto`/HTTP surface) — set only by
+   * `TodosService`'s 代辦事項→行事曆 one-way sync. */
+  async create(userId: string, spaceId: string, dto: CreateCalendarEventDto, sourceTodoId?: string) {
     await this.access.assertCalendarSpace(userId, spaceId);
     const event = await this.prisma.calendarEvent.create({
       data: {
@@ -45,6 +48,7 @@ export class CalendarEventsService {
         allDay: dto.allDay ?? false,
         location: dto.location,
         notes: dto.notes,
+        ...(sourceTodoId && { sourceTodoId }),
       },
     });
     this.pushToGoogleInBackground(spaceId, event);

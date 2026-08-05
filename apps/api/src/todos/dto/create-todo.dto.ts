@@ -20,6 +20,13 @@ export class CreateTodoDto {
   @IsDateString()
   dueDate?: string;
 
+  /// Whether `dueDate` carries a meaningful time-of-day, same concept as
+  /// `CalendarEvent.allDay`. Defaults to true (no time) when omitted —
+  /// matches every pre-existing todo's actual "date only" reality.
+  @IsOptional()
+  @IsBoolean()
+  dueDateAllDay?: boolean;
+
   @IsOptional()
   @IsBoolean()
   isOngoing?: boolean;

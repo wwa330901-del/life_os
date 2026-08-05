@@ -20,6 +20,10 @@ export class UpdateTodoDto {
 
   @IsOptional()
   @IsBoolean()
+  dueDateAllDay?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isOngoing?: boolean;
 
   @IsOptional()
