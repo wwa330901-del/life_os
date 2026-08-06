@@ -14,7 +14,7 @@ export class CalendarSharesController {
 
   @Post('invite')
   invite(@CurrentUser() user: AuthenticatedUser, @Body() dto: InviteCalendarShareDto) {
-    return this.service.invite(user.id, dto.email);
+    return this.service.invite(user.id, dto.viewerUserId);
   }
 
   @Get('given')

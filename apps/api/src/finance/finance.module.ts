@@ -3,6 +3,7 @@ import { SpacesModule } from '../spaces/spaces.module';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { UsersModule } from '../users/users.module';
+import { FriendsModule } from '../friends/friends.module';
 import { FinanceAccessService } from './finance-access.service';
 import { FinanceAccountsController } from './finance-accounts.controller';
 import { FinanceAccountsService } from './finance-accounts.service';
@@ -21,7 +22,7 @@ import { FinanceAdvancesController } from './finance-advances.controller';
 import { FinanceAdvancesService } from './finance-advances.service';
 
 @Module({
-  imports: [SpacesModule, LineNotifierModule, ProjectsModule, UsersModule],
+  imports: [SpacesModule, LineNotifierModule, ProjectsModule, UsersModule, FriendsModule],
   controllers: [
     FinanceAccountsController,
     FinanceCategoriesController,

@@ -9,6 +9,7 @@ import 'models/ai_assistant.dart';
 import 'models/app_user.dart';
 import 'models/calendar_event.dart';
 import 'models/calendar_share.dart';
+import 'models/friend.dart';
 import 'models/document_approval.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
@@ -300,8 +301,9 @@ class ApiClient {
     await _post('/spaces/$spaceId/calendar/sync', {});
   }
 
-  Future<CalendarShare> inviteCalendarShare(String email) async {
-    final body = await _post('/calendar-shares/invite', {'email': email});
+  /// 2026-08-06 起邀請對象必須先是好友——傳對方的 userId（從好友列表選）。
+  Future<CalendarShare> inviteCalendarShare(String viewerUserId) async {
+    final body = await _post('/calendar-shares/invite', {'viewerUserId': viewerUserId});
     return CalendarShare.fromJson(body);
   }
 
@@ -343,6 +345,33 @@ class ApiClient {
         .map((e) => SharedCalendarEntry.fromJson(e as Map<String, dynamic>))
         .toList();
     return (own: own, shared: shared);
+  }
+
+  Future<List<FriendUser>> listFriends() async {
+    final body = await _getList('/friends');
+    return body.map((e) => FriendUser.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<FriendInvite>> listReceivedFriendInvites() async {
+    final body = await _getList('/friends/received');
+    return body.map((e) => FriendInvite.fromReceivedJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<FriendInvite>> listSentFriendInvites() async {
+    final body = await _getList('/friends/sent');
+    return body.map((e) => FriendInvite.fromSentJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> inviteFriend(String email) async {
+    await _post('/friends/invite', {'email': email});
+  }
+
+  Future<void> acceptFriendInvite(String id) async {
+    await _post('/friends/$id/accept', {});
+  }
+
+  Future<void> removeFriend(String id) async {
+    await _delete('/friends/$id');
   }
 
   Future<List<SpaceMember>> listSpaceMembers(String spaceId) async {
@@ -1313,8 +1342,13 @@ class ApiClient {
     await _delete('/spaces/$spaceId/finance/loans/$id');
   }
 
-  Future<void> inviteFinanceLoanConfirmation({required String spaceId, required String id, required String email}) async {
-    await _post('/spaces/$spaceId/finance/loans/$id/invite', {'email': email});
+  /// 2026-08-06 起邀請對象必須先是好友——傳對方的 userId（從好友列表選）。
+  Future<void> inviteFinanceLoanConfirmation({
+    required String spaceId,
+    required String id,
+    required String toUserId,
+  }) async {
+    await _post('/spaces/$spaceId/finance/loans/$id/invite', {'toUserId': toUserId});
   }
 
   Future<List<FinanceLoanInvite>> listReceivedFinanceLoanInvites() async {

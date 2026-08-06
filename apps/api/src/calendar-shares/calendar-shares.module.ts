@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { UsersModule } from '../users/users.module';
 import { CalendarModule } from '../calendar/calendar.module';
+import { FriendsModule } from '../friends/friends.module';
 import { CalendarSharesService } from './calendar-shares.service';
 import { CalendarSharesController } from './calendar-shares.controller';
 
 @Module({
-  imports: [UsersModule, CalendarModule],
+  imports: [CalendarModule, FriendsModule],
   controllers: [CalendarSharesController],
   providers: [CalendarSharesService],
   exports: [CalendarSharesService],

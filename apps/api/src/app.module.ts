@@ -20,6 +20,7 @@ import { ProjectDigestModule } from './project-digest/project-digest.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { TodosModule } from './todos/todos.module';
 import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
+import { FriendsModule } from './friends/friends.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
     KnowledgeModule,
     TodosModule,
     AiAssistantModule,
+    FriendsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

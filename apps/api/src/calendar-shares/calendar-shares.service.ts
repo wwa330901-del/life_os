@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { UsersService } from '../users/users.service';
+import { FriendsService } from '../friends/friends.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { CalendarShareDetailLevel } from '../../generated/prisma/client.js';
 
@@ -13,22 +13,23 @@ const userSummary = { select: { id: true, name: true, email: true } } as const;
 export class CalendarSharesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly usersService: UsersService,
+    private readonly friendsService: FriendsService,
     private readonly calendarEvents: CalendarEventsService,
   ) {}
 
-  async invite(ownerUserId: string, email: string) {
-    const target = await this.usersService.findByEmail(email);
-    if (!target) throw new NotFoundException('找不到這個 email 對應的帳號');
-    if (target.id === ownerUserId) throw new BadRequestException('不能邀請自己');
+  /** 2026-08-06 起，邀請對象必須先是已接受的好友（見 好友 schema 註解）——
+   * 這裡改成直接吃對方的 userId（從好友列表選），不再讓呼叫端傳 email。 */
+  async invite(ownerUserId: string, viewerUserId: string) {
+    if (viewerUserId === ownerUserId) throw new BadRequestException('不能邀請自己');
+    await this.friendsService.assertFriends(ownerUserId, viewerUserId);
 
     const existing = await this.prisma.calendarShare.findUnique({
-      where: { ownerUserId_viewerUserId: { ownerUserId, viewerUserId: target.id } },
+      where: { ownerUserId_viewerUserId: { ownerUserId, viewerUserId } },
     });
     if (existing) throw new BadRequestException('已經邀請過這個人了');
 
     return this.prisma.calendarShare.create({
-      data: { ownerUserId, viewerUserId: target.id },
+      data: { ownerUserId, viewerUserId },
       include: { viewer: userSummary },
     });
   }

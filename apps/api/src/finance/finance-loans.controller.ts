@@ -74,7 +74,7 @@ export class FinanceLoansController {
     @Param('id') id: string,
     @Body() dto: InviteFinanceLoanConfirmationDto,
   ) {
-    return this.service.inviteConfirmation(user.id, spaceId, id, dto.email);
+    return this.service.inviteConfirmation(user.id, spaceId, id, dto.toUserId);
   }
 
   @Delete(':id')

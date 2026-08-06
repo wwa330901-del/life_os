@@ -9,6 +9,7 @@ import '../../state/auth_provider.dart';
 import '../../state/space_provider.dart';
 import '../../state/ui_prefs_provider.dart';
 import '../widgets/ai_settings_dialog.dart';
+import '../screens/friends/friends_dialog.dart';
 import 'space_switcher_list.dart';
 
 const _sidebarWidth = 220.0;
@@ -254,6 +255,12 @@ class _SidebarPanel extends ConsumerWidget {
               label: 'AI 設定',
               selected: false,
               onTap: () => showDialog(context: context, builder: (_) => const AiSettingsDialog()),
+            ),
+            _NavItem(
+              icon: Icons.people_outline,
+              label: '好友',
+              selected: false,
+              onTap: () => FriendsDialog.show(context),
             ),
             _NavItem(
               icon: Icons.logout,

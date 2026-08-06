@@ -148,6 +148,40 @@ model User {
   calendarSharesReceived     CalendarShare[]            @relation("CalendarShareViewer")
   financeLoanInvitesSent     FinanceLoanInvite[]        @relation("LoanInviteFrom")
   financeLoanInvitesReceived FinanceLoanInvite[]        @relation("LoanInviteTo")
+  friendshipsRequested       Friendship[]               @relation("FriendshipRequester")
+  friendshipsReceived        Friendship[]               @relation("FriendshipAddressee")
+}
+
+/// 好友 (2026-08-06) — a mutual, symmetric relationship: unlike CalendarShare
+/// or FinanceLoanInvite (directional, owner grants viewer/counterpart
+/// something), neither side of an accepted friendship has more standing
+/// than the other. Still stored as one directional row (`requesterUserId`
+/// sent the invite, `addresseeUserId` received it) purely so a "sent" vs
+/// "received" pending-invite screen can tell them apart — that direction
+/// stops mattering the moment `accepted` flips true. Same "no tombstone"
+/// convention as every other invite in this schema: declining, revoking, or
+/// unfriending is always a plain delete, never a status flag; re-adding
+/// later is a fresh row. `FriendsService.invite` checks BOTH directions
+/// before creating a row — the `@@unique` below only blocks the exact same
+/// direction being inserted twice, not the reverse pair, so the service is
+/// what actually prevents A→B and B→A coexisting.
+///
+/// This is the prerequisite for 共用行事曆/借出借入互通's invite flows
+/// (2026-08-06 onward) — both now require an accepted Friendship first and
+/// pick the target from the friend list instead of typing an email raw.
+model Friendship {
+  id String @id @default(uuid())
+
+  requesterUserId String
+  requester       User   @relation("FriendshipRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
+
+  addresseeUserId String
+  addressee       User   @relation("FriendshipAddressee", fields: [addresseeUserId], references: [id], onDelete: Cascade)
+
+  accepted  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([requesterUserId, addresseeUserId])
 }
 
 model Space {
@@ -276,7 +310,7 @@ model CalendarEventException {
   /// taipeiDateKeyToUtc()), NOT the series' own start date.
   occurrenceDate DateTime @db.Date
 
-  cancelled Boolean @default(false)
+  cancelled Boolean   @default(false)
   title     String?
   startAt   DateTime?
   endAt     DateTime?

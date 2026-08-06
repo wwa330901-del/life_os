@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_client.dart';
 import '../../../core/models/calendar_share.dart';
+import '../../../core/models/friend.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/calendar_share_provider.dart';
+import '../../../state/friend_provider.dart';
 
 /// 共用行事曆管理——「別人分享給我的」（含待處理邀請）跟「我分享出去的」
 /// 兩個分頁。詳細程度是擁有者（分享出去那邊）的權限，顏色是檢視者（收到
@@ -213,7 +215,7 @@ class _GivenTab extends ConsumerWidget {
           child: FilledButton.icon(
             onPressed: () => _invite(context, ref),
             icon: const Icon(Icons.person_add_alt_outlined, size: 18),
-            label: const Text('用 email 邀請'),
+            label: const Text('邀請好友共用'),
           ),
         ),
         Expanded(
@@ -263,30 +265,43 @@ class _GivenTab extends ConsumerWidget {
     );
   }
 
+  /// 2026-08-06 起邀請對象必須先是好友——從好友列表選，不再打 email（要
+  /// 加好友請去側邊欄的「好友」）。
   Future<void> _invite(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController();
-    final email = await showDialog<String>(
+    final List<FriendUser> friends;
+    try {
+      friends = await ref.read(friendsProvider.future);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    if (friends.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('還沒有任何好友，請先到側邊欄的「好友」加好友')));
+      return;
+    }
+
+    final target = await showDialog<FriendUser>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('用 email 邀請'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'email'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('送出邀請'),
-          ),
+      builder: (context) => SimpleDialog(
+        title: const Text('選擇要邀請共用的好友'),
+        children: [
+          for (final friend in friends)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(friend),
+              child: Text('${friend.name}（${friend.email}）'),
+            ),
         ],
       ),
     );
-    if (email == null || email.isEmpty || !context.mounted) return;
+    if (target == null || !context.mounted) return;
 
     try {
-      await ref.read(apiClientProvider).inviteCalendarShare(email);
+      await ref.read(apiClientProvider).inviteCalendarShare(target.id);
       ref.invalidate(calendarSharesGivenProvider);
     } on ApiException catch (e) {
       if (context.mounted) {

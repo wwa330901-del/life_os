@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccessService } from './finance-access.service';
-import { UsersService } from '../users/users.service';
+import { FriendsService } from '../friends/friends.service';
 import { FinanceLoanDirection, FinanceTransactionType } from '../../generated/prisma/client.js';
 import { CreateFinanceLoanDto } from './dto/create-finance-loan.dto';
 import { CreateFinanceLoanRepaymentDto } from './dto/create-finance-loan-repayment.dto';
@@ -26,7 +26,7 @@ export class FinanceLoansService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: FinanceAccessService,
-    private readonly usersService: UsersService,
+    private readonly friendsService: FriendsService,
   ) {}
 
   /** Cursor-paginated (30/page), optionally filtered by `settled` — filtering
@@ -216,23 +216,23 @@ export class FinanceLoansService {
     return this.withOutstanding(updatedRepayment);
   }
 
-  /** 借出/借入互通 — invite another platform user (by email) to confirm this
-   * loan involves them, so their side gets a matching record once THEY
-   * accept (never unilaterally, see the schema doc comment on
-   * `FinanceLoanInvite`). One invite per loan (`fromLoanId` is unique). */
-  async inviteConfirmation(userId: string, spaceId: string, loanId: string, email: string) {
+  /** 借出/借入互通 — invite another platform user to confirm this loan
+   * involves them, so their side gets a matching record once THEY accept
+   * (never unilaterally, see the schema doc comment on `FinanceLoanInvite`).
+   * One invite per loan (`fromLoanId` is unique). 2026-08-06 起邀請對象
+   * 必須先是好友（見 好友 schema 註解）——直接吃對方的 userId，不再是
+   * email。 */
+  async inviteConfirmation(userId: string, spaceId: string, loanId: string, toUserId: string) {
     await this.access.assertPersonalSpace(userId, spaceId);
     await this.getOrThrow(spaceId, loanId);
-
-    const target = await this.usersService.findByEmail(email);
-    if (!target) throw new NotFoundException('找不到這個 email 對應的帳號');
-    if (target.id === userId) throw new BadRequestException('不能邀請自己');
+    if (toUserId === userId) throw new BadRequestException('不能邀請自己');
+    await this.friendsService.assertFriends(userId, toUserId);
 
     const existing = await this.prisma.financeLoanInvite.findUnique({ where: { fromLoanId: loanId } });
     if (existing) throw new BadRequestException('這筆借貸已經邀請過對方確認了');
 
     return this.prisma.financeLoanInvite.create({
-      data: { fromLoanId: loanId, fromUserId: userId, toUserId: target.id },
+      data: { fromLoanId: loanId, fromUserId: userId, toUserId },
       include: { toUser: { select: { id: true, name: true, email: true } } },
     });
   }

@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api_client.dart';
 import '../../../../core/models/finance.dart';
+import '../../../../core/models/friend.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
+import '../../../../state/friend_provider.dart';
 import '../widgets/finance_format.dart';
 
 /// 跟人借錢/借錢給人 — a lightweight receivable/payable ledger, independent
@@ -129,40 +131,52 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
 
   void _invalidate() => ref.invalidate(financeLoansProvider(_query));
 
+  /// 2026-08-06 起邀請對象必須先是好友——從好友列表選，不再打 email（要
+  /// 加好友請去側邊欄的「好友」）。
   Future<void> _inviteConfirmation(BuildContext context, FinanceLoan loan) async {
-    final controller = TextEditingController();
-    final email = await showDialog<String>(
+    final List<FriendUser> friends;
+    try {
+      friends = await ref.read(friendsProvider.future);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    if (friends.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('還沒有任何好友，請先到側邊欄的「好友」加好友')));
+      return;
+    }
+
+    final target = await showDialog<FriendUser>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('邀請對方確認'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('對方要用元序帳號的 email、且接受邀請後，才會在他自己的帳戶自動建立一筆對應紀錄。'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: '對方的 email'),
+      builder: (context) => SimpleDialog(
+        title: const Text('邀請哪位好友確認？'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(
+              '對方接受邀請後，會在他自己的帳戶自動建立一筆對應紀錄。',
+              style: TextStyle(fontSize: 12),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('送出邀請'),
           ),
+          for (final friend in friends)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(friend),
+              child: Text('${friend.name}（${friend.email}）'),
+            ),
         ],
       ),
     );
-    if (email == null || email.isEmpty || !context.mounted) return;
+    if (target == null || !context.mounted) return;
 
     try {
       await ref
           .read(apiClientProvider)
-          .inviteFinanceLoanConfirmation(spaceId: widget.spaceId, id: loan.id, email: email);
+          .inviteFinanceLoanConfirmation(spaceId: widget.spaceId, id: loan.id, toUserId: target.id);
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
