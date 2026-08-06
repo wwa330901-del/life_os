@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { KnowledgeItemStatus, Prisma } from '../../generated/prisma/client.js';
 import { KnowledgeCategoriesService } from './knowledge-categories.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
+import { SupabaseStorageService } from './supabase-storage.service';
 import { ContentAnalysisResult } from './ai/ai-content-analysis.interface';
 import {
   isInstagramUrl,
@@ -43,6 +44,7 @@ export class KnowledgeItemsService {
     private readonly prisma: PrismaService,
     private readonly categoriesService: KnowledgeCategoriesService,
     private readonly lineNotifier: LineNotifierService,
+    private readonly storage: SupabaseStorageService,
   ) {}
 
   /** LINE has no API for a third-party desktop app to share directly to a
@@ -103,6 +105,13 @@ export class KnowledgeItemsService {
         exhibitionDecisionStatus: status,
         exhibitionPlannedAt: plannedAt,
       },
+    });
+  }
+
+  async setSourceFilePath(itemId: string, sourceFilePath: string) {
+    await this.prisma.knowledgeItem.update({
+      where: { id: itemId },
+      data: { sourceFilePath },
     });
   }
 
@@ -332,6 +341,17 @@ export class KnowledgeItemsService {
     )
       return item;
     throw new ForbiddenException('沒有權限查看這筆資料');
+  }
+
+  /** 顯示來源 (2026-08-06) — `getDetail` 本身回傳的是純 DB 資料
+   * （`sourceFilePath` 只是一個內部路徑字串，App 沒辦法直接拿去顯示圖片/
+   * 影片），這裡另外包一層，圖片/影片來源才需要現生一組短效期簽名網址
+   * （見 `SupabaseStorageService`），連結/純文字來源直接沿用既有的
+   * sourceUrl/rawContent，不用額外處理。 */
+  async getDetailWithFileUrl(viewerUserId: string, itemId: string) {
+    const item = await this.getDetail(viewerUserId, itemId);
+    const fileUrl = item.sourceFilePath ? await this.storage.getSignedUrl(item.sourceFilePath) : null;
+    return { ...item, fileUrl };
   }
 
   async remove(userId: string, itemId: string) {

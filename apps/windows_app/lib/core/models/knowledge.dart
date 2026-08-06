@@ -159,6 +159,8 @@ class KnowledgeItem {
     this.title,
     this.summary,
     this.ownerName,
+    this.rawContent,
+    this.fileUrl,
   });
 
   final String id;
@@ -172,6 +174,14 @@ class KnowledgeItem {
   final String? sourcePlatform;
   final String? title;
   final String? summary;
+
+  /// 純文字來源（傳「分析」貼上的內容）本來的樣子——連結/圖片/影片來源
+  /// 這個欄位是 null。
+  final String? rawContent;
+
+  /// 圖片/影片來源的短效期簽名網址（見後端 `getDetailWithFileUrl`），只有
+  /// `GET /knowledge/items/:id`（詳細頁）才會有值，列表頁不會。
+  final String? fileUrl;
   final List<String> tags;
   final List<KnowledgeFieldValueDisplay> fieldValues;
   final String? ownerName;
@@ -195,6 +205,8 @@ class KnowledgeItem {
       fieldValues: fieldValuesJson.map((e) => _fieldValueFromJson(e as Map<String, dynamic>)).toList(),
       ownerName: (json['owner'] as Map<String, dynamic>?)?['name'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      rawContent: json['rawContent'] as String?,
+      fileUrl: json['fileUrl'] as String?,
     );
   }
 

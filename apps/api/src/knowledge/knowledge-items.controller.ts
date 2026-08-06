@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload';
 import { AssignKnowledgeItemCategoryDto } from './dto/assign-knowledge-item-category.dto';
+import { ReanalyzeKnowledgeItemDto } from './dto/reanalyze-knowledge-item.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('knowledge/items')
@@ -55,7 +56,20 @@ export class KnowledgeItemsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('itemId') itemId: string,
   ) {
-    return this.itemsService.getDetail(user.id, itemId);
+    return this.itemsService.getDetailWithFileUrl(user.id, itemId);
+  }
+
+  /// 重新分析 (2026-08-06) — 可選一段額外指示。不用 fire-and-forget（跟
+  /// save-copy/LINE 入口不同）：使用者是在看著這則資料的當下主動按的，
+  /// 讓 App 端等到分析真的跑完（或失敗）比較符合這個互動的預期，不用另外
+  /// 等一則 LINE 推播才知道結果。
+  @Post(':itemId/reanalyze')
+  reanalyze(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('itemId') itemId: string,
+    @Body() dto: ReanalyzeKnowledgeItemDto,
+  ) {
+    return this.analysisPipeline.reanalyze(itemId, user.id, dto.instruction);
   }
 
   @Post(':itemId/save-copy')

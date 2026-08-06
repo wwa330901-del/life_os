@@ -31,6 +31,9 @@ export interface ContentAnalysisInput {
    * this is inline video data, same shape as `image`. */
   video?: { data: Buffer; mimeType: string };
   existingCategories: CategoryContext[];
+  /** 使用者在「重新分析」時額外輸入的指示（例如「分析多一點」），只在
+   * 重新分析時才可能有值——第一次分析永遠是 undefined。 */
+  extraInstruction?: string;
 }
 
 export interface ContentAnalysisMatchedResult {

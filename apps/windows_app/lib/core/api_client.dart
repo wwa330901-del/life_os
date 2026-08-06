@@ -775,6 +775,14 @@ class ApiClient {
     await _delete('/knowledge/items/$itemId');
   }
 
+  /// 重新分析 (2026-08-06) — 等分析真的跑完才回應（不是 fire-and-forget），
+  /// 呼叫端可以直接顯示 loading 直到這個 Future 完成。
+  Future<void> reanalyzeKnowledgeItem(String itemId, {String? instruction}) async {
+    await _post('/knowledge/items/$itemId/reanalyze', {
+      if (instruction != null && instruction.isNotEmpty) 'instruction': instruction,
+    });
+  }
+
   Future<bool> hasGeminiApiKey() async {
     final body = await _get('/users/me/gemini-key');
     return body['hasKey'] as bool;

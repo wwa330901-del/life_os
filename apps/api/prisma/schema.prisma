@@ -1417,6 +1417,13 @@ model KnowledgeItem {
   tags           String[] @default([])
   rawContent     String?
 
+  /// 圖片/影片來源的原始檔在 Supabase Storage（private bucket
+  /// `knowledge-media`）裡的路徑 (2026-08-06) — 讓「顯示來源」「重新分析」
+  /// 對圖片/影片也能用（本來分析完就丟了，完全沒地方可以再看/再分析）。
+  /// Null 表示這筆是連結/純文字來源，本來就有 sourceUrl/rawContent 可用，
+  /// 不需要另外存檔案。
+  sourceFilePath String?
+
   /// Only used when category = 展覽資訊 — see KnowledgeExhibitionDecisionStatus.
   exhibitionDecisionStatus KnowledgeExhibitionDecisionStatus?
   exhibitionPlannedAt      DateTime?

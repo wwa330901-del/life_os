@@ -20,13 +20,66 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
   String _formatCreatedAt(DateTime dt) =>
       '${dt.year}/${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
-  Future<void> _openLink(BuildContext context) async {
-    final url = item.sourceUrl;
-    if (url == null) return;
+  Future<void> _openUrl(BuildContext context, String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (context.mounted) Navigator.of(context).maybePop();
+  }
+
+  Future<void> _reanalyze(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController();
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重新分析'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('可以輸入額外指示給 AI（例如「分析多一點」），不輸入就直接重新分析一次。'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: '額外指示（選填）'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('重新分析')),
+        ],
+      ),
+    );
+    if (proceed != true || !context.mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [CircularProgressIndicator(), SizedBox(width: 16), Text('重新分析中…')],
+        ),
+      ),
+    );
+    try {
+      await ref
+          .read(apiClientProvider)
+          .reanalyzeKnowledgeItem(item.id, instruction: controller.text.trim());
+      ref.invalidate(knowledgeItemDetailProvider(item.id));
+      ref.invalidate(knowledgeItemsProvider);
+      if (context.mounted) {
+        Navigator.of(context).pop(); // loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('重新分析完成')));
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop(); // loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 
   Future<void> _run(BuildContext context, WidgetRef ref, Future<void> Function() action, String successMessage) async {
@@ -80,8 +133,14 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 詳細頁抓一份帶 fileUrl/rawContent 的完整版本，載入完成前先用列表傳
+    // 進來的 item 頂著顯示（列表本來就有 title/summary/tags 這些），避免
+    // 打開對話框先看到一片空白。
+    final detailAsync = ref.watch(knowledgeItemDetailProvider(item.id));
+    final display = detailAsync.value ?? item;
+
     return AlertDialog(
-      title: Text(item.title ?? '未命名'),
+      title: Text(display.title ?? '未命名'),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -92,50 +151,49 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
               Wrap(
                 spacing: 6,
                 children: [
-                  if (item.categoryName != null) Chip(label: Text(item.categoryName!)),
-                  if (item.sourcePlatform != null && item.sourcePlatform!.isNotEmpty)
-                    Chip(label: Text(item.sourcePlatform!)),
-                  if (!isOwn && item.ownerName != null) Chip(label: Text('分享自 ${item.ownerName}')),
+                  if (display.categoryName != null) Chip(label: Text(display.categoryName!)),
+                  if (display.sourcePlatform != null && display.sourcePlatform!.isNotEmpty)
+                    Chip(label: Text(display.sourcePlatform!)),
+                  if (!isOwn && display.ownerName != null) Chip(label: Text('分享自 ${display.ownerName}')),
                 ],
               ),
               const SizedBox(height: 6),
               Text(
-                '建立時間：${_formatCreatedAt(item.createdAt)}',
+                '建立時間：${_formatCreatedAt(display.createdAt)}',
                 style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
               ),
-              if (item.summary != null && item.summary!.isNotEmpty) ...[
+              if (display.summary != null && display.summary!.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                Text(item.summary!),
+                Text(display.summary!),
               ],
-              if (item.tags.isNotEmpty) ...[
+              if (display.tags.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                Wrap(spacing: 6, runSpacing: 6, children: [for (final tag in item.tags) Chip(label: Text('#$tag'))]),
+                Wrap(spacing: 6, runSpacing: 6, children: [for (final tag in display.tags) Chip(label: Text('#$tag'))]),
               ],
-              if (item.fieldValues.isNotEmpty) ...[
+              if (display.fieldValues.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                for (final field in item.fieldValues)
+                for (final field in display.fieldValues)
                   if (field.displayValue.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text('${field.fieldName}：${field.displayValue}'),
                     ),
               ],
-              if (item.sourceUrl != null) ...[
-                const SizedBox(height: 12),
-                InkWell(
-                  onTap: () => _openLink(context),
-                  child: Text(
-                    item.sourceUrl!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline),
-                  ),
-                ),
-              ],
+              const SizedBox(height: 12),
+              Text('來源', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              _SourceContent(item: display, onOpenUrl: (url) => _openUrl(context, url)),
             ],
           ),
         ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉')),
+        if (isOwn)
+          TextButton(
+            onPressed: () => _reanalyze(context, ref),
+            child: const Text('重新分析'),
+          ),
         if (isOwn)
           TextButton(
             onPressed: () => _pickCategory(context, ref),
@@ -173,5 +231,73 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
           ),
       ],
     );
+  }
+}
+
+/// 來源顯示 (2026-08-06) — 四選一：圖片直接嵌入、影片給一個開啟連結（桌面
+/// 版沒有內建的影片播放器元件，開外部程式看最省事）、連結原樣顯示、純
+/// 文字放在一個捲動得動的方塊裡。[item.fileUrl] 只在詳細頁的回應才會有值
+/// （見後端 `getDetailWithFileUrl`），列表頁傳進來的版本沒有這個欄位。
+class _SourceContent extends StatelessWidget {
+  const _SourceContent({required this.item, required this.onOpenUrl});
+
+  final KnowledgeItem item;
+  final void Function(String url) onOpenUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (item.fileUrl != null) {
+      if (item.sourcePlatform == '影片') {
+        return InkWell(
+          onTap: () => onOpenUrl(item.fileUrl!),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.play_circle_outline, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                '開啟原始影片',
+                style: TextStyle(color: scheme.primary, decoration: TextDecoration.underline),
+              ),
+            ],
+          ),
+        );
+      }
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          item.fileUrl!,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) =>
+              Text('圖片載入失敗', style: TextStyle(color: scheme.error)),
+        ),
+      );
+    }
+
+    if (item.sourceUrl != null) {
+      return InkWell(
+        onTap: () => onOpenUrl(item.sourceUrl!),
+        child: Text(
+          item.sourceUrl!,
+          style: TextStyle(color: scheme.primary, decoration: TextDecoration.underline),
+        ),
+      );
+    }
+
+    if (item.rawContent != null && item.rawContent!.isNotEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(8),
+        constraints: const BoxConstraints(maxHeight: 160),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: SingleChildScrollView(child: Text(item.rawContent!, style: const TextStyle(fontSize: 12))),
+      );
+    }
+
+    return Text('沒有原始來源資料', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5)));
   }
 }

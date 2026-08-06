@@ -150,6 +150,7 @@ export class GeminiContentAnalysisService implements AiContentAnalysisService {
       '',
       `來源平台：${input.sourcePlatform}`,
       input.sourceUrl ? `原始網址：${input.sourceUrl}` : null,
+      input.extraInstruction ? `使用者這次重新分析的額外指示：${input.extraInstruction}` : null,
       '',
       '現有分類清單（JSON）：',
       JSON.stringify(categoriesDescription),

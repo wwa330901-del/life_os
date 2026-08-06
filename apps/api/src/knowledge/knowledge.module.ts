@@ -10,6 +10,7 @@ import { GeminiContentAnalysisService } from './ai/gemini-content-analysis.servi
 import { AI_CONTENT_ANALYSIS_SERVICE } from './ai/ai-content-analysis.interface';
 import { KnowledgeAnalysisPipeline } from './knowledge-analysis-pipeline.service';
 import { KnowledgeExhibitionReminderService } from './knowledge-exhibition-reminder.service';
+import { SupabaseStorageService } from './supabase-storage.service';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { UsersModule } from '../users/users.module';
 
@@ -27,6 +28,7 @@ import { UsersModule } from '../users/users.module';
     ContentFetcherService,
     KnowledgeAnalysisPipeline,
     KnowledgeExhibitionReminderService,
+    SupabaseStorageService,
     {
       provide: AI_CONTENT_ANALYSIS_SERVICE,
       useClass: GeminiContentAnalysisService,

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { KnowledgeItemsService } from './knowledge-items.service';
 import { KnowledgeCategoriesService } from './knowledge-categories.service';
 import {
@@ -6,6 +6,7 @@ import {
   FetchedContent,
   INSTAGRAM_UNSUPPORTED_MESSAGE,
 } from './content-fetcher.service';
+import { SupabaseStorageService } from './supabase-storage.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
@@ -40,6 +41,7 @@ export class KnowledgeAnalysisPipeline {
     private readonly itemsService: KnowledgeItemsService,
     private readonly categoriesService: KnowledgeCategoriesService,
     private readonly contentFetcher: ContentFetcherService,
+    private readonly storage: SupabaseStorageService,
     private readonly lineNotifier: LineNotifierService,
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
@@ -76,6 +78,7 @@ export class KnowledgeAnalysisPipeline {
     try {
       const apiKey = await this.requireApiKey(ownerUserId);
       await this.itemsService.markProcessing(itemId);
+      await this.persistSourceFile(itemId, image.data, image.mimeType, 'jpg');
       await this.runAnalysis(itemId, ownerUserId, apiKey, {
         sourcePlatform: '圖片',
         image,
@@ -125,6 +128,7 @@ export class KnowledgeAnalysisPipeline {
     try {
       const apiKey = await this.requireApiKey(ownerUserId);
       await this.itemsService.markProcessing(itemId);
+      await this.persistSourceFile(itemId, video.data, video.mimeType, 'mp4');
       await this.runAnalysis(itemId, ownerUserId, apiKey, {
         sourcePlatform: '影片',
         video,
@@ -136,6 +140,71 @@ export class KnowledgeAnalysisPipeline {
         ownerUserId,
         this.userFacingMessage(error),
       );
+    }
+  }
+
+  /** 重新分析 (2026-08-06) — 從這則資料原本存下來的來源（圖片/影片走
+   * Supabase Storage，連結重新抓一次，純文字直接重用 rawContent）重新跑
+   * 一次分析，可選一段額外指示（例如「分析多一點」）。跟一般的
+   * process*Submission 系列同一套「自己吃掉錯誤、用 markFailed + LINE 通知
+   * 收尾」的規則，但這裡是使用者主動觸發（不是 LINE webhook 的 fire-and-
+   * forget），所以呼叫端（HTTP controller）拿得到這個 Promise，可以選擇
+   * await 或不 await，這個方法本身不管哪種都不會把錯誤丟回去。 */
+  async reanalyze(itemId: string, callerId: string, extraInstruction?: string): Promise<void> {
+    const item = await this.itemsService.getByIdInternal(itemId);
+    if (item.ownerUserId !== callerId) {
+      throw new ForbiddenException('這不是你的知識庫資料');
+    }
+
+    try {
+      const apiKey = await this.requireApiKey(callerId);
+      await this.itemsService.markProcessing(itemId);
+      const fetched = await this.resolveSourceForReanalysis(item);
+      await this.runAnalysis(itemId, callerId, apiKey, fetched, extraInstruction);
+    } catch (error) {
+      this.logger.error(`知識庫重新分析失敗 item=${itemId}`, error as Error);
+      await this.itemsService.markFailed(itemId, this.errorMessage(error));
+      await this.lineNotifier.notifyByUser(callerId, this.userFacingMessage(error));
+    }
+  }
+
+  private async resolveSourceForReanalysis(item: {
+    sourceFilePath: string | null;
+    sourceUrl: string | null;
+    sourcePlatform: string | null;
+    rawContent: string | null;
+  }): Promise<FetchedContent> {
+    if (item.sourceFilePath) {
+      const { data, contentType } = await this.storage.download(item.sourceFilePath);
+      return contentType.startsWith('video/')
+        ? { sourcePlatform: item.sourcePlatform ?? '影片', video: { data, mimeType: contentType } }
+        : { sourcePlatform: item.sourcePlatform ?? '圖片', image: { data, mimeType: contentType } };
+    }
+    if (item.sourceUrl) {
+      return this.contentFetcher.fetchFromUrl(item.sourceUrl);
+    }
+    if (item.rawContent) {
+      return { sourcePlatform: item.sourcePlatform ?? '貼上文字', extractedText: item.rawContent };
+    }
+    throw new Error('這則資料沒有原始內容可以重新分析');
+  }
+
+  /** Best-effort — a Storage failure shouldn't fail the whole analysis (the
+   * feature worked fine before this existed), it just means "重新分析"/
+   * "顯示來源" won't be available for this particular item afterward. */
+  private async persistSourceFile(
+    itemId: string,
+    data: Buffer,
+    mimeType: string,
+    extension: string,
+  ): Promise<void> {
+    if (!this.storage.configured) return;
+    const path = `${itemId}.${extension}`;
+    try {
+      await this.storage.upload(path, data, mimeType);
+      await this.itemsService.setSourceFilePath(itemId, path);
+    } catch (error) {
+      this.logger.warn(`知識庫原始檔存檔失敗 item=${itemId}: ${error}`);
     }
   }
 
@@ -163,6 +232,7 @@ export class KnowledgeAnalysisPipeline {
     ownerUserId: string,
     apiKey: string,
     fetched: FetchedContent,
+    extraInstruction?: string,
   ): Promise<void> {
     await this.itemsService.updateSourcePlatform(
       itemId,
@@ -184,6 +254,7 @@ export class KnowledgeAnalysisPipeline {
         image: fetched.image,
         video: fetched.video,
         existingCategories,
+        extraInstruction,
       })
       .catch(async (error: unknown) => {
         await this.aiUsageService.record({
