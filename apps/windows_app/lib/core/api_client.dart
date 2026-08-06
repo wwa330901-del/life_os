@@ -12,6 +12,7 @@ import 'models/calendar_share.dart';
 import 'models/friend.dart';
 import 'models/finance_report.dart';
 import 'models/document_approval.dart';
+import 'models/engineering_finance.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
 import 'models/generated_document.dart';
@@ -1131,6 +1132,300 @@ class ApiClient {
   Future<FinanceReport> financeReport(String spaceId) async {
     final body = await _get('/spaces/$spaceId/finance/report');
     return FinanceReport.fromJson(body);
+  }
+
+  // --- 工程財務四表 ---
+
+  Future<QuotationList> quotationItems(String projectId) async {
+    final body = await _get('/projects/$projectId/quotation-items');
+    return QuotationList.fromJson(body);
+  }
+
+  Future<void> createQuotationItem({
+    required String projectId,
+    required String name,
+    required double unitPrice,
+    required double quantity,
+    required double costUnitPrice,
+  }) async {
+    await _post('/projects/$projectId/quotation-items', {
+      'name': name,
+      'unitPrice': unitPrice,
+      'quantity': quantity,
+      'costUnitPrice': costUnitPrice,
+    });
+  }
+
+  Future<void> updateQuotationItem({
+    required String projectId,
+    required String itemId,
+    String? name,
+    double? unitPrice,
+    double? quantity,
+    double? costUnitPrice,
+  }) async {
+    await _patch('/projects/$projectId/quotation-items/$itemId', {
+      if (name != null) 'name': name,
+      if (unitPrice != null) 'unitPrice': unitPrice,
+      if (quantity != null) 'quantity': quantity,
+      if (costUnitPrice != null) 'costUnitPrice': costUnitPrice,
+    });
+  }
+
+  Future<void> deleteQuotationItem(String projectId, String itemId) async {
+    await _delete('/projects/$projectId/quotation-items/$itemId');
+  }
+
+  Future<void> reorderQuotationItem({
+    required String projectId,
+    required String itemId,
+    required String targetId,
+    required bool insertAfter,
+  }) async {
+    await _patchIgnoreBody('/projects/$projectId/quotation-items/$itemId/reorder', {
+      'targetId': targetId,
+      'insertAfter': insertAfter,
+    });
+  }
+
+  Future<QuotationList> applyQuotationTarget({
+    required String projectId,
+    required String mode,
+    double? targetMarginRate,
+    double? targetTotalAmount,
+    List<String>? itemIds,
+  }) async {
+    final body = await _post('/projects/$projectId/quotation-items/apply-target', {
+      'mode': mode,
+      if (targetMarginRate != null) 'targetMarginRate': targetMarginRate,
+      if (targetTotalAmount != null) 'targetTotalAmount': targetTotalAmount,
+      if (itemIds != null) 'itemIds': itemIds,
+    });
+    return QuotationList.fromJson(body);
+  }
+
+  Future<List<ProcurementComparison>> procurementComparisons(String projectId) async {
+    final body = await _getList('/projects/$projectId/procurement-comparisons');
+    return body.map((e) => ProcurementComparison.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createProcurementComparison(String projectId, String scopeName) async {
+    await _post('/projects/$projectId/procurement-comparisons', {'scopeName': scopeName});
+  }
+
+  Future<void> updateProcurementComparison({
+    required String projectId,
+    required String comparisonId,
+    required String scopeName,
+  }) async {
+    await _patch('/projects/$projectId/procurement-comparisons/$comparisonId', {'scopeName': scopeName});
+  }
+
+  Future<void> deleteProcurementComparison(String projectId, String comparisonId) async {
+    await _delete('/projects/$projectId/procurement-comparisons/$comparisonId');
+  }
+
+  Future<void> addVendorQuote({
+    required String projectId,
+    required String comparisonId,
+    required String vendorName,
+    required double quotedAmount,
+    String? note,
+  }) async {
+    await _post('/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes', {
+      'vendorName': vendorName,
+      'quotedAmount': quotedAmount,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> updateVendorQuote({
+    required String projectId,
+    required String comparisonId,
+    required String vendorQuoteId,
+    String? vendorName,
+    double? quotedAmount,
+    String? note,
+  }) async {
+    await _patch(
+      '/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId',
+      {
+        if (vendorName != null) 'vendorName': vendorName,
+        if (quotedAmount != null) 'quotedAmount': quotedAmount,
+        if (note != null) 'note': note,
+      },
+    );
+  }
+
+  Future<void> deleteVendorQuote({
+    required String projectId,
+    required String comparisonId,
+    required String vendorQuoteId,
+  }) async {
+    await _delete('/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId');
+  }
+
+  Future<void> uploadVendorQuoteAttachment({
+    required String projectId,
+    required String comparisonId,
+    required String vendorQuoteId,
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId/attachment',
+    );
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll({if (_token != null) 'Authorization': 'Bearer $_token'})
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    _checkStatus(res);
+  }
+
+  Future<void> selectVendorQuote({
+    required String projectId,
+    required String comparisonId,
+    required String vendorQuoteId,
+    double? finalAwardedAmount,
+  }) async {
+    await _post('/projects/$projectId/procurement-comparisons/$comparisonId/select', {
+      'vendorQuoteId': vendorQuoteId,
+      if (finalAwardedAmount != null) 'finalAwardedAmount': finalAwardedAmount,
+    });
+  }
+
+  Future<List<CostControlRow>> costControlRows(String projectId) async {
+    final body = await _getList('/projects/$projectId/cost-control-rows');
+    return body.map((e) => CostControlRow.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createCostControlRow({
+    required String projectId,
+    required String name,
+    String? procurementComparisonId,
+  }) async {
+    await _post('/projects/$projectId/cost-control-rows', {
+      'name': name,
+      if (procurementComparisonId != null) 'procurementComparisonId': procurementComparisonId,
+    });
+  }
+
+  Future<void> updateCostControlRow({
+    required String projectId,
+    required String rowId,
+    String? name,
+    String? procurementComparisonId,
+    bool clearProcurementComparison = false,
+  }) async {
+    await _patch('/projects/$projectId/cost-control-rows/$rowId', {
+      if (name != null) 'name': name,
+      if (clearProcurementComparison) 'procurementComparisonId': null,
+      if (!clearProcurementComparison && procurementComparisonId != null)
+        'procurementComparisonId': procurementComparisonId,
+    });
+  }
+
+  Future<void> deleteCostControlRow(String projectId, String rowId) async {
+    await _delete('/projects/$projectId/cost-control-rows/$rowId');
+  }
+
+  Future<void> reorderCostControlRow({
+    required String projectId,
+    required String rowId,
+    required String targetId,
+    required bool insertAfter,
+  }) async {
+    await _patchIgnoreBody('/projects/$projectId/cost-control-rows/$rowId/reorder', {
+      'targetId': targetId,
+      'insertAfter': insertAfter,
+    });
+  }
+
+  Future<void> setCostControlRowItems({
+    required String projectId,
+    required String rowId,
+    required List<String> quotationLineItemIds,
+  }) async {
+    await _patchIgnoreBody('/projects/$projectId/cost-control-rows/$rowId/quotation-items', {
+      'quotationLineItemIds': quotationLineItemIds,
+    });
+  }
+
+  Future<CostControlBreakdown> costControlBreakdown(String projectId, String rowId) async {
+    final body = await _get('/projects/$projectId/cost-control-rows/$rowId/breakdown');
+    return CostControlBreakdown.fromJson(body);
+  }
+
+  Future<void> addCostControlAdjustment({
+    required String projectId,
+    required String rowId,
+    required String type,
+    required double amount,
+    String? note,
+  }) async {
+    await _post('/projects/$projectId/cost-control-rows/$rowId/adjustments', {
+      'type': type,
+      'amount': amount,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> deleteCostControlAdjustment({
+    required String projectId,
+    required String rowId,
+    required String adjustmentId,
+  }) async {
+    await _delete('/projects/$projectId/cost-control-rows/$rowId/adjustments/$adjustmentId');
+  }
+
+  Future<List<PaymentRequest>> paymentRequests(String projectId) async {
+    final body = await _getList('/projects/$projectId/payment-requests');
+    return body.map((e) => PaymentRequest.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createPaymentRequest({
+    required String projectId,
+    required String costControlRowId,
+    required String vendorName,
+    required double amount,
+    required DateTime requestDate,
+    String? note,
+    required String salesManagerUserId,
+    required String financeReviewUserId,
+    required String costControlApproverUserId,
+    required String generalManagerUserId,
+    required String accountingUserId,
+  }) async {
+    await _post('/projects/$projectId/payment-requests', {
+      'costControlRowId': costControlRowId,
+      'vendorName': vendorName,
+      'amount': amount,
+      'requestDate': _dateOnly(requestDate),
+      if (note != null && note.isNotEmpty) 'note': note,
+      'salesManagerUserId': salesManagerUserId,
+      'financeReviewUserId': financeReviewUserId,
+      'costControlApproverUserId': costControlApproverUserId,
+      'generalManagerUserId': generalManagerUserId,
+      'accountingUserId': accountingUserId,
+    });
+  }
+
+  Future<List<PendingPaymentRequestApproval>> pendingPaymentRequestApprovals() async {
+    final body = await _getList('/payment-requests/pending');
+    return body.map((e) => PendingPaymentRequestApproval.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> decidePaymentRequestStage({
+    required String paymentRequestId,
+    required PaymentRequestStageKey stage,
+    required bool approve,
+    String? comment,
+  }) async {
+    await _post('/payment-requests/$paymentRequestId/stages/${stage.wireValue}/decide', {
+      'action': approve ? 'APPROVE' : 'REJECT',
+      if (comment != null && comment.isNotEmpty) 'comment': comment,
+    });
   }
 
   Future<void> createFinanceTransaction({
