@@ -6,6 +6,7 @@ import {
   FetchedContent,
   INSTAGRAM_UNSUPPORTED_MESSAGE,
 } from './content-fetcher.service';
+import { INSTAGRAM_SESSION_EXPIRED_MESSAGE } from './instagram-fetcher.service';
 import { SupabaseStorageService } from './supabase-storage.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -214,7 +215,8 @@ export class KnowledgeAnalysisPipeline {
   private userFacingMessage(error: unknown): string {
     const message = this.errorMessage(error);
     return message === NO_API_KEY_MESSAGE ||
-      message === INSTAGRAM_UNSUPPORTED_MESSAGE
+      message === INSTAGRAM_UNSUPPORTED_MESSAGE ||
+      message === INSTAGRAM_SESSION_EXPIRED_MESSAGE
       ? message
       : `這則知識庫內容分析失敗了：${message}`;
   }

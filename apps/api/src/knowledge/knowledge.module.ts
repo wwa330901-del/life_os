@@ -6,6 +6,7 @@ import { KnowledgeCategoriesService } from './knowledge-categories.service';
 import { KnowledgeItemsService } from './knowledge-items.service';
 import { AiUsageService } from './ai-usage.service';
 import { ContentFetcherService } from './content-fetcher.service';
+import { InstagramFetcherService } from './instagram-fetcher.service';
 import { GeminiContentAnalysisService } from './ai/gemini-content-analysis.service';
 import { AI_CONTENT_ANALYSIS_SERVICE } from './ai/ai-content-analysis.interface';
 import { KnowledgeAnalysisPipeline } from './knowledge-analysis-pipeline.service';
@@ -26,6 +27,7 @@ import { UsersModule } from '../users/users.module';
     KnowledgeItemsService,
     AiUsageService,
     ContentFetcherService,
+    InstagramFetcherService,
     KnowledgeAnalysisPipeline,
     KnowledgeExhibitionReminderService,
     SupabaseStorageService,

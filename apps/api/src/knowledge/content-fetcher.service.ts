@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as cheerio from 'cheerio';
 import { PDFParse } from 'pdf-parse';
+import { InstagramFetcherService } from './instagram-fetcher.service';
 
 /** A browser-like User-Agent — several sites (IG included) return a stripped
  * or blocked response to the default Node fetch UA. */
@@ -20,10 +21,11 @@ export interface FetchedContent {
 /** Confirmed by direct testing (2026-08-03): a logged-out fetch of an
  * Instagram reel/post — even Instagram's own "public embed" page, meant for
  * third-party embedding — comes back as an empty shell with no caption,
- * video, or thumbnail at all. This isn't a "scrape harder" problem, it's a
- * platform-level block with no unauthenticated way around it, so don't
- * bother trying — tell the user to send a screenshot instead (the image
- * pipeline actually sees real content). */
+ * video, or thumbnail at all. This is only still reachable now (2026-08-06)
+ * when `INSTAGRAM_SESSION_ID` isn't configured at all — see
+ * `InstagramFetcherService`, which handles the normal (configured) case by
+ * attaching a real logged-in session's cookie instead of fetching
+ * anonymously. */
 export const INSTAGRAM_UNSUPPORTED_MESSAGE =
   'Instagram 連結沒辦法自動分析（Instagram 擋掉了沒有登入的存取），麻煩改成把畫面截圖傳給我，我可以直接看截圖分析。';
 
@@ -37,6 +39,8 @@ export function isInstagramUrl(url: string): boolean {
 
 @Injectable()
 export class ContentFetcherService {
+  constructor(private readonly instagram: InstagramFetcherService) {}
+
   async fetchFromUrl(url: string): Promise<FetchedContent> {
     const host = this.safeHost(url);
 
@@ -44,7 +48,8 @@ export class ContentFetcherService {
       return { sourcePlatform: 'YouTube', youtubeUrl: url };
     }
     if (isInstagramUrl(url)) {
-      throw new Error(INSTAGRAM_UNSUPPORTED_MESSAGE);
+      if (!this.instagram.configured) throw new Error(INSTAGRAM_UNSUPPORTED_MESSAGE);
+      return this.instagram.fetchFromUrl(url);
     }
 
     const response = await this.get(url);
