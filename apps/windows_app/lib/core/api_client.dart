@@ -10,6 +10,7 @@ import 'models/app_user.dart';
 import 'models/calendar_event.dart';
 import 'models/calendar_share.dart';
 import 'models/friend.dart';
+import 'models/finance_report.dart';
 import 'models/document_approval.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
@@ -1117,6 +1118,11 @@ class ApiClient {
   }) async {
     final body = await _getList('/spaces/$spaceId/finance/transactions/trend?months=$months');
     return body.map((e) => FinanceMonthlyTrendPoint.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<FinanceReport> financeReport(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/finance/report');
+    return FinanceReport.fromJson(body);
   }
 
   Future<void> createFinanceTransaction({

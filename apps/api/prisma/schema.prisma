@@ -225,6 +225,7 @@ model Space {
   stockTransactions            StockTransaction[]
   stockRecurringInvestments    StockRecurringInvestment[]
   stockHoldings                StockHolding[]
+  financeNetWorthSnapshots     FinanceNetWorthSnapshot[]
 }
 
 /// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
@@ -1004,6 +1005,30 @@ model FinanceBudget {
   monthlyAmount Float
 
   createdAt DateTime @default(now())
+}
+
+/// 財務分析報表的淨資產趨勢 (2026-08-06) — one row per (space, Taipei
+/// calendar day), written by a daily cron (`FinanceReportService.
+/// snapshotAllSpaces`) AND self-healed on read (`FinanceReportService.
+/// getReport` upserts today's row if it's missing, same "backfill on next
+/// access" philosophy as `StocksHoldingsService`/`FinanceCategoriesService`
+/// elsewhere in this schema) — there's no way to reconstruct PAST net
+/// worth after the fact (account balances/holdings aren't versioned), so
+/// the trend can only ever start accruing from whenever this feature first
+/// ran for that space, never backfilled earlier than that.
+model FinanceNetWorthSnapshot {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  date             DateTime @db.Date
+  totalAssets      Float
+  totalLiabilities Float
+  netWorth         Float
+
+  createdAt DateTime @default(now())
+
+  @@unique([spaceId, date])
 }
 
 /// A recurring 記帳 entry — the credit-card-bill use case: "every month on

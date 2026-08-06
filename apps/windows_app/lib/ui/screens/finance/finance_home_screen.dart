@@ -7,6 +7,7 @@ import 'tabs/finance_categories_tab.dart';
 import 'tabs/finance_loans_tab.dart';
 import 'tabs/finance_overview_tab.dart';
 import 'tabs/finance_recurring_tab.dart';
+import 'tabs/finance_report_tab.dart';
 import 'tabs/finance_transactions_tab.dart';
 
 /// First 個人功能 module: a personal-space 記帳系統 — 總覽 (monthly income/
@@ -25,7 +26,7 @@ class FinanceHomeScreen extends StatefulWidget {
 }
 
 class _FinanceHomeScreenState extends State<FinanceHomeScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 8, vsync: this);
+  late final TabController _tabController = TabController(length: 9, vsync: this);
 
   @override
   void dispose() {
@@ -51,6 +52,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> with SingleTicker
             Tab(text: '定期交易'),
             Tab(text: '借貸'),
             Tab(text: '代墊'),
+            Tab(text: '報表'),
           ],
         ),
         Expanded(
@@ -65,6 +67,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> with SingleTicker
               FinanceRecurringTab(spaceId: widget.spaceId),
               FinanceLoansTab(spaceId: widget.spaceId),
               FinanceAdvancesTab(spaceId: widget.spaceId),
+              FinanceReportTab(spaceId: widget.spaceId),
             ],
           ),
         ),

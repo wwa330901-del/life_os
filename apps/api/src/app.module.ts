@@ -21,6 +21,7 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
 import { TodosModule } from './todos/todos.module';
 import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 import { FriendsModule } from './friends/friends.module';
+import { FinanceReportModule } from './finance/finance-report.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { FriendsModule } from './friends/friends.module';
     TodosModule,
     AiAssistantModule,
     FriendsModule,
+    FinanceReportModule,
   ],
   controllers: [AppController],
   providers: [AppService],

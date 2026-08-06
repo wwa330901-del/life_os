@@ -48,6 +48,7 @@ import { FinanceAdvancesService } from './finance-advances.service';
   // instead of a second copy of the derived-balance math drifting out of
   // sync with it.
   exports: [
+    FinanceAccessService,
     FinanceAccountsService,
     FinanceCategoriesService,
     FinanceTransactionsService,

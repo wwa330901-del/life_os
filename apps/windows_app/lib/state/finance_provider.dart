@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/finance.dart';
+import '../core/models/finance_report.dart';
 import '../core/models/project.dart';
 import 'auth_provider.dart';
 
@@ -48,6 +49,10 @@ final financeTrendProvider = FutureProvider.autoDispose
     .family<List<FinanceMonthlyTrendPoint>, String>((ref, spaceId) {
       return ref.read(apiClientProvider).financeMonthlyTrend(spaceId: spaceId);
     });
+
+final financeReportProvider = FutureProvider.autoDispose.family<FinanceReport, String>((ref, spaceId) {
+  return ref.read(apiClientProvider).financeReport(spaceId);
+});
 
 final financeBudgetsProvider = FutureProvider.autoDispose.family<List<FinanceBudget>, String>((
   ref,
