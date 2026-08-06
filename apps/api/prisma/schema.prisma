@@ -150,6 +150,13 @@ model User {
   financeLoanInvitesReceived FinanceLoanInvite[]        @relation("LoanInviteTo")
   friendshipsRequested       Friendship[]               @relation("FriendshipRequester")
   friendshipsReceived        Friendship[]               @relation("FriendshipAddressee")
+
+  paymentRequestsSubmitted      PaymentRequest[] @relation("PaymentRequestSubmittedBy")
+  paymentRequestsSalesManager   PaymentRequest[] @relation("PaymentRequestSalesManager")
+  paymentRequestsFinanceReview  PaymentRequest[] @relation("PaymentRequestFinanceReview")
+  paymentRequestsCostControl    PaymentRequest[] @relation("PaymentRequestCostControlApprover")
+  paymentRequestsGeneralManager PaymentRequest[] @relation("PaymentRequestGeneralManager")
+  paymentRequestsAccounting     PaymentRequest[] @relation("PaymentRequestAccounting")
 }
 
 /// 好友 (2026-08-06) — a mutual, symmetric relationship: unlike CalendarShare
@@ -704,6 +711,10 @@ model Project {
   todos              ProjectTodo[]
   lineActiveFor      LineAccountLink[]
   financeAdvances    FinanceAdvance[]
+
+  quotationLineItems     QuotationLineItem[]
+  procurementComparisons ProcurementComparison[]
+  costControlRows        CostControlRow[]
 }
 
 model ProjectMember {
@@ -1491,4 +1502,205 @@ model AiUsageLog {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// 工程財務四表 (2026-08-06) — 工程報價單／採發比價表／成控管制表／工程請款單,
+// all scoped under Project (a project has at most one running set of these,
+// same "flattened, always queried together" reasoning as Project's holiday
+// calendar fields — no separate "quotation header"/"cost control sheet
+// header" wrapper model, since one project only ever has one of each).
+// ---------------------------------------------------------------------------
+
+/// 工程報價單一列工項 — 業主報價(單價/數量→複價) 跟 成本(成本單價→成本複價)
+/// 並列在同一列，因為兩者永遠一起被看（利潤/毛利率就是兩者的差），不是先報價
+/// 再事後補成本。複價/成本複價/利潤/毛利率都是衍生值，不落地存欄位，由
+/// EngineeringQuotationService 算出來。「設定目標毛利率/目標總金額回推單價」
+/// 是一次性的批次寫入操作（直接改 unitPrice），不是常駐設定，所以沒有另外
+/// 存目標值的欄位。
+model QuotationLineItem {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name      String
+  sortOrder Int    @default(0)
+
+  unitPrice     Float // 業主報價單價
+  quantity      Float
+  costUnitPrice Float // 成本單價
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  costControlRows CostControlRowQuotationItem[]
+}
+
+/// 採發比價表 — 一個專案可以有多張（每一張對應一個發包範圍/工項包，例如「土方
+/// 工程比價」），跟報價單是 1:N，不像報價單整案只有一份。
+model ProcurementComparison {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  scopeName String // 這次比價的範圍/名稱，例如「土方工程」
+
+  /// 決標金額 — 可能跟被選中廠商原始報價不同（議價後金額）；null 表示還沒決標。
+  finalAwardedAmount Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendorQuotes ProcurementVendorQuote[]
+
+  selectedVendorQuoteId String?                 @unique
+  selectedVendorQuote   ProcurementVendorQuote? @relation("SelectedVendor", fields: [selectedVendorQuoteId], references: [id])
+
+  costControlRows CostControlRow[]
+}
+
+/// 一家廠商在一張比價表裡的報價 — attachmentFilePath 沿用知識庫已經在用的
+/// SupabaseStorageService（同一個 bucket 機制，路徑另外用
+/// `procurement/{comparisonId}/{vendorQuoteId}` 前綴區分）。
+model ProcurementVendorQuote {
+  id String @id @default(uuid())
+
+  comparisonId String
+  comparison   ProcurementComparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+
+  vendorName         String
+  quotedAmount       Float
+  note               String?
+  attachmentFilePath String?
+
+  createdAt DateTime @default(now())
+
+  selectedFor ProcurementComparison? @relation("SelectedVendor")
+}
+
+/// 成控管制表一列（一個實際發包）。跟報價單工項是多對多——實際發包不一定
+/// 1:1 對應報價單分項（例如報價時的 A/B/C/D 四項，實際可能發成 AB 一包、CD
+/// 一包），所以用 join table `CostControlRowQuotationItem` 讓一列可以勾選
+/// 多筆工項，業主報價/預估成本用這些工項的複價/成本複價加總算出（不落地存,
+/// 由 CostControlService 算）。
+model CostControlRow {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name      String // 這一列的名稱，例如「AB 發包」
+  sortOrder Int    @default(0)
+
+  procurementComparisonId String?
+  procurementComparison   ProcurementComparison? @relation(fields: [procurementComparisonId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quotationItems  CostControlRowQuotationItem[]
+  adjustments     CostControlAdjustment[]
+  paymentRequests PaymentRequest[]
+}
+
+/// CostControlRow ↔ QuotationLineItem 多對多 join——同時也是「拆項表」匯出
+/// 的資料來源：一列底下有哪些 join 記錄，就是那張拆項表要列出的工項。
+model CostControlRowQuotationItem {
+  id String @id @default(uuid())
+
+  rowId String
+  row   CostControlRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+
+  quotationLineItemId String
+  quotationLineItem   QuotationLineItem @relation(fields: [quotationLineItemId], references: [id], onDelete: Cascade)
+
+  @@unique([rowId, quotationLineItemId])
+}
+
+enum CostControlAdjustmentType {
+  ADD // 追加
+  DEDUCT // 追減
+}
+
+/// 一筆追加/追減紀錄，掛在成控列底下，多筆歷史都保留（不是覆蓋成一個總數
+/// 欄位），列表要看異動歷程時才有東西可看。
+model CostControlAdjustment {
+  id String @id @default(uuid())
+
+  rowId String
+  row   CostControlRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+
+  type   CostControlAdjustmentType
+  amount Float // 恆為正數，正負由 type 決定
+  note   String?
+
+  createdAt DateTime @default(now())
+}
+
+/// 工程請款單 — 廠商向我們請款（不是我們跟業主請款），對應「唯一一列」成控
+/// 管制表列（一個發包/合約）。內部簽核固定五關（承辦人本人送出，不算一關）：
+/// 業務主管→財務初審→成控→總經理→會計出納，依序進行，跟 DocumentApproval
+/// 的「REJECTED 即終止、要修改重送一筆新的」是同一套慣例，但這裡固定五關、
+/// 送出時由承辦人指定各關負責人，而不是像 DocumentApproval 那樣可變長度的
+/// 步驟表——欄位攤平成同一張表（跟 Project 攤平假日曆位的理由一樣：固定
+/// 五關、永遠一起查、不會被獨立查詢）。
+model PaymentRequest {
+  id String @id @default(uuid())
+
+  costControlRowId String
+  costControlRow   CostControlRow @relation(fields: [costControlRowId], references: [id])
+
+  vendorName  String
+  amount      Float
+  requestDate DateTime @db.Date
+  note        String?
+
+  /// 送出當下自動帶入的快照（合約金額、送出前的累計已請款百分比），純紀錄
+  /// 用途——之後合約金額若被追加/追減修改，已送出的請款單快照仍保留當時的值。
+  contractAmountSnapshot Float
+  billedPercentBefore    Float
+
+  submittedByUserId String
+  submittedBy       User   @relation("PaymentRequestSubmittedBy", fields: [submittedByUserId], references: [id])
+
+  salesManagerUserId    String
+  salesManager          User                   @relation("PaymentRequestSalesManager", fields: [salesManagerUserId], references: [id])
+  salesManagerStatus    DocumentApprovalStatus @default(PENDING)
+  salesManagerComment   String?
+  salesManagerDecidedAt DateTime?
+
+  financeReviewUserId    String
+  financeReviewer        User                   @relation("PaymentRequestFinanceReview", fields: [financeReviewUserId], references: [id])
+  financeReviewStatus    DocumentApprovalStatus @default(PENDING)
+  financeReviewComment   String?
+  financeReviewDecidedAt DateTime?
+
+  costControlApproverUserId    String
+  costControlApprover          User                   @relation("PaymentRequestCostControlApprover", fields: [costControlApproverUserId], references: [id])
+  costControlApproverStatus    DocumentApprovalStatus @default(PENDING)
+  costControlApproverComment   String?
+  costControlApproverDecidedAt DateTime?
+
+  generalManagerUserId    String
+  generalManager          User                   @relation("PaymentRequestGeneralManager", fields: [generalManagerUserId], references: [id])
+  generalManagerStatus    DocumentApprovalStatus @default(PENDING)
+  generalManagerComment   String?
+  generalManagerDecidedAt DateTime?
+
+  accountingUserId    String
+  accounting          User                   @relation("PaymentRequestAccounting", fields: [accountingUserId], references: [id])
+  accountingStatus    DocumentApprovalStatus @default(PENDING)
+  accountingComment   String?
+  accountingDecidedAt DateTime?
+
+  /// 整體狀態——任何一關 REJECTED 就整筆 REJECTED（終止，需重送新的一筆）；
+  /// 五關都 APPROVED 才整筆 APPROVED；其餘情況都是 PENDING。由
+  /// PaymentRequestsService 在每次關卡異動後重算並寫回，不是使用者直接改。
+  overallStatus DocumentApprovalStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+
+  @@index([costControlRowId])
 }
