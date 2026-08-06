@@ -6,6 +6,11 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const FETCH_TIMEOUT_MS = 15000;
 
+/** Instagram 網頁版前端本身固定會帶的公開識別碼，不是帳號機密——單純讓請求
+ * 看起來像真的瀏覽器在打 instagram.com，而不是一個只帶 cookie、其餘標頭都
+ * 空空如也的裸請求（後者更容易被視為可疑）。 */
+const IG_APP_ID = '936619743392459';
+
 export const INSTAGRAM_SESSION_EXPIRED_MESSAGE =
   'Instagram 連結讀取失敗，登入 session 可能過期了，需要重新設定（找 AI 開發者處理）。';
 
@@ -81,7 +86,18 @@ export class InstagramFetcherService {
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
       const response = await fetch(url, {
-        headers: { 'User-Agent': USER_AGENT, ...extraHeaders },
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'X-IG-App-ID': IG_APP_ID,
+          ...extraHeaders,
+        },
         signal: controller.signal,
       });
       if (!response.ok) {
