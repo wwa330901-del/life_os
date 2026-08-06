@@ -18,6 +18,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
+  // 2026-08-07：曾嘗試 set_gpu_preference(LowPowerPreference) 解決「螢幕
+  // 蓋起來透過遠端軟體操作時畫面空白」的問題（見 project_life_os_windows_
+  // gpu_blank_screen 記憶），沒有效果——問題不在顯卡選擇，維持預設值。
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
