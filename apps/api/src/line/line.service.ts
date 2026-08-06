@@ -12,6 +12,7 @@ import { StocksRecurringService } from '../stocks/stocks-recurring.service';
 import { computeSettlementDate } from '../stocks/stock-settlement-schedule';
 import { KnowledgeItemsService } from '../knowledge/knowledge-items.service';
 import { KnowledgeAnalysisPipeline } from '../knowledge/knowledge-analysis-pipeline.service';
+import { InstagramFetcherService } from '../knowledge/instagram-fetcher.service';
 import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
 import { UsersService } from '../users/users.service';
 import { TodosService } from '../todos/todos.service';
@@ -130,6 +131,7 @@ export class LineService {
     private readonly stocksRecurringService: StocksRecurringService,
     private readonly knowledgeItemsService: KnowledgeItemsService,
     private readonly knowledgeAnalysisPipeline: KnowledgeAnalysisPipeline,
+    private readonly instagramFetcherService: InstagramFetcherService,
     private readonly aiAssistantService: AiAssistantService,
     private readonly usersService: UsersService,
     private readonly todosService: TodosService,
@@ -1592,7 +1594,7 @@ export class LineService {
     url: string,
     replyToken: string,
   ) {
-    if (isInstagramUrl(url)) {
+    if (isInstagramUrl(url) && !this.instagramFetcherService.configured) {
       await this.reply(replyToken, INSTAGRAM_UNSUPPORTED_MESSAGE);
       return;
     }
