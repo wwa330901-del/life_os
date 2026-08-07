@@ -81,7 +81,14 @@ export class CalendarSyncService {
 
     const allDay = Boolean(remote.start?.date);
     const startAt = new Date(remote.start?.date ?? remote.start?.dateTime ?? Date.now());
-    const endAt = remote.end ? new Date(remote.end.date ?? remote.end.dateTime ?? startAt.toISOString()) : null;
+    // Google 全天事件的 end.date 是「不包含」的（比最後一天多一天）,我們
+    // 自己的 endAt 是「包含」語意——這裡要 -1 天換算回來，不然存下來的
+    // 事件會多跨一天到明天（見 2026-08-07 使用者回報「整天行程會跨天」）。
+    const endAt = remote.end
+      ? remote.end.date
+        ? new Date(new Date(remote.end.date).getTime() - 86400000)
+        : new Date(remote.end.dateTime ?? startAt.toISOString())
+      : null;
     const data = {
       title: remote.summary ?? '（無標題）',
       location: remote.location ?? null,

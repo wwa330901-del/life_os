@@ -201,8 +201,11 @@ export class GoogleCalendarService {
       start: input.allDay
         ? { date: toDateOnly(input.startAt) }
         : { dateTime: input.startAt.toISOString() },
+      // Google 全天事件的 end.date 是「不包含」的（比實際最後一天多一天）,
+      // 跟我們自己 startAt/endAt 都是「包含」語意不一樣——這裡要 +1 天,
+      // 不然 Google 那邊會把我們一天的事件存成 0 天（或直接被拒絕）。
       end: input.allDay
-        ? { date: toDateOnly(input.endAt ?? input.startAt) }
+        ? { date: toDateOnly(addDays(input.endAt ?? input.startAt, 1)) }
         : { dateTime: (input.endAt ?? input.startAt).toISOString() },
     };
   }
@@ -210,4 +213,8 @@ export class GoogleCalendarService {
 
 function toDateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function addDays(d: Date, days: number): Date {
+  return new Date(d.getTime() + days * 86400000);
 }
