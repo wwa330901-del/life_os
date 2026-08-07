@@ -9,13 +9,18 @@ import '../../../state/project_properties_provider.dart';
 import '../../../state/projects_provider.dart';
 
 /// Renders one input per this space's own property definitions — a space
-/// with none defined yet just gets a plain name + start date form, same as
-/// a brand new Notion database with no properties. 專案名稱 auto-fills from
-/// this space's own 案名自動命名規則 (`NamingTemplate`, set in 專案設定) if one
-/// is configured — joins the named properties' current values, in the
+/// with none defined yet just gets a plain name-only form, same as a brand
+/// new Notion database with no properties. 專案名稱 auto-fills from this
+/// space's own 案名自動命名規則 (`NamingTemplate`, set in 專案設定) if one is
+/// configured — joins the named properties' current values, in the
 /// template's order, with its separator. No template configured (or the
 /// space is missing one of the named properties) just leaves 專案名稱 empty
 /// for the user to type by hand, same as before this feature existed.
+///
+/// `projectStartDate`（工期表排程引擎的起算基準日，不是簽約日期——那是
+/// 各空間自己可能會設的自訂欄位）2026-08-07 起不再於新增時要求填寫，直接
+/// 帶入今天，之後要調整到「專案資料」分頁改：很多專案新增當下根本還沒
+/// 簽約、也還沒有實際開工日可填，硬性要求反而是干擾。
 class CreateProjectDialog extends ConsumerStatefulWidget {
   const CreateProjectDialog({super.key, required this.spaceId});
 
@@ -42,7 +47,7 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
   NamingTemplate? _namingTemplate;
   bool _fieldsInitialized = false;
   String _lastAutoName = '';
-  var _startDate = DateTime.now();
+  final _startDate = DateTime.now();
   bool _submitting = false;
 
   @override
@@ -209,20 +214,6 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
             controller: _nameController,
             autofocus: definitions.isEmpty,
             decoration: const InputDecoration(labelText: '專案名稱'),
-          ),
-          const SizedBox(height: 12),
-          _buildDateField(
-            label: '簽約日期',
-            value: _startDate,
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _startDate,
-                firstDate: DateTime(2020),
-                lastDate: DateTime(2100),
-              );
-              if (picked != null) setState(() => _startDate = picked);
-            },
           ),
         ],
       ),
