@@ -241,7 +241,15 @@ Future<void> showTodoFormDialog(
   var allDay = existing?.dueDateAllDay ?? true;
   var time = TimeOfDay(hour: existing?.dueDate?.hour ?? 9, minute: existing?.dueDate?.minute ?? 0);
   var priority = existing?.priority ?? TodoPriority.medium;
-  var assigneeUserId = existing?.assigneeUserId;
+  // 新增（不是編輯）時預設指派給自己——沒有負責人的代辦事項不會同步到
+  // 任何人的行事曆（見 TodosService.syncCalendarEvent），空白的下拉選單
+  // 太容易讓人漏選，之後想改指派對象還是可以直接改。只有自己確實是這個
+  // 專案的成員時才預設，避免下拉選單的 initialValue 對不到任何一個
+  // DropdownMenuItem。
+  final currentUserId = ref.read(authControllerProvider).value?.user.id;
+  var assigneeUserId =
+      existing?.assigneeUserId ??
+      (members.any((m) => m.userId == currentUserId) ? currentUserId : null);
 
   final saved = await showDialog<bool>(
     context: context,
