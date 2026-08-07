@@ -47,11 +47,26 @@ export class TodoDigestService {
    * to separately open "代辦事項" or switch project context first
    * (2026-08-04 explicit user ask: "不要再切換專案了，要就一次"). */
   private async notifyUser(userId: string, title: string, emptyText: string) {
-    const { dueTodayIncomplete } = await this.homeService.getTodosToday(userId);
+    const { dueTodayIncomplete, overdueIncomplete } = await this.homeService.getTodosToday(userId);
 
-    if (dueTodayIncomplete.length === 0) {
+    if (dueTodayIncomplete.length === 0 && overdueIncomplete.length === 0) {
       await this.lineNotifier.notifyByUser(userId, [title, '', emptyText].join('\n'));
       return;
+    }
+
+    const lines: string[] = [title, ''];
+    const orderedIds: string[] = [];
+    let n = 0;
+
+    // 逾期未完成放最上面、獨立一段（不分專案分組），比今天到期的更急迫。
+    if (overdueIncomplete.length > 0) {
+      lines.push(`⚠️ 已逾期未完成（${overdueIncomplete.length}）：`);
+      for (const item of overdueIncomplete) {
+        n += 1;
+        orderedIds.push(item.id);
+        lines.push(`${n}. ${item.title}（${item.projectName}）`);
+      }
+      lines.push('');
     }
 
     const groups = new Map<string, { id: string; title: string }[]>();
@@ -65,9 +80,6 @@ export class TodoDigestService {
       ...[...groups.keys()].filter((name) => name !== '個人'),
     ];
 
-    const lines: string[] = [title, ''];
-    const orderedIds: string[] = [];
-    let n = 0;
     for (const groupName of orderedGroupNames) {
       lines.push(groupName === '個人' ? '個人代辦：' : `${groupName}：`);
       for (const item of groups.get(groupName)!) {

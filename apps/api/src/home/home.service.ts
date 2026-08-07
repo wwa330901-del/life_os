@@ -201,7 +201,7 @@ export class HomeService {
           {
             OR: [
               { completedAt: { gte: todayStart, lt: todayEnd } },
-              { done: false, dueDate: { gte: todayStart, lt: todayEnd } },
+              { done: false, dueDate: { lt: todayEnd } },
             ],
           },
         ],
@@ -211,6 +211,10 @@ export class HomeService {
     const isSameDay = (d: Date) => d >= todayStart && d < todayEnd;
     const completedToday = todos.filter((t) => t.completedAt && isSameDay(t.completedAt));
     const dueTodayIncomplete = todos.filter((t) => !t.done && t.dueDate && isSameDay(t.dueDate));
+    // 逾期未完成 (2026-08-07) — dueDate 早於今天、還沒完成，之前這個查詢
+    // 只抓「剛好今天到期」的，過期沒處理的代辦會被整個漏掉，LINE 通知/
+    // 代辦事項總覽都看不到，使用者必須自己點進代辦事項空間才會發現。
+    const overdueIncomplete = todos.filter((t) => !t.done && t.dueDate && t.dueDate < todayStart);
 
     const label = (t: (typeof todos)[number]) => ({
       id: t.id,
@@ -221,6 +225,7 @@ export class HomeService {
     return {
       completedToday: completedToday.map(label),
       dueTodayIncomplete: dueTodayIncomplete.map(label),
+      overdueIncomplete: overdueIncomplete.map(label),
     };
   }
 

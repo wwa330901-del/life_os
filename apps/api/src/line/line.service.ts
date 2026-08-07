@@ -2128,7 +2128,11 @@ export class LineService {
     const completedToday = todos.filter(
       (t) => t.completedAt && isSameDay(t.completedAt),
     );
-    const overdueToday = todos.filter(
+    // 已逾期（到期日早於今天、還沒完成）——跟下面的「今日到期」是分開的兩
+    // 種急迫程度，之前這個查詢雖然有抓到（done: false 沒有下限），但完全
+    // 沒有被放進任何一個顯示區塊，等於憑空消失，使用者看不到。
+    const overdue = todos.filter((t) => !t.done && t.dueDate && t.dueDate < todayStart);
+    const dueToday = todos.filter(
       (t) => !t.done && t.dueDate && isSameDay(t.dueDate),
     );
     const restOfWeek = todos.filter(
@@ -2140,7 +2144,7 @@ export class LineService {
     await this.prisma.lineAccountLink.update({
       where: { id: linkId },
       data: {
-        lastTodoListIds: [...overdueToday, ...restOfWeek, ...ongoing].map((t) => t.id),
+        lastTodoListIds: [...overdue, ...dueToday, ...restOfWeek, ...ongoing].map((t) => t.id),
       },
     });
 
@@ -2156,10 +2160,17 @@ export class LineService {
         : ['（沒有）']),
     );
 
-    lines.push('', `今日到期但還沒完成（${overdueToday.length}）：`);
+    lines.push('', `⚠️ 已逾期未完成（${overdue.length}）：`);
     lines.push(
-      ...(overdueToday.length
-        ? overdueToday.map((t, i) => `${i + 1}. ${labelOf(t)}`)
+      ...(overdue.length
+        ? overdue.map((t, i) => `${i + 1}. ${labelOf(t)}（${t.dueDate!.getMonth() + 1}/${t.dueDate!.getDate()}）`)
+        : ['（沒有）']),
+    );
+
+    lines.push('', `今日到期但還沒完成（${dueToday.length}）：`);
+    lines.push(
+      ...(dueToday.length
+        ? dueToday.map((t, i) => `${overdue.length + i + 1}. ${labelOf(t)}`)
         : ['（沒有）']),
     );
 
@@ -2168,7 +2179,7 @@ export class LineService {
       ...(restOfWeek.length
         ? restOfWeek.map(
             (t, i) =>
-              `${overdueToday.length + i + 1}. ${labelOf(t)}（${t.dueDate!.getMonth() + 1}/${t.dueDate!.getDate()}）`,
+              `${overdue.length + dueToday.length + i + 1}. ${labelOf(t)}（${t.dueDate!.getMonth() + 1}/${t.dueDate!.getDate()}）`,
           )
         : ['（沒有）']),
     );
@@ -2177,7 +2188,7 @@ export class LineService {
     lines.push(
       ...(ongoing.length
         ? ongoing.map(
-            (t, i) => `${overdueToday.length + restOfWeek.length + i + 1}. ${labelOf(t)}`,
+            (t, i) => `${overdue.length + dueToday.length + restOfWeek.length + i + 1}. ${labelOf(t)}`,
           )
         : ['（沒有）']),
     );

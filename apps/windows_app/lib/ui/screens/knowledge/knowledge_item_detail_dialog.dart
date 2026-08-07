@@ -74,10 +74,19 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
         Navigator.of(context).pop(); // loading dialog
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('重新分析完成')));
       }
-    } on ApiException catch (e) {
+    } catch (e) {
+      // 分析本身可能跑很久（圖片/影片分析），中途連線被中斷/逾時時 http
+      // 套件丟出來的不是 ApiException（是 ClientException/SocketException
+      // 之類），之前只抓 ApiException 會讓這個載入視窗永遠關不掉——即使
+      // 後端其實已經跑完、LINE 也收到完成通知了，App 這邊看起來像卡住。
+      // 這裡改成不管什麼例外都要把視窗關掉；真正發生了什麼已經來不及
+      // 準確告知（回應根本沒送達），所以提示使用者自己重新整理確認結果。
+      ref.invalidate(knowledgeItemDetailProvider(item.id));
+      ref.invalidate(knowledgeItemsProvider);
       if (context.mounted) {
         Navigator.of(context).pop(); // loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        final message = e is ApiException ? e.message : '重新分析的回應沒有送達，麻煩檢查看看實際有沒有分析完成（LINE 通常會先收到通知）。';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     }
   }
