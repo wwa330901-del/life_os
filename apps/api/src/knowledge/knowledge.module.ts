@@ -41,6 +41,7 @@ import { UsersModule } from '../users/users.module';
     KnowledgeItemsService,
     KnowledgeAnalysisPipeline,
     InstagramFetcherService,
+    SupabaseStorageService,
     // `feature` on AiUsageLog is a plain string specifically so a later,
     // non-知識庫 AI feature could log through the same table — AiAssistant
     // (元序 AI 問答) is the first one to actually do it.
