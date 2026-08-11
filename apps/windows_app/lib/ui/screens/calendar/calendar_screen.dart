@@ -70,6 +70,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 ),
                 const SizedBox(width: 8),
                 _GoogleConnectButton(spaceId: widget.space.id),
+                const SizedBox(width: 8),
+                _AppleConnectButton(spaceId: widget.space.id),
               ],
             ),
           ),
@@ -183,6 +185,193 @@ class _GoogleConnectButton extends ConsumerWidget {
   /// `calendarEventsProvider` is keyed per-month, so a sync (which may
   /// touch any month) has to invalidate broadly rather than one key —
   /// simplest is invalidating the whole family, autoDispose drops the rest.
+  void _invalidateAllMonths(WidgetRef ref) => ref.invalidate(calendarEventsProvider);
+}
+
+/// iCloud 日曆連結 (2026-08-11) — 單向匯入（iCloud → 元序），跟 Google 的
+/// 雙向同步不同，所以沒有「已連結」狀態下的立即同步跟取消連結以外的動作。
+/// 連結流程分兩步：先驗證帳密、列出這個 Apple ID 看得到的所有日曆（含別人
+/// 分享、已接受的），再讓使用者勾選要匯入哪幾個。
+class _AppleConnectButton extends ConsumerWidget {
+  const _AppleConnectButton({required this.spaceId});
+
+  final String spaceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statusAsync = ref.watch(appleCalendarConnectionProvider(spaceId));
+
+    return statusAsync.when(
+      data: (status) {
+        if (!status.connected) {
+          return FilledButton.tonalIcon(
+            onPressed: () => _connect(context, ref),
+            icon: const Icon(Icons.link, size: 16),
+            label: const Text('連結 iCloud 日曆'),
+          );
+        }
+        final lastSynced = status.lastSyncedAt;
+        final label = lastSynced == null
+            ? 'iCloud 已連結'
+            : 'iCloud · ${lastSynced.hour.toString().padLeft(2, '0')}:${lastSynced.minute.toString().padLeft(2, '0')} 同步';
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+            IconButton(
+              tooltip: '立即同步',
+              icon: const Icon(Icons.sync, size: 18),
+              onPressed: () => _syncNow(context, ref),
+            ),
+            IconButton(
+              tooltip: '取消連結',
+              icon: const Icon(Icons.link_off, size: 18),
+              onPressed: () => _disconnect(context, ref),
+            ),
+          ],
+        );
+      },
+      loading: () => const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+
+  Future<void> _connect(BuildContext context, WidgetRef ref) async {
+    final appleIdController = TextEditingController();
+    final appPasswordController = TextEditingController();
+
+    final credentials = await showDialog<(String, String)>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('連結 iCloud 日曆'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: appleIdController,
+                decoration: const InputDecoration(labelText: 'Apple ID（電子郵件）'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: appPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'App 專用密碼'),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '不是你的 Apple ID 登入密碼，要到 appleid.apple.com 另外產生一組「App 專用密碼」。',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.of(
+              context,
+            ).pop((appleIdController.text.trim(), appPasswordController.text.trim())),
+            child: const Text('下一步'),
+          ),
+        ],
+      ),
+    );
+    if (credentials == null || !context.mounted) return;
+    final (appleId, appPassword) = credentials;
+    if (appleId.isEmpty || appPassword.isEmpty) return;
+
+    List<AppleCalendarSummary> calendars;
+    try {
+      calendars = await ref
+          .read(apiClientProvider)
+          .discoverAppleCalendars(spaceId: spaceId, appleId: appleId, appPassword: appPassword);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+    if (!context.mounted) return;
+    if (calendars.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('這個 Apple ID 底下沒有找到任何日曆')));
+      return;
+    }
+
+    final selected = <String>{};
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('選擇要同步的日曆'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final calendar in calendars)
+                  CheckboxListTile(
+                    value: selected.contains(calendar.url),
+                    title: Text(calendar.displayName),
+                    onChanged: (checked) => setState(() {
+                      if (checked == true) {
+                        selected.add(calendar.url);
+                      } else {
+                        selected.remove(calendar.url);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+            FilledButton(
+              onPressed: selected.isEmpty ? null : () => Navigator.of(context).pop(true),
+              child: const Text('連結'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .connectAppleCalendar(
+            spaceId: spaceId,
+            appleId: appleId,
+            appPassword: appPassword,
+            selectedCalendarUrls: selected.toList(),
+          );
+      ref.invalidate(appleCalendarConnectionProvider(spaceId));
+      _invalidateAllMonths(ref);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _syncNow(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(apiClientProvider).syncAppleCalendarNow(spaceId);
+      ref.invalidate(appleCalendarConnectionProvider(spaceId));
+      _invalidateAllMonths(ref);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _disconnect(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(apiClientProvider).disconnectAppleCalendar(spaceId);
+      ref.invalidate(appleCalendarConnectionProvider(spaceId));
+      _invalidateAllMonths(ref);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   void _invalidateAllMonths(WidgetRef ref) => ref.invalidate(calendarEventsProvider);
 }
 

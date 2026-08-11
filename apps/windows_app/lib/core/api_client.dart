@@ -303,6 +303,48 @@ class ApiClient {
     await _post('/spaces/$spaceId/calendar/sync', {});
   }
 
+  Future<AppleCalendarConnectionStatus> getAppleCalendarConnectionStatus(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/calendar/apple/connection');
+    return AppleCalendarConnectionStatus.fromJson(body);
+  }
+
+  /// 第一步——只驗證帳密、列出這個 Apple ID 能看到的所有日曆，不會存進
+  /// 資料庫，接下來使用者要在這份清單裡勾選。
+  Future<List<AppleCalendarSummary>> discoverAppleCalendars({
+    required String spaceId,
+    required String appleId,
+    required String appPassword,
+  }) async {
+    final body = await _post('/spaces/$spaceId/calendar/apple/discover', {
+      'appleId': appleId,
+      'appPassword': appPassword,
+    });
+    return (body['calendars'] as List<dynamic>)
+        .map((e) => AppleCalendarSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> connectAppleCalendar({
+    required String spaceId,
+    required String appleId,
+    required String appPassword,
+    required List<String> selectedCalendarUrls,
+  }) async {
+    await _post('/spaces/$spaceId/calendar/apple/connect', {
+      'appleId': appleId,
+      'appPassword': appPassword,
+      'selectedCalendarUrls': selectedCalendarUrls,
+    });
+  }
+
+  Future<void> disconnectAppleCalendar(String spaceId) async {
+    await _delete('/spaces/$spaceId/calendar/apple/connect');
+  }
+
+  Future<void> syncAppleCalendarNow(String spaceId) async {
+    await _post('/spaces/$spaceId/calendar/apple/sync', {});
+  }
+
   /// 2026-08-06 起邀請對象必須先是好友——傳對方的 userId（從好友列表選）。
   Future<CalendarShare> inviteCalendarShare(String viewerUserId) async {
     final body = await _post('/calendar-shares/invite', {'viewerUserId': viewerUserId});

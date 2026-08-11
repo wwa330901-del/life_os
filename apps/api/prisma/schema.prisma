@@ -138,6 +138,7 @@ model User {
   assignedTodos              ProjectTodo[]              @relation("TodoAssignee")
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
   googleCalendarConnections  GoogleCalendarConnection[]
+  appleCalendarConnections   AppleCalendarConnection[]
   documentApprovalsSubmitted DocumentApproval[]
   documentApprovalSteps      DocumentApprovalStep[]
   documentApprovalStepNotes  DocumentApprovalStepNote[]
@@ -229,6 +230,7 @@ model Space {
   financeAdvances              FinanceAdvance[]
   calendarEvents               CalendarEvent[]
   googleCalendarConnection     GoogleCalendarConnection?
+  appleCalendarConnection      AppleCalendarConnection?
   stockTransactions            StockTransaction[]
   stockRecurringInvestments    StockRecurringInvestment[]
   stockHoldings                StockHolding[]
@@ -254,6 +256,16 @@ model CalendarEvent {
   /// Google Calendar's event id, once pushed/pulled — null means either
   /// "not yet synced" or "this space has no Google connection".
   googleEventId String?
+
+  /// iCloud CalDAV 行事曆匯入 (2026-08-10) — 這則事件的 iCloud UID，null 代表
+  /// 不是從 iCloud 匯入的。跟 googleEventId 不同的是這條同步永遠是單向
+  /// （iCloud → 元序，見 AppleCalendarSyncService），改這裡的事件絕不會被
+  /// 推回 iCloud，所以不需要對應的 push 邏輯。iCloud 的重複行程（RRULE）
+  /// 在匯入時就展開成一筆一筆獨立的未來 90 天內事件（每次 5 分鐘同步都會
+  /// 往前滾動延伸），不會用 CalendarEvent 自己的 recurrenceFrequency 系統
+  /// 表示——兩種重複規則格式落差太大，硬轉換容易失真，展開成具體事件
+  /// 更可靠、也更容易在 iCloud 那邊改掉單一次時偵測到差異。
+  appleEventUid String?
 
   /// Set only for an event TodosService auto-created from a todo's due
   /// date/time (one-way 代辦事項→行事曆 sync, 2026-08-05 — the reverse
@@ -285,6 +297,7 @@ model CalendarEvent {
   updatedAt DateTime @updatedAt
 
   @@unique([spaceId, googleEventId])
+  @@unique([spaceId, appleEventUid])
   @@index([spaceId, startAt])
 }
 
@@ -348,6 +361,36 @@ model GoogleCalendarConnection {
   accessToken          String?
   accessTokenExpiresAt DateTime?
   syncToken            String?
+  lastSyncedAt         DateTime?
+
+  connectedByUserId String
+  connectedBy       User   @relation(fields: [connectedByUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// A CALENDAR space's link to one iCloud (CalDAV) account (2026-08-10) —
+/// deliberately read-only/pull-only, unlike GoogleCalendarConnection which
+/// also pushes local events out. `appPassword` is an Apple "App-Specific
+/// Password" (iCloud requires 2FA account-wide, so a real account password
+/// can't be used for API access) — same "plain column, DB access is the
+/// trust boundary" convention as every other third-party secret in this
+/// schema. `selectedCalendarUrls` are the specific CalDAV calendar
+/// collection URLs (out of everything visible under this Apple ID,
+/// including calendars shared TO this account by someone else — iCloud
+/// handles sharing server-side, so an accepted shared calendar just shows
+/// up as one more entry in this account's own calendar list, no special
+/// handling needed) the user picked to actually sync in — connecting
+/// doesn't mean "sync everything".
+model AppleCalendarConnection {
+  id      String @id @default(uuid())
+  spaceId String @unique
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  appleId              String
+  appPassword          String
+  selectedCalendarUrls String[]
   lastSyncedAt         DateTime?
 
   connectedByUserId String

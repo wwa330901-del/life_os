@@ -118,3 +118,37 @@ class GoogleCalendarConnectionStatus {
             : DateTime.parse(json['lastSyncedAt'] as String).toLocal(),
       );
 }
+
+class AppleCalendarSummary {
+  const AppleCalendarSummary({required this.url, required this.displayName});
+
+  final String url;
+  final String displayName;
+
+  factory AppleCalendarSummary.fromJson(Map<String, dynamic> json) =>
+      AppleCalendarSummary(url: json['url'] as String, displayName: json['displayName'] as String);
+}
+
+class AppleCalendarConnectionStatus {
+  const AppleCalendarConnectionStatus({
+    required this.connected,
+    required this.appleId,
+    required this.selectedCalendarUrls,
+    required this.lastSyncedAt,
+  });
+
+  final bool connected;
+  final String? appleId;
+  final List<String> selectedCalendarUrls;
+  final DateTime? lastSyncedAt;
+
+  factory AppleCalendarConnectionStatus.fromJson(Map<String, dynamic> json) =>
+      AppleCalendarConnectionStatus(
+        connected: json['connected'] as bool,
+        appleId: json['appleId'] as String?,
+        selectedCalendarUrls: (json['selectedCalendarUrls'] as List<dynamic>).cast<String>(),
+        lastSyncedAt: json['lastSyncedAt'] == null
+            ? null
+            : DateTime.parse(json['lastSyncedAt'] as String).toLocal(),
+      );
+}

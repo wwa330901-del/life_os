@@ -33,3 +33,8 @@ final calendarConnectionProvider = FutureProvider.autoDispose.family<GoogleCalen
 ) {
   return ref.read(apiClientProvider).getCalendarConnectionStatus(spaceId);
 });
+
+final appleCalendarConnectionProvider = FutureProvider.autoDispose
+    .family<AppleCalendarConnectionStatus, String>((ref, spaceId) {
+      return ref.read(apiClientProvider).getAppleCalendarConnectionStatus(spaceId);
+    });
