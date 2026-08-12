@@ -15,7 +15,7 @@ import { GoogleCalendarService } from '../calendar/google-calendar.service';
  * iCloud-imported event it started as. Safe to re-run — no-ops once clean.
  *
  * Run in production via Render's Web Shell:
- *   node dist/scripts/cleanup-duplicate-google-events.js
+ *   node dist/src/scripts/cleanup-duplicate-google-events.js
  */
 @Module({ imports: [PrismaModule], providers: [GoogleCalendarService] })
 class CleanupModule {}
