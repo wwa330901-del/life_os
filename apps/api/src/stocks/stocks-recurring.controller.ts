@@ -43,7 +43,7 @@ export class StocksRecurringController {
     @Param('id') id: string,
     @Body() dto: FulfillStockRecurringInvestmentDto,
   ) {
-    return this.service.fulfillById(user.id, spaceId, id, dto.pricePerShare, dto.totalCost);
+    return this.service.fulfillById(user.id, spaceId, id, dto.pricePerShare);
   }
 
   @Delete(':id')

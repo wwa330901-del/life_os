@@ -9,10 +9,15 @@ import '../../../../state/finance_provider.dart';
 import '../../../../state/stocks_provider.dart';
 import '../../finance/widgets/finance_format.dart';
 
-/// 交易紀錄 — every manually-entered (or LINE 定期定額 fill-in) stock
-/// buy/sell. [pricePerShare]／[totalCost] are what the user actually types;
-/// 股數 is always server-derived and shown read-only. Settlement (T+2) is
-/// automatic — this tab just shows whether it's happened yet.
+/// 交易紀錄 — every manually-entered stock buy/sell, plus 定期定額 rows
+/// (2026-08-12: these show up here immediately on their trigger date as a
+/// "待填成交價" pending row, not just after a reply). [pricePerShare]／
+/// [shares] are what the user actually types for a manual entry; 金額 is
+/// always server-derived and shown read-only. Settlement (T+2) is automatic
+/// for manual trades — this tab just shows whether it's happened yet. A
+/// pending row settles immediately instead, the moment its price gets
+/// filled in (see the 定期定額 tab's "登記成交", or the "填入成交價" action
+/// on the pending row itself here).
 class StockTransactionsTab extends ConsumerStatefulWidget {
   const StockTransactionsTab({super.key, required this.spaceId});
 
@@ -79,6 +84,33 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
                       );
                     }
                     final t = page.items[index];
+                    if (t.pending) {
+                      return Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.hourglass_empty),
+                          title: Text('${t.type.label} ${t.stockCode} · 定期定額待填成交價'),
+                          subtitle: Text(
+                            '目標金額 ${formatAmount(t.totalCost)} · ${accountNameOf[t.accountId] ?? ''}\n'
+                            '到期日 ${t.tradeDate.month}/${t.tradeDate.day}',
+                          ),
+                          isThreeLine: true,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FilledButton.tonal(
+                                onPressed: () => _fulfillPending(context, ref, t),
+                                child: const Text('填入成交價'),
+                              ),
+                              IconButton(
+                                tooltip: '跳過這一期',
+                                icon: const Icon(Icons.delete_outline, size: 18),
+                                onPressed: () => _delete(context, ref, t),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
                     return Card(
                       child: ListTile(
                         leading: Icon(
@@ -87,7 +119,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
                         ),
                         title: Text('${t.type.label} ${t.stockCode} · ${t.shares.toStringAsFixed(2)} 股'),
                         subtitle: Text(
-                          '成交價 ${formatAmount(t.pricePerShare)} · 投入 ${formatAmount(t.totalCost)} · '
+                          '成交價 ${formatAmount(t.pricePerShare)} · 金額 ${formatAmount(t.totalCost)} · '
                           '${accountNameOf[t.accountId] ?? ''}\n'
                           '成交 ${t.tradeDate.month}/${t.tradeDate.day} → 交割 ${t.settlementDate.month}/${t.settlementDate.day}'
                           '${t.settled ? '（已交割）' : '（未交割）'}',
@@ -148,6 +180,52 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
     }
   }
 
+  /// 直接在交易列表這裡填成交價——跟定期定額分頁的「登記成交」是同一支
+  /// API（用 `t.recurringInvestmentId` 找回對應的計畫），只是入口不同。
+  Future<void> _fulfillPending(BuildContext context, WidgetRef ref, StockTransaction t) async {
+    final planId = t.recurringInvestmentId;
+    if (planId == null) return;
+    final priceController = TextEditingController();
+
+    final price = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('填入成交價 · ${t.stockCode}'),
+        content: SizedBox(
+          width: 280,
+          child: TextField(
+            controller: priceController,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: '成交價', helperText: '目標金額 ${formatAmount(t.totalCost)}，自動算整股數'),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+          FilledButton(
+            onPressed: () {
+              final entered = double.tryParse(priceController.text);
+              if (entered != null && entered > 0) Navigator.of(context).pop(entered);
+            },
+            child: const Text('確認'),
+          ),
+        ],
+      ),
+    );
+    if (price == null || !context.mounted) return;
+
+    try {
+      await ref
+          .read(apiClientProvider)
+          .fulfillStockRecurringInvestment(spaceId: widget.spaceId, id: planId, pricePerShare: price);
+      _invalidate(ref);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   Future<void> _openEditor(
     BuildContext context,
     WidgetRef ref,
@@ -168,7 +246,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
           stockCode: result.stockCode,
           type: result.type,
           pricePerShare: result.pricePerShare,
-          totalCost: result.totalCost,
+          shares: result.shares,
           tradeDate: result.tradeDate,
           accountId: result.accountId,
         );
@@ -178,7 +256,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
           id: existing.id,
           stockCode: result.stockCode,
           pricePerShare: result.pricePerShare,
-          totalCost: result.totalCost,
+          shares: result.shares,
           tradeDate: result.tradeDate,
           accountId: result.accountId,
         );
@@ -197,7 +275,7 @@ class _StockTransactionEditorResult {
     required this.stockCode,
     required this.type,
     required this.pricePerShare,
-    required this.totalCost,
+    required this.shares,
     required this.tradeDate,
     required this.accountId,
   });
@@ -205,7 +283,7 @@ class _StockTransactionEditorResult {
   final String stockCode;
   final StockTransactionType type;
   final double pricePerShare;
-  final double totalCost;
+  final double shares;
   final DateTime tradeDate;
   final String accountId;
 }
@@ -233,15 +311,15 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
   late final _priceController = TextEditingController(
     text: widget.existing == null ? '' : widget.existing!.pricePerShare.toString(),
   );
-  late final _costController = TextEditingController(
-    text: widget.existing == null ? '' : widget.existing!.totalCost.toString(),
+  late final _sharesController = TextEditingController(
+    text: widget.existing == null ? '' : widget.existing!.shares.toString(),
   );
 
   @override
   void dispose() {
     _stockCodeController.dispose();
     _priceController.dispose();
-    _costController.dispose();
+    _sharesController.dispose();
     super.dispose();
   }
 
@@ -256,28 +334,28 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
     setState(() => _tradeDate = picked);
   }
 
-  double? get _shares {
+  double? get _totalCost {
     final price = double.tryParse(_priceController.text);
-    final cost = double.tryParse(_costController.text);
-    if (price == null || cost == null || price <= 0) return null;
-    return cost / price;
+    final shares = double.tryParse(_sharesController.text);
+    if (price == null || shares == null || price <= 0 || shares <= 0) return null;
+    return price * shares;
   }
 
   void _submit() {
     final accountId = _accountId;
     final stockCode = _stockCodeController.text.trim();
     final pricePerShare = double.tryParse(_priceController.text);
-    final totalCost = double.tryParse(_costController.text);
+    final shares = double.tryParse(_sharesController.text);
     if (accountId == null || stockCode.isEmpty) return;
     if (pricePerShare == null || pricePerShare <= 0) return;
-    if (totalCost == null || totalCost <= 0) return;
+    if (shares == null || shares <= 0) return;
 
     Navigator.of(context).pop(
       _StockTransactionEditorResult(
         stockCode: stockCode,
         type: _type,
         pricePerShare: pricePerShare,
-        totalCost: totalCost,
+        shares: shares,
         tradeDate: _tradeDate,
         accountId: accountId,
       ),
@@ -286,7 +364,7 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
 
   @override
   Widget build(BuildContext context) {
-    final shares = _shares;
+    final totalCost = _totalCost;
     final isEditing = widget.existing != null;
     return AlertDialog(
       title: Text(isEditing ? '編輯股票交易' : '新增股票交易'),
@@ -320,14 +398,14 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: _costController,
+                controller: _sharesController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: '投入成本（總金額）'),
+                decoration: const InputDecoration(labelText: '股數'),
                 onChanged: (_) => setState(() {}),
               ),
-              if (shares != null) ...[
+              if (totalCost != null) ...[
                 const SizedBox(height: 8),
-                Text('約 ${shares.toStringAsFixed(2)} 股（自動計算）', style: Theme.of(context).textTheme.bodySmall),
+                Text('金額 ${totalCost.toStringAsFixed(0)}（自動計算）', style: Theme.of(context).textTheme.bodySmall),
               ],
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(

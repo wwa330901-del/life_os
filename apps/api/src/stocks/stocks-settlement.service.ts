@@ -34,7 +34,12 @@ export class StocksSettlementService {
   async settleDueTransactions() {
     const today = utcDateOnly(new Date());
     const due = await this.prisma.stockTransaction.findMany({
-      where: { settled: false, settlementDate: { lte: today } },
+      // pending:true 是定期定額到期自動建立、還沒填成交價的佔位列——
+      // pricePerShare/shares 都是 0，totalCost 只是計畫設定的目標金額,
+      // 絕對不能被這支排程誤當成「該交割了」直接拿去扣款（見
+      // StocksRecurringService.doFulfill，這種列改成同步立即交割，永遠
+      // 不會走到這支每日排程）。
+      where: { settled: false, pending: false, settlementDate: { lte: today } },
     });
 
     for (const t of due) {
@@ -84,7 +89,7 @@ export class StocksSettlementService {
   async warnIfInsufficientForTomorrow() {
     const tomorrow = utcDateOnly(new Date(Date.now() + 24 * 60 * 60 * 1000));
     const dueTomorrow = await this.prisma.stockTransaction.findMany({
-      where: { settled: false, settlementDate: tomorrow, type: StockTransactionType.BUY },
+      where: { settled: false, pending: false, settlementDate: tomorrow, type: StockTransactionType.BUY },
       include: { account: true },
     });
     if (dueTomorrow.length === 0) return;
@@ -115,6 +120,6 @@ export class StocksSettlementService {
   }
 }
 
-function utcDateOnly(date: Date): Date {
+export function utcDateOnly(date: Date): Date {
   return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
 }

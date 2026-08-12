@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { FinanceRecurringHolidayAdjustment } from '../../../generated/prisma/client.js';
 
 export class UpdateStockRecurringInvestmentDto {
@@ -23,4 +23,9 @@ export class UpdateStockRecurringInvestmentDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  monthlyAmount?: number;
 }

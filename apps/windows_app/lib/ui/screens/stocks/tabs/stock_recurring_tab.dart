@@ -7,10 +7,13 @@ import '../../../../core/models/stock.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../../../../state/stocks_provider.dart';
+import '../../finance/widgets/finance_format.dart';
 
-/// 定期定額（DCA）計畫 — 到期只發 LINE 提醒（金額每次都不同），使用者回覆
-/// 「代碼 成交價 投入成本」或在 App 這裡按「登記成交」後系統才記一筆股票交易；
-/// [awaitingReply] 顯示這裡讓使用者知道「提醒已經發出，正在等你登記」。
+/// 定期定額（DCA）計畫（2026-08-12 起）— 到期時系統自動用 [monthlyAmount]
+/// 先建一筆待填成交價的交易（顯示在「交易紀錄」分頁），同時發 LINE 提醒;
+/// 使用者回覆「代碼 成交價」或在這裡按「登記成交」，系統用金額換算整股數,
+/// 立即從帳戶扣款（不用等 T+2）。[awaitingReply] 顯示這裡讓使用者知道
+/// 「提醒已經發出，正在等你登記」。
 class StockRecurringTab extends ConsumerWidget {
   const StockRecurringTab({super.key, required this.spaceId});
 
@@ -59,8 +62,9 @@ class StockRecurringTab extends ConsumerWidget {
                         subtitle: Text(
                           '每月 ${p.dayOfMonth} 日'
                           '${p.holidayAdjustment == FinanceRecurringHolidayAdjustment.none ? '' : '（遇假日${p.holidayAdjustment.label}）'}'
+                          ' · ${p.monthlyAmount == null ? '尚未設定金額' : 'NT\$${formatAmount(p.monthlyAmount!)}'}'
                           ' · ${accountNameOf[p.accountId] ?? ''}'
-                          '${p.awaitingReply ? ' · 等待LINE回覆中' : ''}'
+                          '${p.awaitingReply ? ' · 等待回覆中' : ''}'
                           '${!p.active ? ' · 已停用' : ''}',
                         ),
                         trailing: Row(
@@ -111,21 +115,16 @@ class StockRecurringTab extends ConsumerWidget {
     WidgetRef ref,
     StockRecurringInvestment p,
   ) async {
-    final result = await showDialog<_FulfillResult>(
+    final pricePerShare = await showDialog<double>(
       context: context,
-      builder: (_) => _FulfillDialog(stockCode: p.stockCode),
+      builder: (_) => _FulfillDialog(stockCode: p.stockCode, monthlyAmount: p.monthlyAmount),
     );
-    if (result == null || !context.mounted) return;
+    if (pricePerShare == null || !context.mounted) return;
 
     try {
       await ref
           .read(apiClientProvider)
-          .fulfillStockRecurringInvestment(
-            spaceId: spaceId,
-            id: p.id,
-            pricePerShare: result.pricePerShare,
-            totalCost: result.totalCost,
-          );
+          .fulfillStockRecurringInvestment(spaceId: spaceId, id: p.id, pricePerShare: pricePerShare);
       _invalidate(ref);
       ref.invalidate(stockTransactionsProvider(spaceId));
       ref.invalidate(stockHoldingsProvider(spaceId));
@@ -199,6 +198,7 @@ class StockRecurringTab extends ConsumerWidget {
           dayOfMonth: result.dayOfMonth,
           holidayAdjustment: result.holidayAdjustment,
           accountId: result.accountId,
+          monthlyAmount: result.monthlyAmount,
         );
       } else {
         await api.updateStockRecurringInvestment(
@@ -208,6 +208,7 @@ class StockRecurringTab extends ConsumerWidget {
           dayOfMonth: result.dayOfMonth,
           holidayAdjustment: result.holidayAdjustment,
           accountId: result.accountId,
+          monthlyAmount: result.monthlyAmount,
         );
       }
       _invalidate(ref);
@@ -225,12 +226,14 @@ class _StockRecurringEditorResult {
     required this.dayOfMonth,
     required this.holidayAdjustment,
     required this.accountId,
+    required this.monthlyAmount,
   });
 
   final String stockCode;
   final int dayOfMonth;
   final FinanceRecurringHolidayAdjustment holidayAdjustment;
   final String accountId;
+  final double monthlyAmount;
 }
 
 class _StockRecurringEditorDialog extends StatefulWidget {
@@ -249,6 +252,9 @@ class _StockRecurringEditorDialogState extends State<_StockRecurringEditorDialog
   late FinanceRecurringHolidayAdjustment _holidayAdjustment =
       widget.existing?.holidayAdjustment ?? FinanceRecurringHolidayAdjustment.none;
   late final _stockCodeController = TextEditingController(text: widget.existing?.stockCode ?? '');
+  late final _amountController = TextEditingController(
+    text: widget.existing?.monthlyAmount == null ? '' : widget.existing!.monthlyAmount!.toStringAsFixed(0),
+  );
 
   DateTime _initialPickedDate() {
     final now = DateTime.now();
@@ -271,13 +277,16 @@ class _StockRecurringEditorDialogState extends State<_StockRecurringEditorDialog
   @override
   void dispose() {
     _stockCodeController.dispose();
+    _amountController.dispose();
     super.dispose();
   }
 
   void _submit() {
     final accountId = _accountId;
     final stockCode = _stockCodeController.text.trim();
+    final monthlyAmount = double.tryParse(_amountController.text);
     if (accountId == null || stockCode.isEmpty) return;
+    if (monthlyAmount == null || monthlyAmount <= 0) return;
 
     Navigator.of(context).pop(
       _StockRecurringEditorResult(
@@ -285,6 +294,7 @@ class _StockRecurringEditorDialogState extends State<_StockRecurringEditorDialog
         dayOfMonth: _pickedDate.day,
         holidayAdjustment: _holidayAdjustment,
         accountId: accountId,
+        monthlyAmount: monthlyAmount,
       ),
     );
   }
@@ -304,6 +314,12 @@ class _StockRecurringEditorDialogState extends State<_StockRecurringEditorDialog
                 controller: _stockCodeController,
                 autofocus: true,
                 decoration: const InputDecoration(labelText: '股票代碼', hintText: '例如 0050'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _amountController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: '每期投入金額', hintText: '例如 20000'),
               ),
               const SizedBox(height: 12),
               InkWell(
@@ -346,19 +362,14 @@ class _StockRecurringEditorDialogState extends State<_StockRecurringEditorDialog
   }
 }
 
-class _FulfillResult {
-  const _FulfillResult({required this.pricePerShare, required this.totalCost});
-
-  final double pricePerShare;
-  final double totalCost;
-}
-
-/// 登記成交——跟回 LINE「代碼 成交價 投入成本」問的是同一組數字，只是這裡
-/// 股票代碼已經知道了（來自被點的那張卡片），所以只問成交價跟投入成本。
+/// 登記成交——跟回 LINE「代碼 成交價」問的是同一件事，只是這裡股票代碼
+/// 已經知道了（來自被點的那張卡片），只需要輸入成交價，股數/金額用計畫的
+/// [monthlyAmount] 自動算（無條件捨去到整股），立即從帳戶扣款。
 class _FulfillDialog extends StatefulWidget {
-  const _FulfillDialog({required this.stockCode});
+  const _FulfillDialog({required this.stockCode, required this.monthlyAmount});
 
   final String stockCode;
+  final double? monthlyAmount;
 
   @override
   State<_FulfillDialog> createState() => _FulfillDialogState();
@@ -366,31 +377,24 @@ class _FulfillDialog extends StatefulWidget {
 
 class _FulfillDialogState extends State<_FulfillDialog> {
   final _priceController = TextEditingController();
-  final _costController = TextEditingController();
 
   @override
   void dispose() {
     _priceController.dispose();
-    _costController.dispose();
     super.dispose();
   }
 
-  double? get _shares {
+  int? get _shares {
     final price = double.tryParse(_priceController.text);
-    final cost = double.tryParse(_costController.text);
-    if (price == null || cost == null || price <= 0) return null;
-    return cost / price;
+    final amount = widget.monthlyAmount;
+    if (price == null || price <= 0 || amount == null) return null;
+    return (amount / price).floor();
   }
 
   void _submit() {
     final pricePerShare = double.tryParse(_priceController.text);
-    final totalCost = double.tryParse(_costController.text);
     if (pricePerShare == null || pricePerShare <= 0) return;
-    if (totalCost == null || totalCost <= 0) return;
-
-    Navigator.of(
-      context,
-    ).pop(_FulfillResult(pricePerShare: pricePerShare, totalCost: totalCost));
+    Navigator.of(context).pop(pricePerShare);
   }
 
   @override
@@ -404,6 +408,8 @@ class _FulfillDialogState extends State<_FulfillDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (widget.monthlyAmount != null) Text('目標金額 ${widget.monthlyAmount!.toStringAsFixed(0)}'),
+            const SizedBox(height: 8),
             TextField(
               controller: _priceController,
               autofocus: true,
@@ -411,18 +417,11 @@ class _FulfillDialogState extends State<_FulfillDialog> {
               decoration: const InputDecoration(labelText: '成交價'),
               onChanged: (_) => setState(() {}),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _costController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: '投入成本'),
-              onChanged: (_) => setState(() {}),
-            ),
             if (shares != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '約 ${shares.toStringAsFixed(2)} 股',
+                  '可買 $shares 股（花費 ${((shares) * (double.tryParse(_priceController.text) ?? 0)).toStringAsFixed(0)}）',
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ),

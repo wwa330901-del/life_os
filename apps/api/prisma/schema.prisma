@@ -1166,6 +1166,20 @@ model StockTransaction {
   note      String?
   createdAt DateTime @default(now())
 
+  /// 定期定額到期自動先建的「待填成交價」交易 (2026-08-12) — true 期間
+  /// pricePerShare/shares 是佔位值（0），totalCost 是計畫設定的每期預計
+  /// 金額（還不是真的成交金額）。每個實際會動用這些欄位的地方（持股
+  /// recompute、交割排程）都要記得排除 pending:true，避免拿佔位資料去
+  /// 算平均成本或誤交割。回覆成交價（LINE 或 App）之後就地更新這一列
+  /// （不是另外新建一筆），翻成 pending:false 並直接完成交割——見
+  /// StocksRecurringService.doFulfill 的「T（不等 T+2）立即扣款」設計。
+  pending Boolean @default(false)
+
+  /// 只有 pending 由定期定額計畫自動建立的那一列才會有值，讓回覆成交價
+  /// 時能直接用外鍵找到「這一筆」，不用靠猜日期/代碼去配對。
+  recurringInvestmentId String?
+  recurringInvestment   StockRecurringInvestment? @relation(fields: [recurringInvestmentId], references: [id], onDelete: SetNull)
+
   @@index([spaceId, stockCode])
   @@index([settlementDate, settled])
 }
@@ -1185,6 +1199,15 @@ model StockRecurringInvestment {
   dayOfMonth        Int
   holidayAdjustment FinanceRecurringHolidayAdjustment @default(NONE)
 
+  /// 每期預計投入的金額 (2026-08-12) — 到期時使用者只需要回覆成交價，
+  /// 系統用「這個金額 ÷ 成交價」無條件捨去算出買得起的整股數，再回推
+  /// 實際花費（可能略低於這個金額，因為股票只能整股買，捨去的零頭沒有
+  /// 花掉）。Nullable 只是為了不讓這個欄位新增時破壞既有資料列——新建立
+  /// 的計畫一律要求填寫（見 CreateStockRecurringInvestmentDto），既有的
+  /// 舊計畫在使用者下次編輯儲存前都不會觸發提醒（見
+  /// StocksRecurringService.sendDueReminders 的 null 檢查）。
+  monthlyAmount Float?
+
   accountId String
   account   FinanceAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -1193,6 +1216,8 @@ model StockRecurringInvestment {
   awaitingReply      Boolean @default(false)
 
   createdAt DateTime @default(now())
+
+  transactions StockTransaction[]
 }
 
 /// Stock price cache — one row per stock code, shared across every space

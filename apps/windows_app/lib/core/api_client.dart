@@ -1829,7 +1829,7 @@ class ApiClient {
     required String stockCode,
     required StockTransactionType type,
     required double pricePerShare,
-    required double totalCost,
+    required double shares,
     required DateTime tradeDate,
     required String accountId,
     String? note,
@@ -1838,7 +1838,7 @@ class ApiClient {
       'stockCode': stockCode,
       'type': type.toJson(),
       'pricePerShare': pricePerShare,
-      'totalCost': totalCost,
+      'shares': shares,
       'tradeDate': _dateOnlyIso(tradeDate),
       'accountId': accountId,
       if (note != null && note.isNotEmpty) 'note': note,
@@ -1850,7 +1850,7 @@ class ApiClient {
     required String id,
     String? stockCode,
     double? pricePerShare,
-    double? totalCost,
+    double? shares,
     DateTime? tradeDate,
     String? accountId,
     String? note,
@@ -1858,7 +1858,7 @@ class ApiClient {
     await _patch('/spaces/$spaceId/stocks/transactions/$id', {
       if (stockCode != null) 'stockCode': stockCode,
       if (pricePerShare != null) 'pricePerShare': pricePerShare,
-      if (totalCost != null) 'totalCost': totalCost,
+      if (shares != null) 'shares': shares,
       if (tradeDate != null) 'tradeDate': _dateOnlyIso(tradeDate),
       if (accountId != null) 'accountId': accountId,
       if (note != null) 'note': note,
@@ -1880,12 +1880,14 @@ class ApiClient {
     required int dayOfMonth,
     FinanceRecurringHolidayAdjustment holidayAdjustment = FinanceRecurringHolidayAdjustment.none,
     required String accountId,
+    required double monthlyAmount,
   }) async {
     await _post('/spaces/$spaceId/stocks/recurring', {
       'stockCode': stockCode,
       'dayOfMonth': dayOfMonth,
       'holidayAdjustment': holidayAdjustment.toJson(),
       'accountId': accountId,
+      'monthlyAmount': monthlyAmount,
     });
   }
 
@@ -1897,6 +1899,7 @@ class ApiClient {
     FinanceRecurringHolidayAdjustment? holidayAdjustment,
     String? accountId,
     bool? active,
+    double? monthlyAmount,
   }) async {
     await _patchIgnoreBody('/spaces/$spaceId/stocks/recurring/$id', {
       if (stockCode != null) 'stockCode': stockCode,
@@ -1904,6 +1907,7 @@ class ApiClient {
       if (holidayAdjustment != null) 'holidayAdjustment': holidayAdjustment.toJson(),
       if (accountId != null) 'accountId': accountId,
       if (active != null) 'active': active,
+      if (monthlyAmount != null) 'monthlyAmount': monthlyAmount,
     });
   }
 
@@ -1911,18 +1915,15 @@ class ApiClient {
     await _delete('/spaces/$spaceId/stocks/recurring/$id');
   }
 
-  /// 登記成交——計畫在等待回覆時（`awaitingReply`），App 端直接補「成交價／
-  /// 投入成本」，跟回 LINE 訊息是同一套後端邏輯，只是不用透過 LINE。
+  /// 登記成交——計畫在等待回覆時（`awaitingReply`），App 端直接補「成交
+  /// 價」，跟回 LINE 訊息是同一套後端邏輯，只是不用透過 LINE。股數/金額
+  /// 都是後端用計畫的 monthlyAmount 自動算，不用另外傳。
   Future<void> fulfillStockRecurringInvestment({
     required String spaceId,
     required String id,
     required double pricePerShare,
-    required double totalCost,
   }) async {
-    await _post('/spaces/$spaceId/stocks/recurring/$id/fulfill', {
-      'pricePerShare': pricePerShare,
-      'totalCost': totalCost,
-    });
+    await _post('/spaces/$spaceId/stocks/recurring/$id/fulfill', {'pricePerShare': pricePerShare});
   }
 
   /// 代辦事項 is its own top-level space now (not nested under a project) —

@@ -11,10 +11,16 @@ extension StockTransactionTypeJson on StockTransactionType {
   String get label => this == StockTransactionType.sell ? '賣出' : '買入';
 }
 
-/// A manually-entered (or LINE 定期定額 fill-in) stock buy/sell. [shares] is
-/// always server-derived (totalCost / pricePerShare) — never typed by the
-/// user. [tradeDate] is just the registration date; the real money movement
-/// happens at [settlementDate] (T+2), when [settled] flips to true.
+/// A manually-entered stock buy/sell, OR a 定期定額 fill-in. [shares]/
+/// [pricePerShare] are server-derived for both entry points now (2026-08-12:
+/// manual entries type 股數, DCA entries type 成交價 with the plan's own
+/// monthlyAmount supplying the rest) — never both typed together.
+/// [tradeDate] is just the registration date; for a manual trade the real
+/// money movement happens at [settlementDate] (T+2); a 定期定額 fill-in
+/// settles immediately instead (T, no waiting). [pending] marks a 定期定額
+/// row auto-created on its trigger date that's still waiting for a 成交價 —
+/// pricePerShare/shares/totalCost are placeholder (0/0/monthlyAmount) until
+/// then, see [recurringInvestmentId].
 class StockTransaction {
   const StockTransaction({
     required this.id,
@@ -28,6 +34,8 @@ class StockTransaction {
     required this.settled,
     required this.accountId,
     required this.note,
+    required this.pending,
+    required this.recurringInvestmentId,
   });
 
   final String id;
@@ -41,6 +49,8 @@ class StockTransaction {
   final bool settled;
   final String accountId;
   final String? note;
+  final bool pending;
+  final String? recurringInvestmentId;
 
   factory StockTransaction.fromJson(Map<String, dynamic> json) => StockTransaction(
     id: json['id'] as String,
@@ -54,6 +64,8 @@ class StockTransaction {
     settled: json['settled'] as bool,
     accountId: json['accountId'] as String,
     note: json['note'] as String?,
+    pending: json['pending'] as bool? ?? false,
+    recurringInvestmentId: json['recurringInvestmentId'] as String?,
   );
 }
 
@@ -74,9 +86,10 @@ class StockTransactionsPage {
 }
 
 /// A 定期定額（DCA）計畫 — same 每月第幾天＋遇假日調整 shape as
-/// [FinanceRecurringTransaction]. Never auto-records an amount (a DCA fill
-/// price is different every round) — the due day just sends a LINE
-/// reminder asking for 成交價／投入成本.
+/// [FinanceRecurringTransaction]. 到期時系統自動用 [monthlyAmount] 先建一筆
+/// 待填成交價的交易（見 StockTransaction.pending），使用者只需要回覆/填入
+/// 成交價，系統自動算出買得起的整股數並立即扣款（2026-08-12 起，不用等
+/// T+2 交割排程）。
 class StockRecurringInvestment {
   const StockRecurringInvestment({
     required this.id,
@@ -86,6 +99,7 @@ class StockRecurringInvestment {
     required this.accountId,
     required this.active,
     required this.awaitingReply,
+    required this.monthlyAmount,
   });
 
   final String id;
@@ -96,6 +110,10 @@ class StockRecurringInvestment {
   final bool active;
   final bool awaitingReply;
 
+  /// Null 只會出現在這個欄位剛上線、使用者還沒重新編輯儲存過的舊計畫——
+  /// 到期不會發提醒，直到使用者補上這個值。
+  final double? monthlyAmount;
+
   factory StockRecurringInvestment.fromJson(Map<String, dynamic> json) => StockRecurringInvestment(
     id: json['id'] as String,
     stockCode: json['stockCode'] as String,
@@ -104,6 +122,7 @@ class StockRecurringInvestment {
     accountId: json['accountId'] as String,
     active: json['active'] as bool,
     awaitingReply: json['awaitingReply'] as bool,
+    monthlyAmount: json['monthlyAmount'] == null ? null : (json['monthlyAmount'] as num).toDouble(),
   );
 }
 

@@ -35,11 +35,12 @@ export class StocksTransactionsService {
     return { items: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   }
 
-  /// `shares` is always derived (`totalCost / pricePerShare`) — the caller
-  /// only ever supplies price and total cost, same convention as a DCA
-  /// fill-in. `settlementDate` is computed once at creation (T+2) and never
-  /// recomputed, so editing the holiday calendar later can't retroactively
-  /// shift a trade that already has a settlement date on record.
+  /// `totalCost` is always derived (`pricePerShare * shares`) — the caller
+  /// only ever supplies price and share count, matching what a real broker
+  /// trade confirmation actually tells you. `settlementDate` is computed
+  /// once at creation (T+2) and never recomputed, so editing the holiday
+  /// calendar later can't retroactively shift a trade that already has a
+  /// settlement date on record.
   async create(userId: string, spaceId: string, dto: CreateStockTransactionDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
     await this.assertAccount(spaceId, dto.accountId);
@@ -51,8 +52,8 @@ export class StocksTransactionsService {
         stockCode: dto.stockCode,
         type: dto.type,
         pricePerShare: dto.pricePerShare,
-        totalCost: dto.totalCost,
-        shares: dto.totalCost / dto.pricePerShare,
+        totalCost: dto.pricePerShare * dto.shares,
+        shares: dto.shares,
         tradeDate,
         settlementDate: computeSettlementDate(tradeDate),
         accountId: dto.accountId,
@@ -76,10 +77,13 @@ export class StocksTransactionsService {
     if (existing.settled) {
       throw new BadRequestException('已交割的股票交易不能修改');
     }
+    if (existing.pending) {
+      throw new BadRequestException('這是定期定額待填成交價的交易，請用「登記成交」填入成交價，不能直接編輯。');
+    }
     if (dto.accountId) await this.assertAccount(spaceId, dto.accountId);
 
     const pricePerShare = dto.pricePerShare ?? existing.pricePerShare;
-    const totalCost = dto.totalCost ?? existing.totalCost;
+    const shares = dto.shares ?? existing.shares;
     const tradeDate = dto.tradeDate ? new Date(dto.tradeDate) : existing.tradeDate;
 
     const updated = await this.prisma.stockTransaction.update({
@@ -89,8 +93,8 @@ export class StocksTransactionsService {
         ...(dto.accountId !== undefined && { accountId: dto.accountId }),
         ...(dto.note !== undefined && { note: dto.note }),
         pricePerShare,
-        totalCost,
-        shares: totalCost / pricePerShare,
+        shares,
+        totalCost: pricePerShare * shares,
         tradeDate,
         settlementDate: computeSettlementDate(tradeDate),
       },
@@ -106,7 +110,11 @@ export class StocksTransactionsService {
   /// FinanceTransaction it produced already moved money, so removing the
   /// stock-side record afterwards would desync the two instead of undoing
   /// anything (the finance transaction would have to be deleted too, and
-  /// there's no user-facing "undo settlement" flow).
+  /// there's no user-facing "undo settlement" flow). Deleting a pending 定期
+  /// 定額 row (never settled) IS allowed — that's "skip this period" — but
+  /// its plan's `awaitingReply` has to be cleared too, otherwise the plan
+  /// would be stuck forever thinking a reply is still outstanding for a row
+  /// that no longer exists, and never remind again.
   async remove(userId: string, spaceId: string, id: string) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const existing = await this.getOrThrow(spaceId, id);
@@ -114,6 +122,12 @@ export class StocksTransactionsService {
       throw new BadRequestException('已交割的股票交易不能刪除');
     }
     await this.prisma.stockTransaction.delete({ where: { id } });
+    if (existing.pending && existing.recurringInvestmentId) {
+      await this.prisma.stockRecurringInvestment.update({
+        where: { id: existing.recurringInvestmentId },
+        data: { awaitingReply: false },
+      });
+    }
     await this.holdings.recompute(spaceId, existing.stockCode);
   }
 

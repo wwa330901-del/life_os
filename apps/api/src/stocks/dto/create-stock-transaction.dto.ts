@@ -8,15 +8,15 @@ export class CreateStockTransactionDto {
   @IsEnum(StockTransactionType)
   type: StockTransactionType;
 
-  /// Per-share fill price. `shares` is derived server-side as
-  /// `totalCost / pricePerShare` — the caller never computes it.
+  /// Per-share fill price. `totalCost` is derived server-side as
+  /// `shares * pricePerShare` — the caller never computes it.
   @IsNumber()
   @Min(0.01)
   pricePerShare: number;
 
   @IsNumber()
   @Min(0.01)
-  totalCost: number;
+  shares: number;
 
   @IsDateString()
   tradeDate: string;

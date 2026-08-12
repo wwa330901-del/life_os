@@ -13,7 +13,7 @@ export class UpdateStockTransactionDto {
   @IsOptional()
   @IsNumber()
   @Min(0.01)
-  totalCost?: number;
+  shares?: number;
 
   @IsOptional()
   @IsDateString()

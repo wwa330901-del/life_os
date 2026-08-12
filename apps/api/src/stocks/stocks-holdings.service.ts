@@ -86,7 +86,10 @@ export class StocksHoldingsService {
    * `list()` never has to filter zero-share rows itself). */
   async recompute(spaceId: string, stockCode: string): Promise<void> {
     const transactions = await this.prisma.stockTransaction.findMany({
-      where: { spaceId, stockCode },
+      // pending:true 是定期定額到期還沒填成交價的佔位列（0 股、金額是
+      // 目標金額不是真的成交價），絕對不能被算進平均成本，否則會把
+      // costBasis 灌水但完全不加股數。
+      where: { spaceId, stockCode, pending: false },
       orderBy: [{ tradeDate: 'asc' }, { createdAt: 'asc' }],
     });
 

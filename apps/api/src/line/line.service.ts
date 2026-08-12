@@ -1363,8 +1363,8 @@ export class LineService {
       replyToken,
       [
         '📈 股票買賣',
-        '買股0050 152 3000 國泰世華',
-        '（代碼／成交價／投入成本／帳戶，股數自動算）',
+        '買股0050 152 20 國泰世華',
+        '（代碼／成交價／股數／帳戶，金額自動算）',
         '賣出用「賣股」開頭',
         '',
         `帳戶　${accounts.length ? accounts.map((a) => a.name).join('、') : '（還沒有，請到 App 新增）'}`,
@@ -1447,15 +1447,15 @@ export class LineService {
     const accountId = parsed.accountId;
 
     const tradeDate = new Date();
-    const shares = parsed.totalCost / parsed.pricePerShare;
+    const totalCost = parsed.shares * parsed.pricePerShare;
     await this.prisma.stockTransaction.create({
       data: {
         spaceId: space.id,
         stockCode: parsed.stockCode,
         type: parsed.type,
         pricePerShare: parsed.pricePerShare,
-        totalCost: parsed.totalCost,
-        shares,
+        totalCost,
+        shares: parsed.shares,
         tradeDate,
         settlementDate: computeSettlementDate(tradeDate),
         accountId,
@@ -1466,18 +1466,20 @@ export class LineService {
     const typeLabel =
       parsed.type === StockTransactionType.BUY ? '買入' : '賣出';
     await respond(
-      `已記錄${typeLabel} ${parsed.stockCode}，約 ${shares.toFixed(2)} 股（成交價 ${parsed.pricePerShare}，投入 ${Math.round(parsed.totalCost).toLocaleString('en-US')}，帳戶 ${account?.name ?? ''}），交割日（T+2）到了會自動記帳。`,
+      `已記錄${typeLabel} ${parsed.stockCode} ${parsed.shares} 股（成交價 ${parsed.pricePerShare}，金額 ${Math.round(totalCost).toLocaleString('en-US')}，帳戶 ${account?.name ?? ''}），交割日（T+2）到了會自動記帳。`,
     );
     return true;
   }
 
-  /** "買股/賣股 代碼 成交價 投入成本 帳戶" — same lenient any/no-separator
-   * parsing as `parseFinanceCommand`. 股數 is never typed, only derived
-   * (totalCost / pricePerShare). Stock code is taken as a leading 4-6 digit
-   * run (covers ordinary 4-digit tickers and 5-6 digit ETF codes like
-   * 00929); 帳戶 is found the same substring-scan way accounts are in
-   * 記帳, and is required the same way too (2026-08-06) — `tryStockCommand`
-   * errors instead of defaulting when nothing matched. */
+  /** "買股/賣股 代碼 成交價 股數 帳戶" — same lenient any/no-separator
+   * parsing as `parseFinanceCommand`. 金額 is never typed, only derived
+   * (pricePerShare * shares) — 2026-08-12：這之前是反過來（打投入成本、
+   * 股數用算的），但券商的成交回報一向是告訴你成交價／股數，不是要你自己
+   * 反推的總額，改成股數優先更貼近實際操作。Stock code is taken as a
+   * leading 4-6 digit run (covers ordinary 4-digit tickers and 5-6 digit
+   * ETF codes like 00929); 帳戶 is found the same substring-scan way
+   * accounts are in 記帳, and is required the same way too (2026-08-06) —
+   * `tryStockCommand` errors instead of defaulting when nothing matched. */
   private parseStockCommand(
     text: string,
     accounts: { id: string; name: string }[],
@@ -1485,7 +1487,7 @@ export class LineService {
     type: StockTransactionType;
     stockCode: string;
     pricePerShare: number;
-    totalCost: number;
+    shares: number;
     accountId: string | null;
   } | null {
     let rest = text.trim();
@@ -1512,11 +1514,11 @@ export class LineService {
     if (!(pricePerShare > 0)) return null;
     rest = rest.slice(priceMatch[0].length).replace(LEADING_SEPARATORS, '');
 
-    const costMatch = rest.match(/^\d+(\.\d+)?/);
-    if (!costMatch) return null;
-    const totalCost = Number(costMatch[0]);
-    if (!(totalCost > 0)) return null;
-    rest = rest.slice(costMatch[0].length).replace(LEADING_SEPARATORS, '');
+    const sharesMatch = rest.match(/^\d+(\.\d+)?/);
+    if (!sharesMatch) return null;
+    const shares = Number(sharesMatch[0]);
+    if (!(shares > 0)) return null;
+    rest = rest.slice(sharesMatch[0].length).replace(LEADING_SEPARATORS, '');
 
     let accountId: string | null = null;
     for (const a of [...accounts].sort(
@@ -1529,23 +1531,24 @@ export class LineService {
       }
     }
 
-    return { type, stockCode, pricePerShare, totalCost, accountId };
+    return { type, stockCode, pricePerShare, shares, accountId };
   }
 
-  /** A bare "代碼 成交價 投入成本" with no keyword prefix (e.g. "0050 600
-   * 20000") is only ever a reply to a fired 定期定額 reminder — matched
-   * against `StockRecurringInvestment.awaitingReply` by
-   * `StocksRecurringService.fulfillPendingReply`, never by position. The
-   * whole text must match exactly three number groups (anchored), so this
-   * never fires on unrelated messages that merely start with digits. */
+  /** A bare "代碼 成交價" with no keyword prefix (e.g. "0050 600") is only
+   * ever a reply to a fired 定期定額 提醒 — matched against
+   * `StockRecurringInvestment.awaitingReply` by
+   * `StocksRecurringService.fulfillPendingReply`, never by position. 股數/
+   * 金額不用打，計畫自己的 monthlyAmount 早就設定好了，回覆只需要成交價
+   * 本身。The whole text must match exactly two groups (anchored), so this
+   * never fires on unrelated messages that merely start with digits — and
+   * specifically never collides with the old 3-number format some other
+   * command might send, since that's a different length. */
   private async tryStockDcaReply(
     userId: string,
     text: string,
     replyToken: string,
   ): Promise<boolean> {
-    const match = text.match(
-      /^(\d{4,6})[\s\-+*/,，、]*(\d+(?:\.\d+)?)[\s\-+*/,，、]*(\d+(?:\.\d+)?)$/,
-    );
+    const match = text.match(/^(\d{4,6})[\s\-+*/,，、]*(\d+(?:\.\d+)?)$/);
     if (!match) return false;
 
     const space = await this.prisma.space.findUnique({
@@ -1561,24 +1564,26 @@ export class LineService {
 
     const stockCode = match[1];
     const pricePerShare = Number(match[2]);
-    const totalCost = Number(match[3]);
-    const result = await this.stocksRecurringService.fulfillPendingReply(
-      space.id,
-      stockCode,
-      pricePerShare,
-      totalCost,
-    );
-    if (!result) {
+    try {
+      const result = await this.stocksRecurringService.fulfillPendingReply(
+        space.id,
+        stockCode,
+        pricePerShare,
+      );
+      if (!result) {
+        await this.reply(
+          replyToken,
+          `目前沒有「${stockCode}」在等待定期定額回覆，請確認代碼是否正確，或這筆是不是已經記過了。`,
+        );
+        return true;
+      }
       await this.reply(
         replyToken,
-        `目前沒有「${stockCode}」在等待定期定額回覆，請確認代碼是否正確，或這筆是不是已經記過了。`,
+        `已記錄定期定額：${stockCode} 成交價 ${pricePerShare}，買進 ${result.shares} 股（花費 ${Math.round(result.totalCost).toLocaleString('en-US')}），已立即從帳戶扣款。`,
       );
-      return true;
+    } catch (error) {
+      await this.reply(replyToken, error instanceof Error ? error.message : '定期定額登記失敗了，稍後再試一次。');
     }
-    await this.reply(
-      replyToken,
-      `已記錄定期定額：${stockCode} 成交價 ${pricePerShare}，投入 ${Math.round(totalCost).toLocaleString('en-US')}，約 ${result.shares.toFixed(2)} 股。`,
-    );
     return true;
   }
 
