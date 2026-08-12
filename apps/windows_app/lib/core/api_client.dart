@@ -1926,6 +1926,12 @@ class ApiClient {
     await _post('/spaces/$spaceId/stocks/recurring/$id/fulfill', {'pricePerShare': pricePerShare});
   }
 
+  /// 立即檢查——不用等隔天早上 9 點排程，剛補上每期金額的計畫可以馬上
+  /// 手動觸發一次到期檢查（如果這個月的扣款日已經到了）。
+  Future<void> checkStockRecurringInvestmentNow({required String spaceId, required String id}) async {
+    await _post('/spaces/$spaceId/stocks/recurring/$id/check-now', {});
+  }
+
   /// 代辦事項 is its own top-level space now (not nested under a project) —
   /// this returns 個人 + 工作（每個專案分組）合併的畫面資料一次拿齊。
   Future<TodoOverview> listAllTodos() async {

@@ -46,6 +46,17 @@ export class StocksRecurringController {
     return this.service.fulfillById(user.id, spaceId, id, dto.pricePerShare);
   }
 
+  /// 立即檢查——不用等隔天早上 9 點排程，剛補上 monthlyAmount 的計畫可以
+  /// 馬上手動觸發一次到期檢查。
+  @Post(':id/check-now')
+  checkNow(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.checkNow(user.id, spaceId, id);
+  }
+
   @Delete(':id')
   remove(
     @CurrentUser() user: AuthenticatedUser,

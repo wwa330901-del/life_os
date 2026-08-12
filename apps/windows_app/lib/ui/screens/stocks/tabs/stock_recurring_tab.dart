@@ -77,6 +77,15 @@ class StockRecurringTab extends ConsumerWidget {
                                   onPressed: () => _openFulfillDialog(context, ref, p),
                                   child: const Text('登記成交'),
                                 ),
+                              )
+                            else if (p.active && p.monthlyAmount != null)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: IconButton(
+                                  tooltip: '立即檢查（不用等隔天排程）',
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                  onPressed: () => _checkNow(context, ref, p),
+                                ),
                               ),
                             Switch(
                               value: p.active,
@@ -128,6 +137,25 @@ class StockRecurringTab extends ConsumerWidget {
       _invalidate(ref);
       ref.invalidate(stockTransactionsProvider(spaceId));
       ref.invalidate(stockHoldingsProvider(spaceId));
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  /// 立即檢查——不用等隔天早上 9 點排程，剛補上每期金額的計畫可以馬上
+  /// 手動觸發一次到期檢查（如果這個月的扣款日已經到了）。跟排程自動觸發
+  /// 是完全一樣的結果，會建好待填成交價的交易、發提醒，接下來一樣要
+  /// 「登記成交」才算完成。
+  Future<void> _checkNow(BuildContext context, WidgetRef ref, StockRecurringInvestment p) async {
+    try {
+      await ref.read(apiClientProvider).checkStockRecurringInvestmentNow(spaceId: spaceId, id: p.id);
+      _invalidate(ref);
+      ref.invalidate(stockTransactionsProvider(spaceId));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已檢查，若扣款日已到會建好待填成交價的交易')));
+      }
     } on ApiException catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));

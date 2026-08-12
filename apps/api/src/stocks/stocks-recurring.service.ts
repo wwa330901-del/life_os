@@ -150,41 +150,97 @@ export class StocksRecurringService {
       if (triggerDate.getUTCDate() > today) continue;
 
       try {
-        const existingPendingTx = await this.prisma.stockTransaction.findFirst({
-          where: { recurringInvestmentId: plan.id, pending: true },
-        });
-        if (!existingPendingTx) {
-          await this.prisma.stockTransaction.create({
-            data: {
-              spaceId: plan.spaceId,
-              stockCode: plan.stockCode,
-              type: StockTransactionType.BUY,
-              pricePerShare: 0,
-              totalCost: plan.monthlyAmount!,
-              shares: 0,
-              tradeDate: triggerDate,
-              settlementDate: triggerDate,
-              accountId: plan.accountId,
-              note: '定期定額',
-              pending: true,
-              recurringInvestmentId: plan.id,
-            },
-          });
-        }
-
-        const amount = Math.round(plan.monthlyAmount!).toLocaleString('en-US');
-        await this.lineNotifier.notifyBySpace(
-          plan.spaceId,
-          `🔔 定期定額提醒：該扣款買「${plan.stockCode}」了（每期 NT$${amount}，已先記一筆待填成交價，也可以到 App「股票」補），回覆「${plan.stockCode} 成交價」（例如「${plan.stockCode} 600」）幫你依這個金額自動算出可以買多少整股並立即扣款。`,
-        );
-        await this.prisma.stockRecurringInvestment.update({
-          where: { id: plan.id },
-          data: { lastTriggeredMonth: currentMonth, awaitingReply: true },
-        });
+        await this.createPendingAndNotify(plan, triggerDate, currentMonth);
       } catch (error) {
         this.logger.error(`定期定額 ${plan.id} 提醒失敗`, error);
       }
     }
+  }
+
+  /** App 端「立即檢查」(2026-08-12) — 同一套邏輯，但不用等隔天早上 9 點的
+   * 排程，使用者剛編輯計畫補上 monthlyAmount 之後可以立刻手動觸發一次,
+   * 不用乾等。只要這個月的扣款日已經到了、還沒處理過，就會馬上建好待填
+   * 成交價的交易並發提醒——跟排程自動觸發是完全一樣的結果，只是時間點
+   * 由使用者自己按下去決定。刻意不接受「補過去好幾個月」——同一時間只
+   * 處理「最新一期」，跟 sendDueReminders 的行為一致，避免堆出好幾筆
+   * 語意不清的待填交易。 */
+  async checkNow(userId: string, spaceId: string, id: string): Promise<{ created: boolean }> {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    const plan = await this.getOrThrow(spaceId, id);
+    if (!plan.active) {
+      throw new BadRequestException('這個計畫目前是停用狀態');
+    }
+    if (!plan.monthlyAmount) {
+      throw new BadRequestException('請先設定每期投入金額再檢查。');
+    }
+    if (plan.awaitingReply) {
+      throw new BadRequestException('已經有一筆待填成交價的交易在等你了，請先處理那一筆。');
+    }
+
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (plan.lastTriggeredMonth === currentMonth) {
+      throw new BadRequestException('這個月已經處理過了。');
+    }
+    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const today = now.getDate();
+    const triggerDate = effectiveTriggerDate(
+      now.getFullYear(),
+      now.getMonth(),
+      plan.dayOfMonth,
+      lastDayOfMonth,
+      plan.holidayAdjustment,
+    );
+    if (triggerDate.getUTCDate() > today) {
+      throw new BadRequestException(`還沒到這個月的扣款日（${plan.dayOfMonth} 號），到了才能檢查。`);
+    }
+
+    await this.createPendingAndNotify(plan, triggerDate, currentMonth);
+    return { created: true };
+  }
+
+  private async createPendingAndNotify(
+    plan: {
+      id: string;
+      spaceId: string;
+      stockCode: string;
+      accountId: string;
+      monthlyAmount: number | null;
+    },
+    triggerDate: Date,
+    currentMonth: string,
+  ): Promise<void> {
+    const existingPendingTx = await this.prisma.stockTransaction.findFirst({
+      where: { recurringInvestmentId: plan.id, pending: true },
+    });
+    if (!existingPendingTx) {
+      await this.prisma.stockTransaction.create({
+        data: {
+          spaceId: plan.spaceId,
+          stockCode: plan.stockCode,
+          type: StockTransactionType.BUY,
+          pricePerShare: 0,
+          totalCost: plan.monthlyAmount!,
+          shares: 0,
+          tradeDate: triggerDate,
+          settlementDate: triggerDate,
+          accountId: plan.accountId,
+          note: '定期定額',
+          pending: true,
+          recurringInvestmentId: plan.id,
+        },
+      });
+    }
+
+    const amount = Math.round(plan.monthlyAmount!).toLocaleString('en-US');
+    await this.lineNotifier.notifyBySpace(
+      plan.spaceId,
+      `🔔 定期定額提醒：該扣款買「${plan.stockCode}」了（每期 NT$${amount}，已先記一筆待填成交價，也可以到 App「股票」補），回覆「${plan.stockCode} 成交價」（例如「${plan.stockCode} 600」）幫你依這個金額自動算出可以買多少整股並立即扣款。`,
+    );
+    await this.prisma.stockRecurringInvestment.update({
+      where: { id: plan.id },
+      data: { lastTriggeredMonth: currentMonth, awaitingReply: true },
+    });
   }
 
   /** Called from LineService when a linked user replies "股票代碼 成交價" to
