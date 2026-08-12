@@ -681,6 +681,7 @@ class _DayAgenda extends ConsumerWidget {
     );
     if (event.location != null && event.location!.isNotEmpty) parts.add(event.location!);
     if (event.googleEventId != null) parts.add('已同步 Google');
+    if (event.appleEventUid != null) parts.add('來自 iCloud');
     return parts.join(' · ');
   }
 

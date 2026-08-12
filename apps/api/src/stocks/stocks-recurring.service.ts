@@ -81,11 +81,22 @@ export class StocksRecurringService {
   }
 
   /** Once a day: any active DCA plan whose effective trigger date (same
-   * day-of-month + holiday-adjustment math as 定期交易) matches today, and
-   * hasn't already reminded this month, gets a LINE reminder asking for
-   * 成交價／投入成本 — never auto-creates a transaction, since a DCA fill
-   * price is different every round. Sets `awaitingReply` so LineService can
-   * tell a plain "股票代碼 成交價 投入成本" reply apart from other commands. */
+   * day-of-month + holiday-adjustment math as 定期交易) has arrived (today ON
+   * OR AFTER it, not just "exactly today" — see below), and hasn't already
+   * reminded this month, gets a LINE reminder asking for 成交價／投入成本 —
+   * never auto-creates a transaction, since a DCA fill price is different
+   * every round. Sets `awaitingReply` so LineService can tell a plain
+   * "股票代碼 成交價 投入成本" reply apart from other commands.
+   *
+   * 2026-08-11: `lastTriggeredMonth` used to get written BEFORE the LINE push
+   * was attempted — if the push itself failed (network hiccup, LINE API
+   * outage, the process restarting mid-cron), the plan was already marked
+   * "handled this month" and silently never got a working reminder at all
+   * for the rest of the month, no retry, no visibility. Now the DB write
+   * only happens after the push actually succeeds, and the day check is
+   * "on or after" the trigger date instead of "exactly on it" — so a missed
+   * day (this bug, a deploy restart at exactly 9am, etc.) self-heals on the
+   * very next day's run instead of silently skipping the whole month. */
   @Cron(CronExpression.EVERY_DAY_AT_9AM, { timeZone: 'Asia/Taipei' })
   async sendDueReminders() {
     const now = new Date();
@@ -105,17 +116,17 @@ export class StocksRecurringService {
         lastDayOfMonth,
         plan.holidayAdjustment,
       );
-      if (triggerDate.getUTCDate() !== today) continue;
+      if (triggerDate.getUTCDate() > today) continue;
 
       try {
-        await this.prisma.stockRecurringInvestment.update({
-          where: { id: plan.id },
-          data: { lastTriggeredMonth: currentMonth, awaitingReply: true },
-        });
         await this.lineNotifier.notifyBySpace(
           plan.spaceId,
           `🔔 定期定額提醒：該扣款買「${plan.stockCode}」了，回覆「${plan.stockCode} 成交價 投入成本」（例如「${plan.stockCode} 600 20000」）幫你記一筆並自動算股數。`,
         );
+        await this.prisma.stockRecurringInvestment.update({
+          where: { id: plan.id },
+          data: { lastTriggeredMonth: currentMonth, awaitingReply: true },
+        });
       } catch (error) {
         this.logger.error(`定期定額 ${plan.id} 提醒失敗`, error);
       }

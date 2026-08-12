@@ -59,6 +59,7 @@ class CalendarEvent {
     required this.location,
     required this.notes,
     required this.googleEventId,
+    required this.appleEventUid,
     required this.recurrenceFrequency,
     required this.recurrenceUntil,
     required this.seriesId,
@@ -73,6 +74,10 @@ class CalendarEvent {
   final String? location;
   final String? notes;
   final String? googleEventId;
+
+  /// 從 iCloud 匯入的事件才有值——見 apple-calendar-sync.service.ts。單向
+  /// 匯入，跟 googleEventId 不同的是這裡沒有對應的「推回去」邏輯。
+  final String? appleEventUid;
   final CalendarRecurrenceFrequency recurrenceFrequency;
   final DateTime? recurrenceUntil;
 
@@ -93,6 +98,7 @@ class CalendarEvent {
     location: json['location'] as String?,
     notes: json['notes'] as String?,
     googleEventId: json['googleEventId'] as String?,
+    appleEventUid: json['appleEventUid'] as String?,
     recurrenceFrequency: CalendarRecurrenceFrequencyJson.fromJson(
       json['recurrenceFrequency'] as String? ?? 'NONE',
     ),
