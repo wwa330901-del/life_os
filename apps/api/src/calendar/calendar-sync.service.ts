@@ -48,9 +48,13 @@ export class CalendarSyncService {
     });
 
     // Recurring series (行事曆循環事件, 2026-08-05) are never pushed — see
-    // CalendarEventsService.pushToGoogleInBackground's doc comment.
+    // CalendarEventsService.pushToGoogleInBackground's doc comment. Events
+    // imported one-way from iCloud (appleEventUid set, 2026-08-11) are
+    // never pushed either — they already belong to a calendar the user's
+    // devices see directly, so re-creating them on Google duplicates the
+    // event wherever both calendars are visible together (e.g. iPhone).
     const unpushed = await this.prisma.calendarEvent.findMany({
-      where: { spaceId, googleEventId: null, recurrenceFrequency: 'NONE' },
+      where: { spaceId, googleEventId: null, recurrenceFrequency: 'NONE', appleEventUid: null },
     });
     for (const local of unpushed) {
       try {
