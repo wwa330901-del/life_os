@@ -230,7 +230,16 @@ Future<void> showTodoFormDialog(
   required String projectId,
   required ProjectTodo? existing,
 }) async {
-  final members = ref.read(projectMembersProvider(projectId)).value ?? const <ProjectMember>[];
+  // 用 `.future` 確實等成員清單載入完成，不能用 `ref.read(...).value`
+  // 直接拿當下的快取——只要點新增的當下這個 provider 剛好還沒抓回來
+  // （App 剛開、這個專案的分組還沒被畫出來過、或 Render 免費方案剛醒來
+  // 回應比較慢），`.value` 就會是 null（provider 還在 loading），導致下
+  // 面「預設指派給自己」誤判成「自己不是這個專案的成員」而放棄預設,
+  // 下拉選單本身也會是空的（2026-08-13 修正，見問題排除紀錄.md）。
+  final members = await ref.read(projectMembersProvider(projectId).future).catchError(
+    (_) => const <ProjectMember>[],
+  );
+  if (!context.mounted) return;
   final titleController = TextEditingController(text: existing?.title ?? '');
   final notesController = TextEditingController(text: existing?.notes ?? '');
   var dueDate = existing?.dueDate;
