@@ -8,7 +8,10 @@ import { DocumentApprovalStepsController } from './document-approval-steps.contr
 
 @Module({
   imports: [ProjectsModule, SpacesModule, LineNotifierModule],
-  controllers: [GeneratedDocumentApprovalsController, DocumentApprovalStepsController],
+  controllers: [
+    GeneratedDocumentApprovalsController,
+    DocumentApprovalStepsController,
+  ],
   providers: [DocumentApprovalsService],
   // Reused by ProjectDocumentsService (DocumentsModule) to block deleting a
   // locked, already-signed-off document.

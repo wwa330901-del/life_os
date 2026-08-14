@@ -180,8 +180,8 @@ class HomePendingApproval {
     required this.stepId,
     required this.sequence,
     required this.totalSteps,
-    required this.documentId,
-    required this.documentName,
+    required this.roleLabel,
+    required this.targetDisplayName,
     required this.projectId,
     required this.submittedByName,
   });
@@ -189,8 +189,8 @@ class HomePendingApproval {
   final String stepId;
   final int sequence;
   final int totalSteps;
-  final String documentId;
-  final String documentName;
+  final String? roleLabel;
+  final String targetDisplayName;
   final String projectId;
   final String submittedByName;
 
@@ -198,8 +198,8 @@ class HomePendingApproval {
     stepId: json['stepId'] as String,
     sequence: json['sequence'] as int,
     totalSteps: json['totalSteps'] as int,
-    documentId: json['documentId'] as String,
-    documentName: json['documentName'] as String,
+    roleLabel: json['roleLabel'] as String?,
+    targetDisplayName: json['targetDisplayName'] as String,
     projectId: json['projectId'] as String,
     submittedByName: json['submittedByName'] as String,
   );

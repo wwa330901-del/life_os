@@ -709,7 +709,10 @@ class _ApprovalHistoryDialog extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${s.sequence}. ${s.approverName} · ${s.status.label}'),
+                          Text(
+                            '${s.sequence}. ${s.roleLabel != null ? '${s.roleLabel} ' : ''}'
+                            '${s.approverName} · ${s.status.label}',
+                          ),
                           if (s.decisionComment != null && s.decisionComment!.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(left: 16),

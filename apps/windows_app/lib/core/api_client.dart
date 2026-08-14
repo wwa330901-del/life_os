@@ -26,6 +26,11 @@ import 'models/schedule_result.dart';
 import 'models/stock.dart';
 import 'models/work_item.dart';
 
+/// Sentinel for "this optional param wasn't passed at all" vs. "passed as
+/// null" — `updateQuotationItem`'s `parentId` needs the null case to mean
+/// "re-parent to top-level" while omitting it entirely means "don't touch".
+const Object _unset = Object();
+
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
 
@@ -1176,165 +1181,233 @@ class ApiClient {
     return FinanceReport.fromJson(body);
   }
 
-  // --- 工程財務四表 ---
+  // --- 工程財務四表：廠商主檔 ---
 
-  Future<QuotationList> quotationItems(String projectId) async {
-    final body = await _get('/projects/$projectId/quotation-items');
-    return QuotationList.fromJson(body);
+  Future<List<Vendor>> vendors(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/vendors');
+    return body.map((e) => Vendor.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<void> createQuotationItem({
-    required String projectId,
+  Future<void> createVendor({
+    required String spaceId,
     required String name,
-    required double unitPrice,
-    required double quantity,
-    required double costUnitPrice,
+    String? taxId,
+    String? contactPerson,
+    String? contactPhone,
+    String? address,
+    String? tradeCategory,
+    int? rating,
+    String? characteristics,
+    String? bankAccount,
+    String? accountHolder,
+    String? bankBranch,
+    String? note,
   }) async {
-    await _post('/projects/$projectId/quotation-items', {
+    await _post('/spaces/$spaceId/vendors', {
       'name': name,
-      'unitPrice': unitPrice,
-      'quantity': quantity,
-      'costUnitPrice': costUnitPrice,
+      if (taxId != null && taxId.isNotEmpty) 'taxId': taxId,
+      if (contactPerson != null && contactPerson.isNotEmpty) 'contactPerson': contactPerson,
+      if (contactPhone != null && contactPhone.isNotEmpty) 'contactPhone': contactPhone,
+      if (address != null && address.isNotEmpty) 'address': address,
+      if (tradeCategory != null && tradeCategory.isNotEmpty) 'tradeCategory': tradeCategory,
+      if (rating != null) 'rating': rating,
+      if (characteristics != null && characteristics.isNotEmpty) 'characteristics': characteristics,
+      if (bankAccount != null && bankAccount.isNotEmpty) 'bankAccount': bankAccount,
+      if (accountHolder != null && accountHolder.isNotEmpty) 'accountHolder': accountHolder,
+      if (bankBranch != null && bankBranch.isNotEmpty) 'bankBranch': bankBranch,
+      if (note != null && note.isNotEmpty) 'note': note,
     });
   }
 
-  Future<void> updateQuotationItem({
+  Future<void> updateVendor({
+    required String spaceId,
+    required String vendorId,
+    String? name,
+    String? taxId,
+    String? contactPerson,
+    String? contactPhone,
+    String? address,
+    String? tradeCategory,
+    int? rating,
+    String? characteristics,
+    String? bankAccount,
+    String? accountHolder,
+    String? bankBranch,
+    String? note,
+  }) async {
+    await _patch('/spaces/$spaceId/vendors/$vendorId', {
+      if (name != null) 'name': name,
+      if (taxId != null) 'taxId': taxId,
+      if (contactPerson != null) 'contactPerson': contactPerson,
+      if (contactPhone != null) 'contactPhone': contactPhone,
+      if (address != null) 'address': address,
+      if (tradeCategory != null) 'tradeCategory': tradeCategory,
+      if (rating != null) 'rating': rating,
+      if (characteristics != null) 'characteristics': characteristics,
+      if (bankAccount != null) 'bankAccount': bankAccount,
+      if (accountHolder != null) 'accountHolder': accountHolder,
+      if (bankBranch != null) 'bankBranch': bankBranch,
+      if (note != null) 'note': note,
+    });
+  }
+
+  Future<void> deleteVendor(String spaceId, String vendorId) async {
+    await _delete('/spaces/$spaceId/vendors/$vendorId');
+  }
+
+  Future<List<VendorHistoryEntry>> vendorHistory(String spaceId, String vendorId) async {
+    final body = await _getList('/spaces/$spaceId/vendors/$vendorId/history');
+    return body.map((e) => VendorHistoryEntry.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // --- 工程財務四表：工程報價單 ---
+
+  Future<EngineeringQuotationTree> engineeringQuotation(String projectId) async {
+    final body = await _get('/projects/$projectId/engineering-quotation');
+    return EngineeringQuotationTree.fromJson(body);
+  }
+
+  Future<EngineeringQuotationTree> createQuotationItem({
+    required String projectId,
+    String? parentId,
+    required String name,
+    String? unit,
+    double? quantity,
+    double? unitPrice,
+    double? costUnitPrice,
+    String? note,
+  }) async {
+    final body = await _post('/projects/$projectId/engineering-quotation/items', {
+      if (parentId != null) 'parentId': parentId,
+      'name': name,
+      if (unit != null && unit.isNotEmpty) 'unit': unit,
+      if (quantity != null) 'quantity': quantity,
+      if (unitPrice != null) 'unitPrice': unitPrice,
+      if (costUnitPrice != null) 'costUnitPrice': costUnitPrice,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+    return EngineeringQuotationTree.fromJson(body);
+  }
+
+  Future<EngineeringQuotationTree> updateQuotationItem({
     required String projectId,
     required String itemId,
+    Object? parentId = _unset,
     String? name,
-    double? unitPrice,
+    String? unit,
     double? quantity,
+    double? unitPrice,
     double? costUnitPrice,
+    String? note,
   }) async {
-    await _patch('/projects/$projectId/quotation-items/$itemId', {
+    final body = await _patch('/projects/$projectId/engineering-quotation/items/$itemId', {
+      if (!identical(parentId, _unset)) 'parentId': parentId,
       if (name != null) 'name': name,
-      if (unitPrice != null) 'unitPrice': unitPrice,
+      if (unit != null) 'unit': unit,
       if (quantity != null) 'quantity': quantity,
+      if (unitPrice != null) 'unitPrice': unitPrice,
       if (costUnitPrice != null) 'costUnitPrice': costUnitPrice,
+      if (note != null) 'note': note,
     });
+    return EngineeringQuotationTree.fromJson(body);
   }
 
-  Future<void> deleteQuotationItem(String projectId, String itemId) async {
-    await _delete('/projects/$projectId/quotation-items/$itemId');
+  Future<EngineeringQuotationTree> deleteQuotationItem(String projectId, String itemId) async {
+    final body = await _deleteWithBody('/projects/$projectId/engineering-quotation/items/$itemId');
+    return EngineeringQuotationTree.fromJson(body);
   }
 
-  Future<void> reorderQuotationItem({
+  Future<EngineeringQuotationTree> reorderQuotationItem({
     required String projectId,
     required String itemId,
     required String targetId,
     required bool insertAfter,
   }) async {
-    await _patchIgnoreBody('/projects/$projectId/quotation-items/$itemId/reorder', {
+    final body = await _patch('/projects/$projectId/engineering-quotation/items/$itemId/reorder', {
       'targetId': targetId,
       'insertAfter': insertAfter,
     });
+    return EngineeringQuotationTree.fromJson(body);
   }
 
-  Future<QuotationList> applyQuotationTarget({
+  Future<EngineeringQuotationTree> applyMarginTarget({
     required String projectId,
-    required String mode,
-    double? targetMarginRate,
-    double? targetTotalAmount,
+    required double targetMarginPercent,
     List<String>? itemIds,
   }) async {
-    final body = await _post('/projects/$projectId/quotation-items/apply-target', {
-      'mode': mode,
-      if (targetMarginRate != null) 'targetMarginRate': targetMarginRate,
-      if (targetTotalAmount != null) 'targetTotalAmount': targetTotalAmount,
+    final body = await _post('/projects/$projectId/engineering-quotation/apply-margin-target', {
+      'targetMarginPercent': targetMarginPercent,
       if (itemIds != null) 'itemIds': itemIds,
     });
-    return QuotationList.fromJson(body);
+    return EngineeringQuotationTree.fromJson(body);
   }
 
-  Future<List<ProcurementComparison>> procurementComparisons(String projectId) async {
-    final body = await _getList('/projects/$projectId/procurement-comparisons');
-    return body.map((e) => ProcurementComparison.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
-  Future<void> createProcurementComparison(String projectId, String scopeName) async {
-    await _post('/projects/$projectId/procurement-comparisons', {'scopeName': scopeName});
-  }
-
-  Future<void> updateProcurementComparison({
+  Future<EngineeringQuotationTree> applyNegotiatedTotal({
     required String projectId,
-    required String comparisonId,
-    required String scopeName,
+    required double negotiatedTotalAmount,
+    List<String>? itemIds,
   }) async {
-    await _patch('/projects/$projectId/procurement-comparisons/$comparisonId', {'scopeName': scopeName});
-  }
-
-  Future<void> deleteProcurementComparison(String projectId, String comparisonId) async {
-    await _delete('/projects/$projectId/procurement-comparisons/$comparisonId');
-  }
-
-  Future<void> addVendorQuote({
-    required String projectId,
-    required String comparisonId,
-    required String vendorName,
-    required double quotedAmount,
-    String? note,
-  }) async {
-    await _post('/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes', {
-      'vendorName': vendorName,
-      'quotedAmount': quotedAmount,
-      if (note != null && note.isNotEmpty) 'note': note,
+    final body = await _post('/projects/$projectId/engineering-quotation/apply-negotiated-total', {
+      'negotiatedTotalAmount': negotiatedTotalAmount,
+      if (itemIds != null) 'itemIds': itemIds,
     });
+    return EngineeringQuotationTree.fromJson(body);
   }
 
-  Future<void> updateVendorQuote({
+  Future<EngineeringQuotationTree> createSurchargeItem({
     required String projectId,
-    required String comparisonId,
-    required String vendorQuoteId,
-    String? vendorName,
-    double? quotedAmount,
-    String? note,
+    required String name,
+    required double percent,
+    bool isTaxLike = false,
   }) async {
-    await _patch(
-      '/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId',
-      {
-        if (vendorName != null) 'vendorName': vendorName,
-        if (quotedAmount != null) 'quotedAmount': quotedAmount,
-        if (note != null) 'note': note,
-      },
-    );
-  }
-
-  Future<void> deleteVendorQuote({
-    required String projectId,
-    required String comparisonId,
-    required String vendorQuoteId,
-  }) async {
-    await _delete('/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId');
-  }
-
-  Future<void> uploadVendorQuoteAttachment({
-    required String projectId,
-    required String comparisonId,
-    required String vendorQuoteId,
-    required String fileName,
-    required List<int> bytes,
-  }) async {
-    final uri = Uri.parse(
-      '$baseUrl/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId/attachment',
-    );
-    final request = http.MultipartRequest('POST', uri)
-      ..headers.addAll({if (_token != null) 'Authorization': 'Bearer $_token'})
-      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
-    final streamed = await request.send();
-    final res = await http.Response.fromStream(streamed);
-    _checkStatus(res);
-  }
-
-  Future<void> selectVendorQuote({
-    required String projectId,
-    required String comparisonId,
-    required String vendorQuoteId,
-    double? finalAwardedAmount,
-  }) async {
-    await _post('/projects/$projectId/procurement-comparisons/$comparisonId/select', {
-      'vendorQuoteId': vendorQuoteId,
-      if (finalAwardedAmount != null) 'finalAwardedAmount': finalAwardedAmount,
+    final body = await _post('/projects/$projectId/engineering-quotation/surcharges', {
+      'name': name,
+      'percent': percent,
+      'isTaxLike': isTaxLike,
     });
+    return EngineeringQuotationTree.fromJson(body);
+  }
+
+  Future<EngineeringQuotationTree> updateSurchargeItem({
+    required String projectId,
+    required String surchargeId,
+    String? name,
+    double? percent,
+    bool? isTaxLike,
+  }) async {
+    final body = await _patch('/projects/$projectId/engineering-quotation/surcharges/$surchargeId', {
+      if (name != null) 'name': name,
+      if (percent != null) 'percent': percent,
+      if (isTaxLike != null) 'isTaxLike': isTaxLike,
+    });
+    return EngineeringQuotationTree.fromJson(body);
+  }
+
+  Future<EngineeringQuotationTree> deleteSurchargeItem(String projectId, String surchargeId) async {
+    final body = await _deleteWithBody('/projects/$projectId/engineering-quotation/surcharges/$surchargeId');
+    return EngineeringQuotationTree.fromJson(body);
+  }
+
+  // --- 工程財務四表：成控管制表（①初始管制表／②③成控列） ---
+
+  Future<CostControlInitialSheet> costControlInitialSheet(String projectId) async {
+    final body = await _get('/projects/$projectId/cost-control-initial-sheet');
+    return CostControlInitialSheet.fromJson(body);
+  }
+
+  Future<CostControlInitialSheet> submitCostControlInitialSheet({
+    required String projectId,
+    required List<String> approverUserIds,
+  }) async {
+    final body = await _post('/projects/$projectId/cost-control-initial-sheet/submit', {
+      'approverUserIds': approverUserIds,
+    });
+    return CostControlInitialSheet.fromJson(body);
+  }
+
+  Future<List<DocumentApprovalSummary>> costControlInitialSheetApprovals(String projectId) async {
+    final body = await _getList('/projects/$projectId/cost-control-initial-sheet/approvals');
+    return body.map((e) => DocumentApprovalSummary.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<List<CostControlRow>> costControlRows(String projectId) async {
@@ -1399,14 +1472,16 @@ class ApiClient {
     return CostControlBreakdown.fromJson(body);
   }
 
-  Future<void> addCostControlAdjustment({
+  /// side 固定是 OWNER（業主端追加減，來自②拆項表跟報價單的差異）——VENDOR
+  /// 端只能透過請款單的追加款產生，這裡不開放。
+  Future<void> addCostControlOwnerAdjustment({
     required String projectId,
     required String rowId,
     required String type,
     required double amount,
     String? note,
   }) async {
-    await _post('/projects/$projectId/cost-control-rows/$rowId/adjustments', {
+    await _post('/projects/$projectId/cost-control-rows/$rowId/owner-adjustments', {
       'type': type,
       'amount': amount,
       if (note != null && note.isNotEmpty) 'note': note,
@@ -1421,53 +1496,197 @@ class ApiClient {
     await _delete('/projects/$projectId/cost-control-rows/$rowId/adjustments/$adjustmentId');
   }
 
-  Future<List<PaymentRequest>> paymentRequests(String projectId) async {
-    final body = await _getList('/projects/$projectId/payment-requests');
-    return body.map((e) => PaymentRequest.fromJson(e as Map<String, dynamic>)).toList();
+  // --- 工程財務四表：採發比價表 ---
+
+  Future<List<ProcurementComparison>> procurementComparisons(String projectId) async {
+    final body = await _getList('/projects/$projectId/procurement-comparisons');
+    return body.map((e) => ProcurementComparison.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<void> createPaymentRequest({
+  Future<void> createProcurementComparison({
+    required String projectId,
+    required String quotationLineItemId,
+    required ProcurementInspectionMethod inspectionMethod,
+    String? inspectionOtherNote,
+    required ProcurementPaymentMethod paymentMethod,
+    String? paymentOtherNote,
+  }) async {
+    await _post('/projects/$projectId/procurement-comparisons', {
+      'quotationLineItemId': quotationLineItemId,
+      'inspectionMethod': inspectionMethod.wireValue,
+      if (inspectionOtherNote != null && inspectionOtherNote.isNotEmpty) 'inspectionOtherNote': inspectionOtherNote,
+      'paymentMethod': paymentMethod.wireValue,
+      if (paymentOtherNote != null && paymentOtherNote.isNotEmpty) 'paymentOtherNote': paymentOtherNote,
+    });
+  }
+
+  Future<void> updateProcurementComparison({
+    required String projectId,
+    required String comparisonId,
+    ProcurementInspectionMethod? inspectionMethod,
+    String? inspectionOtherNote,
+    ProcurementPaymentMethod? paymentMethod,
+    String? paymentOtherNote,
+  }) async {
+    await _patch('/projects/$projectId/procurement-comparisons/$comparisonId', {
+      if (inspectionMethod != null) 'inspectionMethod': inspectionMethod.wireValue,
+      if (inspectionOtherNote != null) 'inspectionOtherNote': inspectionOtherNote,
+      if (paymentMethod != null) 'paymentMethod': paymentMethod.wireValue,
+      if (paymentOtherNote != null) 'paymentOtherNote': paymentOtherNote,
+    });
+  }
+
+  Future<void> deleteProcurementComparison(String projectId, String comparisonId) async {
+    await _delete('/projects/$projectId/procurement-comparisons/$comparisonId');
+  }
+
+  Future<void> addVendorQuote({
+    required String projectId,
+    required String comparisonId,
+    required String vendorId,
+    required double quotedAmount,
+    double? negotiatedAmount,
+    String? note,
+  }) async {
+    await _post('/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes', {
+      'vendorId': vendorId,
+      'quotedAmount': quotedAmount,
+      if (negotiatedAmount != null) 'negotiatedAmount': negotiatedAmount,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> updateVendorQuote({
+    required String projectId,
+    required String comparisonId,
+    required String vendorQuoteId,
+    String? vendorId,
+    double? quotedAmount,
+    double? negotiatedAmount,
+    String? note,
+  }) async {
+    await _patch('/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId', {
+      if (vendorId != null) 'vendorId': vendorId,
+      if (quotedAmount != null) 'quotedAmount': quotedAmount,
+      if (negotiatedAmount != null) 'negotiatedAmount': negotiatedAmount,
+      if (note != null) 'note': note,
+    });
+  }
+
+  Future<void> deleteVendorQuote({
+    required String projectId,
+    required String comparisonId,
+    required String vendorQuoteId,
+  }) async {
+    await _delete('/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId');
+  }
+
+  Future<void> uploadVendorQuoteAttachment({
+    required String projectId,
+    required String comparisonId,
+    required String vendorQuoteId,
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/projects/$projectId/procurement-comparisons/$comparisonId/vendor-quotes/$vendorQuoteId/attachment',
+    );
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll({if (_token != null) 'Authorization': 'Bearer $_token'})
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    _checkStatus(res);
+  }
+
+  Future<void> selectVendorQuote({
+    required String projectId,
+    required String comparisonId,
+    required String vendorQuoteId,
+    double? finalAwardedAmount,
+  }) async {
+    await _post('/projects/$projectId/procurement-comparisons/$comparisonId/select', {
+      'vendorQuoteId': vendorQuoteId,
+      if (finalAwardedAmount != null) 'finalAwardedAmount': finalAwardedAmount,
+    });
+  }
+
+  Future<void> submitProcurementComparison({
+    required String projectId,
+    required String comparisonId,
+    required List<String> approverUserIds,
+  }) async {
+    await _post('/projects/$projectId/procurement-comparisons/$comparisonId/submit', {
+      'approverUserIds': approverUserIds,
+    });
+  }
+
+  Future<List<DocumentApprovalSummary>> procurementComparisonApprovals({
+    required String projectId,
+    required String comparisonId,
+  }) async {
+    final body = await _getList('/projects/$projectId/procurement-comparisons/$comparisonId/approvals');
+    return body.map((e) => DocumentApprovalSummary.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // --- 工程財務四表：工程請款單（按期） ---
+
+  Future<List<PaymentRequestPeriod>> paymentRequestPeriods(String projectId) async {
+    final body = await _getList('/projects/$projectId/payment-request-periods');
+    return body.map((e) => PaymentRequestPeriod.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createPaymentRequestPeriod({
     required String projectId,
     required String costControlRowId,
-    required String vendorName,
+    required String periodLabel,
     required double amount,
     required DateTime requestDate,
     String? note,
-    required String salesManagerUserId,
-    required String financeReviewUserId,
-    required String costControlApproverUserId,
-    required String generalManagerUserId,
-    required String accountingUserId,
   }) async {
-    await _post('/projects/$projectId/payment-requests', {
+    await _post('/projects/$projectId/payment-request-periods', {
       'costControlRowId': costControlRowId,
-      'vendorName': vendorName,
+      'periodLabel': periodLabel,
       'amount': amount,
       'requestDate': _dateOnly(requestDate),
       if (note != null && note.isNotEmpty) 'note': note,
-      'salesManagerUserId': salesManagerUserId,
-      'financeReviewUserId': financeReviewUserId,
-      'costControlApproverUserId': costControlApproverUserId,
-      'generalManagerUserId': generalManagerUserId,
-      'accountingUserId': accountingUserId,
     });
   }
 
-  Future<List<PendingPaymentRequestApproval>> pendingPaymentRequestApprovals() async {
-    final body = await _getList('/payment-requests/pending');
-    return body.map((e) => PendingPaymentRequestApproval.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
-  Future<void> decidePaymentRequestStage({
-    required String paymentRequestId,
-    required PaymentRequestStageKey stage,
-    required bool approve,
-    String? comment,
+  /// 追加款——金額＋附件（追加報價單）原子送出。
+  Future<void> addPaymentRequestPeriodAdditionalCharge({
+    required String projectId,
+    required String periodId,
+    required double amount,
+    required String fileName,
+    required List<int> bytes,
   }) async {
-    await _post('/payment-requests/$paymentRequestId/stages/${stage.wireValue}/decide', {
-      'action': approve ? 'APPROVE' : 'REJECT',
-      if (comment != null && comment.isNotEmpty) 'comment': comment,
+    final uri = Uri.parse('$baseUrl/projects/$projectId/payment-request-periods/$periodId/additional-charge');
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll({if (_token != null) 'Authorization': 'Bearer $_token'})
+      ..fields['amount'] = amount.toString()
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    _checkStatus(res);
+  }
+
+  Future<void> submitPaymentRequestPeriod({
+    required String projectId,
+    required String periodId,
+    required List<String> approverUserIds,
+  }) async {
+    await _post('/projects/$projectId/payment-request-periods/$periodId/submit', {
+      'approverUserIds': approverUserIds,
     });
+  }
+
+  Future<List<DocumentApprovalSummary>> paymentRequestPeriodApprovals({
+    required String projectId,
+    required String periodId,
+  }) async {
+    final body = await _getList('/projects/$projectId/payment-request-periods/$periodId/approvals');
+    return body.map((e) => DocumentApprovalSummary.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<void> createFinanceTransaction({

@@ -30,8 +30,11 @@ class PendingApprovalsTab extends ConsumerWidget {
             return Card(
               child: ListTile(
                 leading: const Icon(Icons.fact_check_outlined),
-                title: Text(item.documentName),
-                subtitle: Text('第 ${item.sequence}/${item.totalSteps} 關 · 提交者：${item.submittedByName}'),
+                title: Text(item.targetDisplayName),
+                subtitle: Text(
+                  '第 ${item.sequence}/${item.totalSteps} 關'
+                  '${item.roleLabel != null ? '（${item.roleLabel}）' : ''} · 提交者：${item.submittedByName}',
+                ),
                 onTap: () => _openActionDialog(context, ref, item),
               ),
             );
@@ -88,14 +91,17 @@ class _PendingApprovalActionDialogState extends ConsumerState<_PendingApprovalAc
   Widget build(BuildContext context) {
     final hasComment = _commentController.text.trim().isNotEmpty;
     return AlertDialog(
-      title: Text(widget.item.documentName),
+      title: Text(widget.item.targetDisplayName),
       content: SizedBox(
         width: 360,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('第 ${widget.item.sequence}/${widget.item.totalSteps} 關 · 提交者：${widget.item.submittedByName}'),
+            Text(
+              '第 ${widget.item.sequence}/${widget.item.totalSteps} 關'
+              '${widget.item.roleLabel != null ? '（${widget.item.roleLabel}）' : ''} · 提交者：${widget.item.submittedByName}',
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: _commentController,

@@ -254,7 +254,11 @@ class _PendingApprovalsCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (final a in data)
-                  Text('・${a.documentName}（第 ${a.sequence}/${a.totalSteps} 關，${a.submittedByName} 送簽）'),
+                  Text(
+                    '・${a.targetDisplayName}'
+                    '（第 ${a.sequence}/${a.totalSteps} 關${a.roleLabel != null ? '・${a.roleLabel}' : ''}，'
+                    '${a.submittedByName} 送簽）',
+                  ),
               ],
             ),
     );

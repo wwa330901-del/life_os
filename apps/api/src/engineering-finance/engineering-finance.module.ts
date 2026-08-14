@@ -3,31 +3,40 @@ import { ProjectsModule } from '../projects/projects.module';
 import { SpacesModule } from '../spaces/spaces.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
-import { QuotationItemsController } from './quotation-items.controller';
-import { QuotationItemsService } from './quotation-items.service';
-import { ProcurementComparisonsController } from './procurement-comparisons.controller';
-import { ProcurementComparisonsService } from './procurement-comparisons.service';
+import { DocumentApprovalsModule } from '../document-approvals/document-approvals.module';
+import { VendorsController } from './vendors.controller';
+import { VendorsService } from './vendors.service';
+import { EngineeringQuotationController } from './engineering-quotation.controller';
+import { EngineeringQuotationService } from './engineering-quotation.service';
 import { CostControlController } from './cost-control.controller';
 import { CostControlService } from './cost-control.service';
-import { PaymentRequestsController } from './payment-requests.controller';
-import { PaymentRequestStagesController } from './payment-request-stages.controller';
-import { PaymentRequestsService } from './payment-requests.service';
+import { ProcurementComparisonsController } from './procurement-comparisons.controller';
+import { ProcurementComparisonsService } from './procurement-comparisons.service';
+import { PaymentRequestPeriodsController } from './payment-request-periods.controller';
+import { PaymentRequestPeriodsService } from './payment-request-periods.service';
 
 @Module({
-  imports: [ProjectsModule, SpacesModule, KnowledgeModule, LineNotifierModule],
+  imports: [
+    ProjectsModule,
+    SpacesModule,
+    KnowledgeModule,
+    LineNotifierModule,
+    DocumentApprovalsModule,
+  ],
   controllers: [
-    QuotationItemsController,
-    ProcurementComparisonsController,
+    VendorsController,
+    EngineeringQuotationController,
     CostControlController,
-    PaymentRequestsController,
-    PaymentRequestStagesController,
+    ProcurementComparisonsController,
+    PaymentRequestPeriodsController,
   ],
   providers: [
-    QuotationItemsService,
-    ProcurementComparisonsService,
+    VendorsService,
+    EngineeringQuotationService,
     CostControlService,
-    PaymentRequestsService,
+    ProcurementComparisonsService,
+    PaymentRequestPeriodsService,
   ],
-  exports: [CostControlService],
+  exports: [CostControlService, EngineeringQuotationService],
 })
 export class EngineeringFinanceModule {}

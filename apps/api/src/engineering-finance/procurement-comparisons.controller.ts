@@ -20,14 +20,20 @@ import { UpdateProcurementComparisonDto } from './dto/update-procurement-compari
 import { CreateVendorQuoteDto } from './dto/create-vendor-quote.dto';
 import { UpdateVendorQuoteDto } from './dto/update-vendor-quote.dto';
 import { SelectVendorQuoteDto } from './dto/select-vendor-quote.dto';
+import { SubmitFixedRoleApprovalDto } from './dto/submit-fixed-role-approval.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('projects/:projectId/procurement-comparisons')
 export class ProcurementComparisonsController {
-  constructor(private readonly comparisonsService: ProcurementComparisonsService) {}
+  constructor(
+    private readonly comparisonsService: ProcurementComparisonsService,
+  ) {}
 
   @Get()
-  list(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string) {
+  list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+  ) {
     return this.comparisonsService.list(user.id, projectId);
   }
 
@@ -47,7 +53,12 @@ export class ProcurementComparisonsController {
     @Param('comparisonId') comparisonId: string,
     @Body() dto: UpdateProcurementComparisonDto,
   ) {
-    return this.comparisonsService.update(user.id, projectId, comparisonId, dto);
+    return this.comparisonsService.update(
+      user.id,
+      projectId,
+      comparisonId,
+      dto,
+    );
   }
 
   @Delete(':comparisonId')
@@ -66,7 +77,12 @@ export class ProcurementComparisonsController {
     @Param('comparisonId') comparisonId: string,
     @Body() dto: CreateVendorQuoteDto,
   ) {
-    return this.comparisonsService.addVendorQuote(user.id, projectId, comparisonId, dto);
+    return this.comparisonsService.addVendorQuote(
+      user.id,
+      projectId,
+      comparisonId,
+      dto,
+    );
   }
 
   @Patch(':comparisonId/vendor-quotes/:vendorQuoteId')
@@ -77,7 +93,13 @@ export class ProcurementComparisonsController {
     @Param('vendorQuoteId') vendorQuoteId: string,
     @Body() dto: UpdateVendorQuoteDto,
   ) {
-    return this.comparisonsService.updateVendorQuote(user.id, projectId, comparisonId, vendorQuoteId, dto);
+    return this.comparisonsService.updateVendorQuote(
+      user.id,
+      projectId,
+      comparisonId,
+      vendorQuoteId,
+      dto,
+    );
   }
 
   @Delete(':comparisonId/vendor-quotes/:vendorQuoteId')
@@ -87,7 +109,12 @@ export class ProcurementComparisonsController {
     @Param('comparisonId') comparisonId: string,
     @Param('vendorQuoteId') vendorQuoteId: string,
   ) {
-    return this.comparisonsService.removeVendorQuote(user.id, projectId, comparisonId, vendorQuoteId);
+    return this.comparisonsService.removeVendorQuote(
+      user.id,
+      projectId,
+      comparisonId,
+      vendorQuoteId,
+    );
   }
 
   @Post(':comparisonId/vendor-quotes/:vendorQuoteId/attachment')
@@ -99,7 +126,13 @@ export class ProcurementComparisonsController {
     @Param('vendorQuoteId') vendorQuoteId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.comparisonsService.uploadAttachment(user.id, projectId, comparisonId, vendorQuoteId, file);
+    return this.comparisonsService.uploadAttachment(
+      user.id,
+      projectId,
+      comparisonId,
+      vendorQuoteId,
+      file,
+    );
   }
 
   @Post(':comparisonId/select')
@@ -109,6 +142,35 @@ export class ProcurementComparisonsController {
     @Param('comparisonId') comparisonId: string,
     @Body() dto: SelectVendorQuoteDto,
   ) {
-    return this.comparisonsService.selectVendor(user.id, projectId, comparisonId, dto);
+    return this.comparisonsService.selectVendor(
+      user.id,
+      projectId,
+      comparisonId,
+      dto,
+    );
+  }
+
+  @Post(':comparisonId/submit')
+  submit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('comparisonId') comparisonId: string,
+    @Body() dto: SubmitFixedRoleApprovalDto,
+  ) {
+    return this.comparisonsService.submit(
+      user.id,
+      projectId,
+      comparisonId,
+      dto,
+    );
+  }
+
+  @Get(':comparisonId/approvals')
+  history(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('comparisonId') comparisonId: string,
+  ) {
+    return this.comparisonsService.history(user.id, projectId, comparisonId);
   }
 }

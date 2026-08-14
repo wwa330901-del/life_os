@@ -83,7 +83,7 @@ class _SubmissionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Text(approval.documentName, style: Theme.of(context).textTheme.titleMedium)),
+                Expanded(child: Text(approval.targetDisplayName, style: Theme.of(context).textTheme.titleMedium)),
                 _StatusBadge(status: approval.status),
               ],
             ),
@@ -168,7 +168,10 @@ class _StepRowState extends ConsumerState<_StepRow> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${step.sequence}. ${step.approverName} · ${step.status.label}'),
+          Text(
+            '${step.sequence}. ${step.roleLabel != null ? '${step.roleLabel} ' : ''}'
+            '${step.approverName} · ${step.status.label}',
+          ),
           if (step.decisionComment != null && step.decisionComment!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 12),

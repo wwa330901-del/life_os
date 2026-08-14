@@ -29,6 +29,11 @@ export class GeneratedDocumentApprovalsController {
     @Param('documentId') documentId: string,
     @Body() dto: SubmitDocumentApprovalDto,
   ) {
-    return this.service.submit(user.id, projectId, documentId, dto.approverUserIds);
+    return this.service.submit(
+      user.id,
+      projectId,
+      documentId,
+      dto.approverUserIds,
+    );
   }
 }
