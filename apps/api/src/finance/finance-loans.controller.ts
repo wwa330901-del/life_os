@@ -20,10 +20,14 @@ export class FinanceLoansController {
     @Param('spaceId') spaceId: string,
     @Query('cursor') cursor?: string,
     @Query('settled') settled?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     return this.service.list(user.id, spaceId, {
       cursor,
       settled: settled === undefined ? undefined : settled === 'true',
+      from: from ? new Date(from) : undefined,
+      to: to ? new Date(to) : undefined,
     });
   }
 

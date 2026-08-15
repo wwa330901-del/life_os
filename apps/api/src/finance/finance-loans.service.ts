@@ -35,16 +35,27 @@ export class FinanceLoansService {
    * paginate at all: an old unsettled loan must always land on page 1 of
    * the "未結清" view regardless of `createdAt`, which it wouldn't if
    * pagination were applied to the unfiltered list and settled/unsettled
-   * were sorted out client-side after the fact. */
+   * were sorted out client-side after the fact. `from`/`to` (both
+   * inclusive) filter by the loan's `initialTransaction.date` — used by the
+   * App's date/week/month history search, kept separate from the
+   * default unsettled-only view. */
   async list(
     userId: string,
     spaceId: string,
-    filter: { cursor?: string; settled?: boolean } = {},
+    filter: { cursor?: string; settled?: boolean; from?: Date; to?: Date } = {},
   ) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const take = 30;
     const rows = await this.prisma.financeLoan.findMany({
-      where: { spaceId, ...(filter.settled !== undefined && { settled: filter.settled }) },
+      where: {
+        spaceId,
+        ...(filter.settled !== undefined && { settled: filter.settled }),
+        ...((filter.from || filter.to) && {
+          initialTransaction: {
+            date: { ...(filter.from && { gte: filter.from }), ...(filter.to && { lte: filter.to }) },
+          },
+        }),
+      },
       include: loanInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: take + 1,

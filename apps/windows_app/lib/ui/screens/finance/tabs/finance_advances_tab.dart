@@ -6,6 +6,7 @@ import '../../../../core/models/finance.dart';
 import '../../../../core/models/project.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
+import '../widgets/date_range_filter.dart';
 import '../widgets/finance_format.dart';
 
 /// 工作上先幫忙出錢，之後公司/專案還你 — same shape/mechanic as `FinanceLoansTab`
@@ -23,9 +24,12 @@ class FinanceAdvancesTab extends ConsumerStatefulWidget {
 
 class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
   bool _showSettled = false;
+  DateTime? _from;
+  DateTime? _to;
   final _scrollController = ScrollController();
 
-  FinanceAdvancesQuery get _query => (spaceId: widget.spaceId, settled: _showSettled ? null : false);
+  FinanceAdvancesQuery get _query =>
+      (spaceId: widget.spaceId, settled: _showSettled ? null : false, from: _from, to: _to);
 
   @override
   void initState() {
@@ -76,6 +80,12 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           FilterChip(
+                            label: Text(dateRangeFilterLabel(_from, _to)),
+                            selected: _from != null || _to != null,
+                            onSelected: (_) => _openDateRangeFilter(context),
+                          ),
+                          const SizedBox(width: 8),
+                          FilterChip(
                             label: const Text('顯示已收回'),
                             selected: _showSettled,
                             onSelected: (v) => setState(() => _showSettled = v),
@@ -125,6 +135,15 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
   }
 
   void _invalidate() => ref.invalidate(financeAdvancesProvider(_query));
+
+  Future<void> _openDateRangeFilter(BuildContext context) async {
+    final result = await showDateRangeFilterDialog(context, initialFrom: _from, initialTo: _to);
+    if (result == null) return;
+    setState(() {
+      _from = result.$1;
+      _to = result.$2;
+    });
+  }
 
   Future<void> _delete(BuildContext context, FinanceAdvance advance) async {
     final confirmed = await showDialog<bool>(

@@ -30,11 +30,13 @@ export class FinanceAdvancesService {
   /** Cursor-paginated (30/page), optionally filtered by `projectId`/`settled`
    * — see `FinanceLoansService.list`'s doc comment for why `settled` filters
    * at the query level against a persisted column rather than being sorted
-   * out client-side after an unfiltered page load. */
+   * out client-side after an unfiltered page load. `from`/`to` (both
+   * inclusive) filter by the advance's `initialTransaction.date` — used by
+   * the App's date/week/month history search. */
   async list(
     userId: string,
     spaceId: string,
-    filter: { projectId?: string; cursor?: string; settled?: boolean } = {},
+    filter: { projectId?: string; cursor?: string; settled?: boolean; from?: Date; to?: Date } = {},
   ) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const take = 30;
@@ -43,6 +45,11 @@ export class FinanceAdvancesService {
         spaceId,
         ...(filter.projectId && { projectId: filter.projectId }),
         ...(filter.settled !== undefined && { settled: filter.settled }),
+        ...((filter.from || filter.to) && {
+          initialTransaction: {
+            date: { ...(filter.from && { gte: filter.from }), ...(filter.to && { lte: filter.to }) },
+          },
+        }),
       },
       include: advanceInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

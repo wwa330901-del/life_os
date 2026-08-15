@@ -73,11 +73,13 @@ final financeRecurringTransactionsProvider = FutureProvider.autoDispose
       return ref.read(apiClientProvider).listFinanceRecurringTransactions(spaceId);
     });
 
-/// (spaceId, settled) — `settled: false`/`true` filters at the query level
-/// (backed by the real `settled` column so an old unsettled loan always
-/// lands on page 1, see 大系統V1.54.0); `settled: null` = every loan,
-/// currently unused but kept for parity with the backend's optional filter.
-typedef FinanceLoansQuery = ({String spaceId, bool? settled});
+/// (spaceId, settled, from, to) — `settled: false`/`true` filters at the
+/// query level (backed by the real `settled` column so an old unsettled
+/// loan always lands on page 1, see 大系統V1.54.0); `settled: null` = every
+/// loan, currently unused but kept for parity with the backend's optional
+/// filter. `from`/`to` (both inclusive, both nullable) filter by the loan's
+/// date — used by the 歷史查詢 date/week/month range picker.
+typedef FinanceLoansQuery = ({String spaceId, bool? settled, DateTime? from, DateTime? to});
 
 /// Cursor-paginated (30/page) — mirrors `StockTransactionsPageState`'s
 /// shape/loadMore pattern.
@@ -107,7 +109,7 @@ class FinanceLoansNotifier extends AsyncNotifier<FinanceLoansPageState> {
   Future<FinanceLoansPageState> build() async {
     final page = await ref
         .read(apiClientProvider)
-        .listFinanceLoans(query.spaceId, settled: query.settled);
+        .listFinanceLoans(query.spaceId, settled: query.settled, from: query.from, to: query.to);
     return FinanceLoansPageState(items: page.items, cursor: page.nextCursor);
   }
 
@@ -117,7 +119,13 @@ class FinanceLoansNotifier extends AsyncNotifier<FinanceLoansPageState> {
     state = AsyncData(current.copyWith(isLoadingMore: true));
     final page = await ref
         .read(apiClientProvider)
-        .listFinanceLoans(query.spaceId, settled: query.settled, cursor: current.cursor);
+        .listFinanceLoans(
+          query.spaceId,
+          settled: query.settled,
+          from: query.from,
+          to: query.to,
+          cursor: current.cursor,
+        );
     state = AsyncData(
       FinanceLoansPageState(items: [...current.items, ...page.items], cursor: page.nextCursor),
     );
@@ -133,8 +141,8 @@ final financeLoanInvitesReceivedProvider = FutureProvider.autoDispose<List<Finan
   return ref.read(apiClientProvider).listReceivedFinanceLoanInvites();
 });
 
-/// (spaceId, settled) — same shape/reasoning as [FinanceLoansQuery].
-typedef FinanceAdvancesQuery = ({String spaceId, bool? settled});
+/// (spaceId, settled, from, to) — same shape/reasoning as [FinanceLoansQuery].
+typedef FinanceAdvancesQuery = ({String spaceId, bool? settled, DateTime? from, DateTime? to});
 
 /// Cursor-paginated (30/page) — mirrors [FinanceLoansPageState].
 class FinanceAdvancesPageState {
@@ -166,7 +174,7 @@ class FinanceAdvancesNotifier extends AsyncNotifier<FinanceAdvancesPageState> {
   Future<FinanceAdvancesPageState> build() async {
     final page = await ref
         .read(apiClientProvider)
-        .listFinanceAdvances(query.spaceId, settled: query.settled);
+        .listFinanceAdvances(query.spaceId, settled: query.settled, from: query.from, to: query.to);
     return FinanceAdvancesPageState(items: page.items, cursor: page.nextCursor);
   }
 
@@ -176,7 +184,13 @@ class FinanceAdvancesNotifier extends AsyncNotifier<FinanceAdvancesPageState> {
     state = AsyncData(current.copyWith(isLoadingMore: true));
     final page = await ref
         .read(apiClientProvider)
-        .listFinanceAdvances(query.spaceId, settled: query.settled, cursor: current.cursor);
+        .listFinanceAdvances(
+          query.spaceId,
+          settled: query.settled,
+          from: query.from,
+          to: query.to,
+          cursor: current.cursor,
+        );
     state = AsyncData(
       FinanceAdvancesPageState(items: [...current.items, ...page.items], cursor: page.nextCursor),
     );

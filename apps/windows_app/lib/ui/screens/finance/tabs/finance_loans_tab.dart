@@ -7,6 +7,7 @@ import '../../../../core/models/friend.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../../../../state/friend_provider.dart';
+import '../widgets/date_range_filter.dart';
 import '../widgets/finance_format.dart';
 
 /// 跟人借錢/借錢給人 — a lightweight receivable/payable ledger, independent
@@ -25,9 +26,12 @@ class FinanceLoansTab extends ConsumerStatefulWidget {
 
 class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
   bool _showSettled = false;
+  DateTime? _from;
+  DateTime? _to;
   final _scrollController = ScrollController();
 
-  FinanceLoansQuery get _query => (spaceId: widget.spaceId, settled: _showSettled ? null : false);
+  FinanceLoansQuery get _query =>
+      (spaceId: widget.spaceId, settled: _showSettled ? null : false, from: _from, to: _to);
 
   @override
   void initState() {
@@ -76,6 +80,12 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           const _PendingLoanInvitesButton(),
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            label: Text(dateRangeFilterLabel(_from, _to)),
+                            selected: _from != null || _to != null,
+                            onSelected: (_) => _openDateRangeFilter(context),
+                          ),
                           const SizedBox(width: 8),
                           FilterChip(
                             label: const Text('顯示已結清'),
@@ -130,6 +140,15 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
   }
 
   void _invalidate() => ref.invalidate(financeLoansProvider(_query));
+
+  Future<void> _openDateRangeFilter(BuildContext context) async {
+    final result = await showDateRangeFilterDialog(context, initialFrom: _from, initialTo: _to);
+    if (result == null) return;
+    setState(() {
+      _from = result.$1;
+      _to = result.$2;
+    });
+  }
 
   /// 2026-08-06 起邀請對象必須先是好友——從好友列表選，不再打 email（要
   /// 加好友請去側邊欄的「好友」）。

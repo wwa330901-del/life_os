@@ -12,7 +12,7 @@
 ; Build with: ISCC.exe installer\life_os.iss
 
 #define MyAppName "元序"
-#define MyAppVersion "2.9.27"
+#define MyAppVersion "2.9.28"
 #define MyAppPublisher "元序"
 #define MyAppExeName "life_os_app.exe"
 

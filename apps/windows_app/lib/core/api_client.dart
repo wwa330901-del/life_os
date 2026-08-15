@@ -1832,8 +1832,19 @@ class ApiClient {
     await _delete('/spaces/$spaceId/finance/recurring-transactions/$id');
   }
 
-  Future<FinanceLoansPage> listFinanceLoans(String spaceId, {String? cursor, bool? settled}) async {
-    final query = _queryString({'cursor': cursor, 'settled': settled?.toString()});
+  Future<FinanceLoansPage> listFinanceLoans(
+    String spaceId, {
+    String? cursor,
+    bool? settled,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final query = _queryString({
+      'cursor': cursor,
+      'settled': settled?.toString(),
+      'from': from != null ? _dateOnly(from) : null,
+      'to': to != null ? _dateOnly(to) : null,
+    });
     final body = await _get('/spaces/$spaceId/finance/loans$query');
     return FinanceLoansPage.fromJson(body);
   }
@@ -1939,11 +1950,15 @@ class ApiClient {
     String? projectId,
     String? cursor,
     bool? settled,
+    DateTime? from,
+    DateTime? to,
   }) async {
     final query = _queryString({
       'projectId': projectId,
       'cursor': cursor,
       'settled': settled?.toString(),
+      'from': from != null ? _dateOnly(from) : null,
+      'to': to != null ? _dateOnly(to) : null,
     });
     final body = await _get('/spaces/$spaceId/finance/advances$query');
     return FinanceAdvancesPage.fromJson(body);
