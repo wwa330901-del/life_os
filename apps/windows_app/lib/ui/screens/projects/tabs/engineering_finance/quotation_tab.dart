@@ -11,26 +11,36 @@ import '../../../finance/widgets/finance_format.dart';
 /// 範本。金額只有最底層細項才有意義，複價/成本複價/毛利率跟往上彙總的
 /// 總額全部是後端現算的衍生值。A（目標毛利率）/B（議價後總金額）兩種批次
 /// 調整各自寫進獨立欄位，不覆蓋使用者自己填的單價。
+///
+/// 總表／詳細表拆成兩個子分頁（2026-08-15）：總表是業主看的彙總視圖（各
+/// 大項複價/成本複價總和＋附加費用清單＋總計，唯讀彙總數字，只有附加費用
+/// 本身可增刪），詳細表才是可編輯的三層樹狀明細，A/B 批次調整按鈕放在
+/// 詳細表這邊（調整結果是寫進詳細表每一列的欄位）。
 class QuotationTab extends ConsumerWidget {
   const QuotationTab({super.key, required this.projectId});
 
   final String projectId;
 
+  static const _subTabs = [Tab(text: '總表'), Tab(text: '詳細表')];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final treeAsync = ref.watch(engineeringQuotationProvider(projectId));
-
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _addOrEditQuotationItem(context, ref, projectId, parentId: null),
-        icon: const Icon(Icons.add),
-        label: const Text('新增大項'),
-      ),
-      body: treeAsync.when(
-        data: (data) => _QuotationBody(projectId: projectId, data: data),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('讀取報價單失敗：$error')),
+    final scheme = Theme.of(context).colorScheme;
+    return DefaultTabController(
+      length: _subTabs.length,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outline.withValues(alpha: 0.25)))),
+            child: const TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: _subTabs),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [_SummaryTab(projectId: projectId), _DetailTab(projectId: projectId)],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -127,8 +137,224 @@ Future<void> _addOrEditQuotationItem(
     }
 }
 
-class _QuotationBody extends ConsumerWidget {
-  const _QuotationBody({required this.projectId, required this.data});
+/// 總表 — 業主看得到的彙總視圖：各大項（頂層節點，不下探中項/細項）的複價
+/// /成本複價總和＋毛利率、附加費用清單、總計。彙總數字全部唯讀（改法在
+/// 詳細表逐項編輯），只有附加費用本身可以在這裡直接增刪。
+class _SummaryTab extends ConsumerWidget {
+  const _SummaryTab({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final treeAsync = ref.watch(engineeringQuotationProvider(projectId));
+    return treeAsync.when(
+      data: (data) => _SummaryBody(projectId: projectId, data: data),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => Center(child: Text('讀取報價單失敗：$error')),
+    );
+  }
+}
+
+class _SummaryBody extends ConsumerWidget {
+  const _SummaryBody({required this.projectId, required this.data});
+
+  final String projectId;
+  final EngineeringQuotationTree data;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final topLevelTotal = data.tree.fold<double>(0, (sum, n) => sum + n.complexPrice);
+    final topLevelCostTotal = data.tree.fold<double>(0, (sum, n) => sum + n.costComplexPrice);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '工程總金額 ${formatAmount(data.grandTotalBeforeSurcharge)}　'
+            '成本 ${formatAmount(data.grandCostTotalBeforeSurcharge)}　'
+            '附加費用 ${formatAmount(data.surchargeTotal)}　'
+            '總計 ${formatAmount(data.grandTotal)}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 16),
+          if (data.tree.isEmpty)
+            const Text('還沒有任何大項，請到「詳細表」新增')
+          else
+            DataTable(
+              columns: const [
+                DataColumn(label: Text('大項')),
+                DataColumn(label: Text('複價'), numeric: true),
+                DataColumn(label: Text('成本複價'), numeric: true),
+                DataColumn(label: Text('毛利率'), numeric: true),
+              ],
+              rows: [
+                for (final node in data.tree)
+                  DataRow(
+                    cells: [
+                      DataCell(Text(node.name)),
+                      DataCell(Text(formatAmount(node.complexPrice))),
+                      DataCell(Text(formatAmount(node.costComplexPrice))),
+                      DataCell(Text('${(node.marginRate * 100).toStringAsFixed(1)}%')),
+                    ],
+                  ),
+                DataRow(
+                  cells: [
+                    const DataCell(Text('合計', style: TextStyle(fontWeight: FontWeight.w700))),
+                    DataCell(Text(formatAmount(topLevelTotal), style: const TextStyle(fontWeight: FontWeight.w700))),
+                    DataCell(Text(formatAmount(topLevelCostTotal), style: const TextStyle(fontWeight: FontWeight.w700))),
+                    const DataCell(Text('')),
+                  ],
+                ),
+              ],
+            ),
+          const SizedBox(height: 32),
+          Row(
+            children: [
+              Text('附加費用', style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              OutlinedButton.icon(
+                onPressed: () => _addOrEditSurcharge(context, ref),
+                icon: const Icon(Icons.add),
+                label: const Text('新增附加費用'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (data.surchargeItems.isEmpty)
+            const Padding(padding: EdgeInsets.symmetric(vertical: 4), child: Text('（尚無附加費用）'))
+          else
+            for (final item in data.surchargeItems)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text('${item.name}　${item.percent}%${item.isTaxLike ? '（稅金特例）' : ''}'),
+                subtitle: Text(formatAmount(item.amount)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      onPressed: () => _addOrEditSurcharge(context, ref, item: item),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      onPressed: () => _deleteSurcharge(context, ref, item),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteSurcharge(BuildContext context, WidgetRef ref, QuotationSurchargeItem item) async {
+    try {
+      await ref.read(apiClientProvider).deleteSurchargeItem(projectId, item.id);
+      ref.invalidate(engineeringQuotationProvider(projectId));
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _addOrEditSurcharge(BuildContext context, WidgetRef ref, {QuotationSurchargeItem? item}) async {
+    final nameController = TextEditingController(text: item?.name ?? '');
+    final percentController = TextEditingController(text: item?.percent.toString() ?? '');
+    bool isTaxLike = item?.isTaxLike ?? false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(item == null ? '新增附加費用' : '編輯附加費用'),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: nameController, decoration: const InputDecoration(labelText: '名稱')),
+                TextField(
+                  controller: percentController,
+                  decoration: const InputDecoration(labelText: '百分比（例如 5 代表 5%）'),
+                  keyboardType: TextInputType.number,
+                ),
+                CheckboxListTile(
+                  value: isTaxLike,
+                  onChanged: (v) => setState(() => isTaxLike = v ?? false),
+                  title: const Text('稅金特例'),
+                  subtitle: const Text('計算基礎是「工程總金額＋其他附加費用」加總後才乘百分比', style: TextStyle(fontSize: 11)),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('儲存')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final name = nameController.text.trim();
+    final percent = double.tryParse(percentController.text.trim());
+    if (name.isEmpty || percent == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('請確認欄位都有正確填寫')));
+      return;
+    }
+    try {
+      final api = ref.read(apiClientProvider);
+      if (item == null) {
+        await api.createSurchargeItem(projectId: projectId, name: name, percent: percent, isTaxLike: isTaxLike);
+      } else {
+        await api.updateSurchargeItem(
+          projectId: projectId,
+          surchargeId: item.id,
+          name: name,
+          percent: percent,
+          isTaxLike: isTaxLike,
+        );
+      }
+      ref.invalidate(engineeringQuotationProvider(projectId));
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+}
+
+/// 詳細表 — 可編輯的三層樹狀明細，A/B 批次調整按鈕放這裡（結果寫進這裡
+/// 每一列的欄位）。
+class _DetailTab extends ConsumerWidget {
+  const _DetailTab({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final treeAsync = ref.watch(engineeringQuotationProvider(projectId));
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _addOrEditQuotationItem(context, ref, projectId, parentId: null),
+        icon: const Icon(Icons.add),
+        label: const Text('新增大項'),
+      ),
+      body: treeAsync.when(
+        data: (data) => _DetailBody(projectId: projectId, data: data),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(child: Text('讀取報價單失敗：$error')),
+      ),
+    );
+  }
+}
+
+class _DetailBody extends ConsumerWidget {
+  const _DetailBody({required this.projectId, required this.data});
 
   final String projectId;
   final EngineeringQuotationTree data;
@@ -141,40 +367,20 @@ class _QuotationBody extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => _applyMarginTarget(context, ref),
-                      icon: const Icon(Icons.calculate_outlined),
-                      label: const Text('A. 設定目標毛利率'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _applyNegotiatedTotal(context, ref),
-                      icon: const Icon(Icons.price_change_outlined),
-                      label: const Text('B. 議價後總金額'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _manageSurcharges(context, ref),
-                      icon: const Icon(Icons.receipt_long_outlined),
-                      label: const Text('附加費用'),
-                    ),
-                  ],
-                ),
+              OutlinedButton.icon(
+                onPressed: () => _applyMarginTarget(context, ref),
+                icon: const Icon(Icons.calculate_outlined),
+                label: const Text('A. 設定目標毛利率'),
               ),
-              const SizedBox(width: 16),
-              Text(
-                '工程總金額 ${formatAmount(data.grandTotalBeforeSurcharge)}　'
-                '成本 ${formatAmount(data.grandCostTotalBeforeSurcharge)}　'
-                '附加費用 ${formatAmount(data.surchargeTotal)}　'
-                '總計 ${formatAmount(data.grandTotal)}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              OutlinedButton.icon(
+                onPressed: () => _applyNegotiatedTotal(context, ref),
+                icon: const Icon(Icons.price_change_outlined),
+                label: const Text('B. 議價後總金額'),
               ),
             ],
           ),
@@ -298,13 +504,6 @@ class _QuotationBody extends ConsumerWidget {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
-
-  Future<void> _manageSurcharges(BuildContext context, WidgetRef ref) async {
-    await showDialog<void>(
-      context: context,
-      builder: (_) => _SurchargeDialog(projectId: projectId, items: data.surchargeItems),
-    );
-  }
 }
 
 class _QuotationHeaderRow extends StatelessWidget {
@@ -421,130 +620,3 @@ class _QuotationItemRow extends ConsumerWidget {
 
 String _numOrDash(double? value) => value == null ? '－' : value.toStringAsFixed(value == value.roundToDouble() ? 0 : 2);
 String _amountOrDash(double? value) => value == null ? '－' : formatAmount(value);
-
-class _SurchargeDialog extends ConsumerWidget {
-  const _SurchargeDialog({required this.projectId, required this.items});
-
-  final String projectId;
-  final List<QuotationSurchargeItem> items;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return AlertDialog(
-      title: const Text('附加費用（總表）'),
-      content: SizedBox(
-        width: 420,
-        height: 360,
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                children: [
-                  for (final item in items)
-                    ListTile(
-                      dense: true,
-                      title: Text('${item.name}　${item.percent}%${item.isTaxLike ? '（稅金特例）' : ''}'),
-                      subtitle: Text(formatAmount(item.amount)),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit_outlined, size: 18),
-                            onPressed: () => _addOrEdit(context, ref, item: item),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 18),
-                            onPressed: () async {
-                              try {
-                                await ref.read(apiClientProvider).deleteSurchargeItem(projectId, item.id);
-                                ref.invalidate(engineeringQuotationProvider(projectId));
-                              } on ApiException catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-                                }
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            OutlinedButton.icon(
-              onPressed: () => _addOrEdit(context, ref),
-              icon: const Icon(Icons.add),
-              label: const Text('新增附加費用'),
-            ),
-          ],
-        ),
-      ),
-      actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉'))],
-    );
-  }
-
-  Future<void> _addOrEdit(BuildContext context, WidgetRef ref, {QuotationSurchargeItem? item}) async {
-    final nameController = TextEditingController(text: item?.name ?? '');
-    final percentController = TextEditingController(text: item?.percent.toString() ?? '');
-    bool isTaxLike = item?.isTaxLike ?? false;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(item == null ? '新增附加費用' : '編輯附加費用'),
-          content: SizedBox(
-            width: 320,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: '名稱')),
-                TextField(
-                  controller: percentController,
-                  decoration: const InputDecoration(labelText: '百分比（例如 5 代表 5%）'),
-                  keyboardType: TextInputType.number,
-                ),
-                CheckboxListTile(
-                  value: isTaxLike,
-                  onChanged: (v) => setState(() => isTaxLike = v ?? false),
-                  title: const Text('稅金特例'),
-                  subtitle: const Text('計算基礎是「工程總金額＋其他附加費用」加總後才乘百分比', style: TextStyle(fontSize: 11)),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('儲存')),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-    final name = nameController.text.trim();
-    final percent = double.tryParse(percentController.text.trim());
-    if (name.isEmpty || percent == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('請確認欄位都有正確填寫')));
-      return;
-    }
-    try {
-      final api = ref.read(apiClientProvider);
-      if (item == null) {
-        await api.createSurchargeItem(projectId: projectId, name: name, percent: percent, isTaxLike: isTaxLike);
-      } else {
-        await api.updateSurchargeItem(
-          projectId: projectId,
-          surchargeId: item.id,
-          name: name,
-          percent: percent,
-          isTaxLike: isTaxLike,
-        );
-      }
-      ref.invalidate(engineeringQuotationProvider(projectId));
-    } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-}
