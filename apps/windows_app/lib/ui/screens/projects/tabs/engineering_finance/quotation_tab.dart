@@ -1,10 +1,17 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:printing/printing.dart';
 
 import '../../../../../core/api_client.dart';
 import '../../../../../core/models/engineering_finance.dart';
+import '../../../../../services/export/quotation_export_service.dart';
 import '../../../../../state/auth_provider.dart';
 import '../../../../../state/engineering_finance_provider.dart';
+import '../../../../../state/project_editor_provider.dart';
+import '../../../../widgets/projects/export/quotation_export_options_dialog.dart';
 import '../../../finance/widgets/finance_format.dart';
 
 /// 工程報價單 — 大項/中項/細項三層自由樹狀結構，20 大類只是預設可刪改的
@@ -33,7 +40,22 @@ class QuotationTab extends ConsumerWidget {
         children: [
           Container(
             decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outline.withValues(alpha: 0.25)))),
-            child: const TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: _subTabs),
+            child: Row(
+              children: [
+                const Expanded(child: TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: _subTabs)),
+                TextButton.icon(
+                  onPressed: () => _exportOrPrint(context, ref, print: true),
+                  icon: const Icon(Icons.print_outlined, size: 18),
+                  label: const Text('預覽列印'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _exportOrPrint(context, ref, print: false),
+                  icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                  label: const Text('匯出 PDF'),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
           ),
           Expanded(
             child: TabBarView(
@@ -43,6 +65,31 @@ class QuotationTab extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _exportOrPrint(BuildContext context, WidgetRef ref, {required bool print}) async {
+    final columns = await QuotationExportOptionsDialog.show(context);
+    if (columns == null || !context.mounted) return;
+
+    final data = await ref.read(engineeringQuotationProvider(projectId).future);
+    if (!context.mounted) return;
+    final projectName = ref.read(projectEditorProvider(projectId)).value?.project.name ?? '';
+
+    final bytes = await QuotationPdfExportService().buildPdf(projectName: projectName, data: data, columns: columns);
+    if (!context.mounted) return;
+
+    if (print) {
+      await Printing.layoutPdf(onLayout: (_) async => bytes, name: '$projectName-工程報價單');
+      return;
+    }
+
+    final location = await getSaveLocation(
+      suggestedName: '$projectName-工程報價單.pdf',
+      acceptedTypeGroups: const [XTypeGroup(label: 'PDF 文件', extensions: ['pdf'])],
+    );
+    if (location == null) return;
+    final path = location.path.endsWith('.pdf') ? location.path : '${location.path}.pdf';
+    await File(path).writeAsBytes(bytes);
   }
 }
 
