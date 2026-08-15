@@ -10,14 +10,15 @@ import '../../../../../state/project_editor_provider.dart';
 import '../../../finance/widgets/finance_format.dart';
 import 'widgets/approval_widgets.dart';
 
-/// 成控管制表 — ①初始管制表（要簽核、簽核通過鎖定）／②拆項表・③執行中
-/// 成控表（同一份 CostControlRow，持續修正，不用簽核）。
+/// 成控管制表 — 初始管制表（要簽核、簽核通過鎖定）／拆項表（結構調整：
+/// 分組/勾選工項/業主端追加減）／執行中成控表（同一份 CostControlRow，
+/// 疊加實際發包/合約/請款進度等執行面欄位，兩者完全連動、不是各自維護）。
 class CostControlTab extends StatelessWidget {
   const CostControlTab({super.key, required this.projectId});
 
   final String projectId;
 
-  static const _subTabs = [Tab(text: '①初始管制表'), Tab(text: '②③拆項表／執行中成控表')];
+  static const _subTabs = [Tab(text: '初始管制表'), Tab(text: '拆項表'), Tab(text: '執行中成控表')];
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +34,11 @@ class CostControlTab extends StatelessWidget {
           ),
           Expanded(
             child: TabBarView(
-              children: [_InitialSheetView(projectId: projectId), _CostControlRowsView(projectId: projectId)],
+              children: [
+                _InitialSheetView(projectId: projectId),
+                _BreakdownRowsView(projectId: projectId),
+                _ExecutionRowsView(projectId: projectId),
+              ],
             ),
           ),
         ],
@@ -148,7 +153,7 @@ class _InitialSheetView extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('①初始管制表簽核歷程'),
+        title: const Text('初始管制表簽核歷程'),
         content: SizedBox(width: 420, height: 400, child: ApprovalHistoryList(approvals: approvals)),
         actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉'))],
       ),
@@ -156,8 +161,11 @@ class _InitialSheetView extends ConsumerWidget {
   }
 }
 
-class _CostControlRowsView extends ConsumerWidget {
-  const _CostControlRowsView({required this.projectId});
+/// 拆項表 — 結構面：新增/刪除成控列、把報價單工項分組進每一列、業主端
+/// 追加/追減（跟原報價單比較後的業主端異動）。跟執行中成控表是同一份
+/// `CostControlRow` 資料，這裡只是不顯示執行面欄位。
+class _BreakdownRowsView extends ConsumerWidget {
+  const _BreakdownRowsView({required this.projectId});
 
   final String projectId;
 
@@ -177,11 +185,11 @@ class _CostControlRowsView extends ConsumerWidget {
           if (rows.isEmpty) return const Center(child: Text('還沒有任何成控列，按右下角新增'));
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-            children: [for (final row in rows) _CostControlRowCard(projectId: projectId, row: row)],
+            children: [for (final row in rows) _BreakdownRowCard(projectId: projectId, row: row)],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('讀取成控管制表失敗：$error')),
+        error: (error, _) => Center(child: Text('讀取拆項表失敗：$error')),
       ),
     );
   }
@@ -209,19 +217,19 @@ class _CostControlRowsView extends ConsumerWidget {
   }
 }
 
-class _CostControlRowCard extends ConsumerWidget {
-  const _CostControlRowCard({required this.projectId, required this.row});
+class _BreakdownRowCard extends ConsumerWidget {
+  const _BreakdownRowCard({required this.projectId, required this.row});
 
   final String projectId;
   final CostControlRow row;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final comparisonsAsync = ref.watch(procurementComparisonsProvider(projectId));
     final quotationAsync = ref.watch(engineeringQuotationProvider(projectId));
     final itemsById = <String, QuotationItemNode>{
       for (final (_, node) in quotationAsync.value?.flattened ?? const <(int, QuotationItemNode)>[]) node.id: node,
     };
+    final ownerAdjustments = row.adjustments.where((a) => a.isOwner).toList();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -243,29 +251,7 @@ class _CostControlRowCard extends ConsumerWidget {
               children: [
                 Text('業主報價 ${formatAmount(row.quoteRevenueTotal)}'),
                 Text('預估成本 ${formatAmount(row.estimatedCostTotal)}'),
-                Text('實際發包 ${row.awardedAmount != null ? formatAmount(row.awardedAmount!) : '未決標'}'),
                 Text('業主追加減 ${formatAmount(row.ownerAdjustmentsTotal)}'),
-                Text('發包追加減 ${formatAmount(row.vendorAdjustmentsTotal)}'),
-                Text('業主合約 ${formatAmount(row.ownerContractAmount)}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text('發包合約 ${formatAmount(row.vendorContractAmount)}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text('已請款 ${formatAmount(row.billedTotal)}（${(row.billedPercent * 100).toStringAsFixed(1)}%）'),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text('連結比價表：', style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(width: 4),
-                Text(
-                  row.procurementComparisonId == null
-                      ? '未連結'
-                      : itemsById[comparisonsAsync.value?.firstWhereOrNull((c) => c.id == row.procurementComparisonId)?.quotationLineItemId]?.name ??
-                            '（比價表）',
-                ),
-                TextButton(
-                  onPressed: () => _linkComparison(context, ref, comparisonsAsync.value ?? const [], itemsById),
-                  child: const Text('變更'),
-                ),
               ],
             ),
             const Divider(height: 24),
@@ -288,13 +274,13 @@ class _CostControlRowCard extends ConsumerWidget {
                 OutlinedButton.icon(
                   onPressed: () => _showBreakdown(context, ref),
                   icon: const Icon(Icons.list_alt_outlined),
-                  label: const Text('拆項表'),
+                  label: const Text('拆項表明細'),
                 ),
               ],
             ),
             const Divider(height: 24),
-            Text('追加/追減', style: Theme.of(context).textTheme.bodyMedium),
-            for (final adjustment in row.adjustments)
+            Text('業主端追加/追減', style: Theme.of(context).textTheme.bodyMedium),
+            for (final adjustment in ownerAdjustments)
               ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
@@ -304,15 +290,12 @@ class _CostControlRowCard extends ConsumerWidget {
                   size: 18,
                 ),
                 title: Text(
-                  '${adjustment.isOwner ? '業主端' : '發包端'}　${formatAmount(adjustment.amount)}'
-                  '${adjustment.note != null ? '　${adjustment.note}' : ''}',
+                  '${formatAmount(adjustment.amount)}${adjustment.note != null ? '　${adjustment.note}' : ''}',
                 ),
-                trailing: adjustment.isOwner
-                    ? IconButton(
-                        icon: const Icon(Icons.close, size: 16),
-                        onPressed: () => _deleteAdjustment(context, ref, adjustment),
-                      )
-                    : null,
+                trailing: IconButton(
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: () => _deleteAdjustment(context, ref, adjustment),
+                ),
               ),
             OutlinedButton.icon(
               onPressed: () => _addAdjustment(context, ref),
@@ -340,40 +323,6 @@ class _CostControlRowCard extends ConsumerWidget {
     if (confirmed != true) return;
     try {
       await ref.read(apiClientProvider).deleteCostControlRow(projectId, row.id);
-      ref.invalidate(costControlRowsProvider(projectId));
-    } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  Future<void> _linkComparison(
-    BuildContext context,
-    WidgetRef ref,
-    List<ProcurementComparison> comparisons,
-    Map<String, QuotationItemNode> itemsById,
-  ) async {
-    final selected = await showDialog<String?>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('連結採發比價表'),
-        children: [
-          SimpleDialogOption(onPressed: () => Navigator.of(context).pop(null), child: const Text('（不連結）')),
-          for (final c in comparisons)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(context).pop(c.id),
-              child: Text(itemsById[c.quotationLineItemId]?.name ?? c.id),
-            ),
-        ],
-      ),
-    );
-    if (!context.mounted) return;
-    try {
-      await ref.read(apiClientProvider).updateCostControlRow(
-        projectId: projectId,
-        rowId: row.id,
-        procurementComparisonId: selected,
-        clearProcurementComparison: selected == null,
-      );
       ref.invalidate(costControlRowsProvider(projectId));
     } on ApiException catch (e) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -550,6 +499,146 @@ class _CostControlRowCard extends ConsumerWidget {
         projectId: projectId,
         rowId: row.id,
         adjustmentId: adjustment.id,
+      );
+      ref.invalidate(costControlRowsProvider(projectId));
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+}
+
+/// 執行中成控表 — 執行面：連結採發比價表、實際發包、業主/發包合約金額、
+/// 已請款進度、發包端追加/追減（來自請款單，唯讀）。列的新增/刪除跟
+/// 業主端追加/追減都在拆項表那頁做，這裡不重複提供。
+class _ExecutionRowsView extends ConsumerWidget {
+  const _ExecutionRowsView({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final rowsAsync = ref.watch(costControlRowsProvider(projectId));
+
+    return rowsAsync.when(
+      data: (rows) {
+        if (rows.isEmpty) return const Center(child: Text('拆項表還沒有任何成控列'));
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [for (final row in rows) _ExecutionRowCard(projectId: projectId, row: row)],
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => Center(child: Text('讀取執行中成控表失敗：$error')),
+    );
+  }
+}
+
+class _ExecutionRowCard extends ConsumerWidget {
+  const _ExecutionRowCard({required this.projectId, required this.row});
+
+  final String projectId;
+  final CostControlRow row;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final comparisonsAsync = ref.watch(procurementComparisonsProvider(projectId));
+    final quotationAsync = ref.watch(engineeringQuotationProvider(projectId));
+    final itemsById = <String, QuotationItemNode>{
+      for (final (_, node) in quotationAsync.value?.flattened ?? const <(int, QuotationItemNode)>[]) node.id: node,
+    };
+    final vendorAdjustments = row.adjustments.where((a) => !a.isOwner).toList();
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(row.name, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 16,
+              runSpacing: 4,
+              children: [
+                Text('業主報價 ${formatAmount(row.quoteRevenueTotal)}'),
+                Text('預估成本 ${formatAmount(row.estimatedCostTotal)}'),
+                Text('實際發包 ${row.awardedAmount != null ? formatAmount(row.awardedAmount!) : '未決標'}'),
+                Text('業主追加減 ${formatAmount(row.ownerAdjustmentsTotal)}'),
+                Text('發包追加減 ${formatAmount(row.vendorAdjustmentsTotal)}'),
+                Text('業主合約 ${formatAmount(row.ownerContractAmount)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text('發包合約 ${formatAmount(row.vendorContractAmount)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text('已請款 ${formatAmount(row.billedTotal)}（${(row.billedPercent * 100).toStringAsFixed(1)}%）'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text('連結比價表：', style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(width: 4),
+                Text(
+                  row.procurementComparisonId == null
+                      ? '未連結'
+                      : itemsById[comparisonsAsync.value?.firstWhereOrNull((c) => c.id == row.procurementComparisonId)?.quotationLineItemId]?.name ??
+                            '（比價表）',
+                ),
+                TextButton(
+                  onPressed: () => _linkComparison(context, ref, comparisonsAsync.value ?? const [], itemsById),
+                  child: const Text('變更'),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            Text('發包端追加/追減（來自請款單，唯讀）', style: Theme.of(context).textTheme.bodyMedium),
+            if (vendorAdjustments.isEmpty)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 4), child: Text('（尚無）', style: TextStyle(fontSize: 12)))
+            else
+              for (final adjustment in vendorAdjustments)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    adjustment.type == 'ADD' ? Icons.add_circle_outline : Icons.remove_circle_outline,
+                    color: adjustment.type == 'ADD' ? Colors.green : Colors.red,
+                    size: 18,
+                  ),
+                  title: Text(
+                    '${formatAmount(adjustment.amount)}${adjustment.note != null ? '　${adjustment.note}' : ''}',
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _linkComparison(
+    BuildContext context,
+    WidgetRef ref,
+    List<ProcurementComparison> comparisons,
+    Map<String, QuotationItemNode> itemsById,
+  ) async {
+    final selected = await showDialog<String?>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('連結採發比價表'),
+        children: [
+          SimpleDialogOption(onPressed: () => Navigator.of(context).pop(null), child: const Text('（不連結）')),
+          for (final c in comparisons)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(c.id),
+              child: Text(itemsById[c.quotationLineItemId]?.name ?? c.id),
+            ),
+        ],
+      ),
+    );
+    if (!context.mounted) return;
+    try {
+      await ref.read(apiClientProvider).updateCostControlRow(
+        projectId: projectId,
+        rowId: row.id,
+        procurementComparisonId: selected,
+        clearProcurementComparison: selected == null,
       );
       ref.invalidate(costControlRowsProvider(projectId));
     } on ApiException catch (e) {

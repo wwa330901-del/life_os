@@ -141,27 +141,34 @@ class _QuotationBody extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              OutlinedButton.icon(
-                onPressed: () => _applyMarginTarget(context, ref),
-                icon: const Icon(Icons.calculate_outlined),
-                label: const Text('A. 設定目標毛利率'),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _applyMarginTarget(context, ref),
+                      icon: const Icon(Icons.calculate_outlined),
+                      label: const Text('A. 設定目標毛利率'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _applyNegotiatedTotal(context, ref),
+                      icon: const Icon(Icons.price_change_outlined),
+                      label: const Text('B. 議價後總金額'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _manageSurcharges(context, ref),
+                      icon: const Icon(Icons.receipt_long_outlined),
+                      label: const Text('附加費用'),
+                    ),
+                  ],
+                ),
               ),
-              OutlinedButton.icon(
-                onPressed: () => _applyNegotiatedTotal(context, ref),
-                icon: const Icon(Icons.price_change_outlined),
-                label: const Text('B. 議價後總金額'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _manageSurcharges(context, ref),
-                icon: const Icon(Icons.receipt_long_outlined),
-                label: const Text('附加費用'),
-              ),
-              const Spacer(),
+              const SizedBox(width: 16),
               Text(
                 '工程總金額 ${formatAmount(data.grandTotalBeforeSurcharge)}　'
                 '成本 ${formatAmount(data.grandCostTotalBeforeSurcharge)}　'
