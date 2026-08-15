@@ -24,9 +24,10 @@ import '../../../finance/widgets/finance_format.dart';
 /// 本身可增刪），詳細表才是可編輯的三層樹狀明細，A/B 批次調整按鈕放在
 /// 詳細表這邊（調整結果是寫進詳細表每一列的欄位）。
 class QuotationTab extends ConsumerWidget {
-  const QuotationTab({super.key, required this.projectId});
+  const QuotationTab({super.key, required this.projectId, required this.spaceName});
 
   final String projectId;
+  final String spaceName;
 
   static const _subTabs = [Tab(text: '總表'), Tab(text: '詳細表')];
 
@@ -68,14 +69,20 @@ class QuotationTab extends ConsumerWidget {
   }
 
   Future<void> _exportOrPrint(BuildContext context, WidgetRef ref, {required bool print}) async {
-    final columns = await QuotationExportOptionsDialog.show(context);
-    if (columns == null || !context.mounted) return;
+    final options = await QuotationExportOptionsDialog.show(context);
+    if (options == null || !context.mounted) return;
 
     final data = await ref.read(engineeringQuotationProvider(projectId).future);
     if (!context.mounted) return;
     final projectName = ref.read(projectEditorProvider(projectId)).value?.project.name ?? '';
 
-    final bytes = await QuotationPdfExportService().buildPdf(projectName: projectName, data: data, columns: columns);
+    final bytes = await QuotationPdfExportService().buildPdf(
+      spaceName: spaceName,
+      projectName: projectName,
+      data: data,
+      columns: options.columns,
+      pageFormat: options.pageFormat,
+    );
     if (!context.mounted) return;
 
     if (print) {

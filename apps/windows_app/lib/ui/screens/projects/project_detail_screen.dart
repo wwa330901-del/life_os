@@ -71,7 +71,7 @@ class ProjectDetailScreen extends ConsumerWidget {
                   ProjectInfoTab(projectId: projectId),
                   MembersTab(projectId: projectId),
                   ProjectDocumentsTab(projectId: projectId),
-                  EngineeringFinanceTab(projectId: projectId),
+                  EngineeringFinanceTab(projectId: projectId, spaceName: spaceName),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),

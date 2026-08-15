@@ -12,9 +12,10 @@ import 'engineering_finance/quotation_tab.dart';
 /// 底下——它是空間層級的獨立系統，入口在側邊欄（見 `AppSidebar`），不是
 /// 某個專案的子畫面，2026-08-15 從這裡的右上角按鈕移過去。
 class EngineeringFinanceTab extends ConsumerWidget {
-  const EngineeringFinanceTab({super.key, required this.projectId});
+  const EngineeringFinanceTab({super.key, required this.projectId, required this.spaceName});
 
   final String projectId;
+  final String spaceName;
 
   static const _subTabs = [
     Tab(text: '工程報價單'),
@@ -41,7 +42,7 @@ class EngineeringFinanceTab extends ConsumerWidget {
           Expanded(
             child: TabBarView(
               children: [
-                QuotationTab(projectId: projectId),
+                QuotationTab(projectId: projectId, spaceName: spaceName),
                 ProcurementTab(projectId: projectId),
                 CostControlTab(projectId: projectId),
                 PaymentRequestPeriodsTab(projectId: projectId),

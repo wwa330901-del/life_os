@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../core/models/engineering_finance.dart';
 import '../../ui/screens/finance/widgets/finance_format.dart';
+import 'cjk_font.dart';
 
 /// 工程報價單 PDF 匯出/列印共用欄位選擇——成本相關欄位全部勾掉，就是一份
 /// 可以直接給業主看的版本（單價/複價還在，看不到成本/毛利率）。複價本身
@@ -39,19 +40,42 @@ const defaultQuotationExportColumns = QuotationExportColumn.values;
 
 class QuotationPdfExportService {
   Future<Uint8List> buildPdf({
+    required String spaceName,
     required String projectName,
     required EngineeringQuotationTree data,
     required List<QuotationExportColumn> columns,
+    PdfPageFormat pageFormat = PdfPageFormat.a4,
   }) async {
-    final doc = pw.Document();
+    final font = await CjkFont.load();
+    final doc = pw.Document(theme: pw.ThemeData.withFont(base: font, bold: font));
     final has = columns.toSet();
     final showCost = has.contains(QuotationExportColumn.costComplexPrice);
     final showMargin = has.contains(QuotationExportColumn.marginRate);
+    final landscapeFormat = pageFormat.landscape;
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: pageFormat,
+        build: (context) => pw.Center(
+          child: pw.Column(
+            mainAxisAlignment: pw.MainAxisAlignment.center,
+            children: [
+              pw.Text(spaceName, style: const pw.TextStyle(fontSize: 16)),
+              pw.SizedBox(height: 24),
+              pw.Text(projectName, style: pw.TextStyle(fontSize: 26, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 16),
+              pw.Text('工程報價單', style: const pw.TextStyle(fontSize: 20)),
+              pw.SizedBox(height: 48),
+              pw.Text(_todayLabel(), style: const pw.TextStyle(fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
 
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        orientation: pw.PageOrientation.landscape,
+        pageFormat: landscapeFormat,
         header: (context) => pw.Text('$projectName — 工程報價單 總表', style: const pw.TextStyle(fontSize: 14)),
         build: (context) => [
           pw.SizedBox(height: 12),
@@ -97,8 +121,7 @@ class QuotationPdfExportService {
 
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        orientation: pw.PageOrientation.landscape,
+        pageFormat: landscapeFormat,
         header: (context) => pw.Text('$projectName — 工程報價單 詳細表', style: const pw.TextStyle(fontSize: 14)),
         build: (context) => [
           pw.SizedBox(height: 12),
@@ -145,5 +168,10 @@ class QuotationPdfExportService {
     );
 
     return doc.save();
+  }
+
+  String _todayLabel() {
+    final now = DateTime.now();
+    return '${now.year}/${now.month}/${now.day}';
   }
 }
