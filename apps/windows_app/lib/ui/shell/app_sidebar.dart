@@ -31,6 +31,8 @@ class AppSidebar extends ConsumerStatefulWidget {
     required this.propertiesSettingsSelected,
     required this.onOpenApprovals,
     required this.approvalsSelected,
+    required this.onOpenVendors,
+    required this.vendorsSelected,
   });
 
   final SpaceSummary space;
@@ -39,6 +41,8 @@ class AppSidebar extends ConsumerStatefulWidget {
   final bool propertiesSettingsSelected;
   final VoidCallback onOpenApprovals;
   final bool approvalsSelected;
+  final VoidCallback onOpenVendors;
+  final bool vendorsSelected;
 
   @override
   ConsumerState<AppSidebar> createState() => _AppSidebarState();
@@ -96,6 +100,8 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                 propertiesSettingsSelected: widget.propertiesSettingsSelected,
                 onOpenApprovals: widget.onOpenApprovals,
                 approvalsSelected: widget.approvalsSelected,
+                onOpenVendors: widget.onOpenVendors,
+                vendorsSelected: widget.vendorsSelected,
                 collapsed: true,
                 onTogglePin: _pin,
               ),
@@ -121,6 +127,8 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
           propertiesSettingsSelected: widget.propertiesSettingsSelected,
           onOpenApprovals: widget.onOpenApprovals,
           approvalsSelected: widget.approvalsSelected,
+          onOpenVendors: widget.onOpenVendors,
+          vendorsSelected: widget.vendorsSelected,
           collapsed: false,
           onTogglePin: () => ref.read(sidebarCollapsedProvider.notifier).toggle(),
         ),
@@ -156,6 +164,8 @@ class _SidebarPanel extends ConsumerWidget {
     required this.propertiesSettingsSelected,
     required this.onOpenApprovals,
     required this.approvalsSelected,
+    required this.onOpenVendors,
+    required this.vendorsSelected,
     required this.collapsed,
     required this.onTogglePin,
   });
@@ -166,6 +176,8 @@ class _SidebarPanel extends ConsumerWidget {
   final bool propertiesSettingsSelected;
   final VoidCallback onOpenApprovals;
   final bool approvalsSelected;
+  final VoidCallback onOpenVendors;
+  final bool vendorsSelected;
 
   /// Whether this panel is currently rendering as the hover flyout (vs.
   /// pinned open in the normal layout) — only changes the pin button's
@@ -226,6 +238,13 @@ class _SidebarPanel extends ConsumerWidget {
                 label: '簽核',
                 selected: approvalsSelected,
                 onTap: onOpenApprovals,
+              ),
+            if (space.type == SpaceType.company)
+              _NavItem(
+                icon: Icons.store_outlined,
+                label: '廠商管理',
+                selected: vendorsSelected,
+                onTap: onOpenVendors,
               ),
             if (space.type == SpaceType.company && (session?.user.isPlatformAdmin ?? false))
               _NavItem(
