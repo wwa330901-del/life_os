@@ -9,6 +9,7 @@ import 'models/ai_assistant.dart';
 import 'models/app_user.dart';
 import 'models/calendar_event.dart';
 import 'models/calendar_share.dart';
+import 'models/department.dart';
 import 'models/friend.dart';
 import 'models/finance_report.dart';
 import 'models/document_approval.dart';
@@ -426,6 +427,80 @@ class ApiClient {
   Future<List<SpaceMember>> listSpaceMembers(String spaceId) async {
     final body = await _getList('/spaces/$spaceId/members');
     return body.map((e) => SpaceMember.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // --- 公司空間部門＋矩陣權限 ---
+
+  Future<List<Department>> listDepartments(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/departments');
+    return body.map((e) => Department.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createDepartment(String spaceId, String name) async {
+    await _post('/spaces/$spaceId/departments', {'name': name});
+  }
+
+  Future<void> renameDepartment(String spaceId, String departmentId, String name) async {
+    await _patch('/spaces/$spaceId/departments/$departmentId', {'name': name});
+  }
+
+  Future<void> deleteDepartment(String spaceId, String departmentId) async {
+    await _delete('/spaces/$spaceId/departments/$departmentId');
+  }
+
+  Future<void> createDepartmentRank(String spaceId, String departmentId, String name) async {
+    await _post('/spaces/$spaceId/departments/$departmentId/ranks', {'name': name});
+  }
+
+  Future<void> renameDepartmentRank(
+    String spaceId,
+    String departmentId,
+    String rankId,
+    String name,
+  ) async {
+    await _patch('/spaces/$spaceId/departments/$departmentId/ranks/$rankId', {'name': name});
+  }
+
+  Future<void> deleteDepartmentRank(String spaceId, String departmentId, String rankId) async {
+    await _delete('/spaces/$spaceId/departments/$departmentId/ranks/$rankId');
+  }
+
+  /// `departmentId`/`rankId` left at [_unset] means "don't touch"; pass
+  /// `null` explicitly to clear that assignment back to 無部門/無職級.
+  Future<void> assignMemberDepartment({
+    required String spaceId,
+    required String userId,
+    Object? departmentId = _unset,
+    Object? rankId = _unset,
+  }) async {
+    await _patch('/spaces/$spaceId/members/$userId/department', {
+      if (!identical(departmentId, _unset)) 'departmentId': departmentId,
+      if (!identical(rankId, _unset)) 'rankId': rankId,
+    });
+  }
+
+  Future<List<PermissionRule>> listPermissionRules(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/permission-rules');
+    return body.map((e) => PermissionRule.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createPermissionRule({
+    required String spaceId,
+    required PermissionResourceType resourceType,
+    required PermissionAction action,
+    String? departmentId,
+    String? rankId,
+  }) async {
+    await _post('/spaces/$spaceId/permission-rules', {
+      'resourceType': permissionResourceTypeToJson(resourceType),
+      'action': permissionActionToJson(action),
+      if (departmentId != null) 'departmentId': departmentId,
+      if (rankId != null) 'rankId': rankId,
+    });
+  }
+
+  Future<void> deletePermissionRule(String spaceId, String ruleId) async {
+    await _delete('/spaces/$spaceId/permission-rules/$ruleId');
   }
 
   Future<List<AdminUserSummary>> adminListUsers() async {

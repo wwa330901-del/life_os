@@ -107,7 +107,11 @@ export class SpacesService {
     await this.getForUserOrThrow(userId, spaceId);
     const memberships = await this.prisma.companyMembership.findMany({
       where: { spaceId },
-      include: { user: { select: { id: true, username: true, name: true, email: true } } },
+      include: {
+        user: { select: { id: true, username: true, name: true, email: true } },
+        department: true,
+        rank: true,
+      },
       orderBy: { createdAt: 'asc' },
     });
     return memberships.map((m) => ({
@@ -116,6 +120,10 @@ export class SpacesService {
       name: m.user.name,
       email: m.user.email,
       role: m.role,
+      departmentId: m.departmentId,
+      departmentName: m.department?.name ?? null,
+      rankId: m.rankId,
+      rankName: m.rank?.name ?? null,
     }));
   }
 

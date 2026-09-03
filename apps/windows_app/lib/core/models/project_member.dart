@@ -41,6 +41,10 @@ class SpaceMember {
     required this.name,
     required this.email,
     required this.role,
+    required this.departmentId,
+    required this.departmentName,
+    required this.rankId,
+    required this.rankName,
   });
 
   final String userId;
@@ -48,6 +52,10 @@ class SpaceMember {
   final String name;
   final String email;
   final String role;
+  final String? departmentId;
+  final String? departmentName;
+  final String? rankId;
+  final String? rankName;
 
   factory SpaceMember.fromJson(Map<String, dynamic> json) => SpaceMember(
     userId: json['userId'] as String,
@@ -55,5 +63,9 @@ class SpaceMember {
     name: json['name'] as String,
     email: json['email'] as String,
     role: json['role'] as String,
+    departmentId: json['departmentId'] as String?,
+    departmentName: json['departmentName'] as String?,
+    rankId: json['rankId'] as String?,
+    rankName: json['rankName'] as String?,
   );
 }

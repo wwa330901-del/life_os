@@ -33,6 +33,8 @@ class AppSidebar extends ConsumerStatefulWidget {
     required this.approvalsSelected,
     required this.onOpenVendors,
     required this.vendorsSelected,
+    required this.onOpenPermissions,
+    required this.permissionsSelected,
   });
 
   final SpaceSummary space;
@@ -43,6 +45,8 @@ class AppSidebar extends ConsumerStatefulWidget {
   final bool approvalsSelected;
   final VoidCallback onOpenVendors;
   final bool vendorsSelected;
+  final VoidCallback onOpenPermissions;
+  final bool permissionsSelected;
 
   @override
   ConsumerState<AppSidebar> createState() => _AppSidebarState();
@@ -102,6 +106,8 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                 approvalsSelected: widget.approvalsSelected,
                 onOpenVendors: widget.onOpenVendors,
                 vendorsSelected: widget.vendorsSelected,
+                onOpenPermissions: widget.onOpenPermissions,
+                permissionsSelected: widget.permissionsSelected,
                 collapsed: true,
                 onTogglePin: _pin,
               ),
@@ -129,6 +135,8 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
           approvalsSelected: widget.approvalsSelected,
           onOpenVendors: widget.onOpenVendors,
           vendorsSelected: widget.vendorsSelected,
+          onOpenPermissions: widget.onOpenPermissions,
+          permissionsSelected: widget.permissionsSelected,
           collapsed: false,
           onTogglePin: () => ref.read(sidebarCollapsedProvider.notifier).toggle(),
         ),
@@ -166,6 +174,8 @@ class _SidebarPanel extends ConsumerWidget {
     required this.approvalsSelected,
     required this.onOpenVendors,
     required this.vendorsSelected,
+    required this.onOpenPermissions,
+    required this.permissionsSelected,
     required this.collapsed,
     required this.onTogglePin,
   });
@@ -178,6 +188,8 @@ class _SidebarPanel extends ConsumerWidget {
   final bool approvalsSelected;
   final VoidCallback onOpenVendors;
   final bool vendorsSelected;
+  final VoidCallback onOpenPermissions;
+  final bool permissionsSelected;
 
   /// Whether this panel is currently rendering as the hover flyout (vs.
   /// pinned open in the normal layout) — only changes the pin button's
@@ -252,6 +264,13 @@ class _SidebarPanel extends ConsumerWidget {
                 label: '專案設定',
                 selected: propertiesSettingsSelected,
                 onTap: onOpenPropertiesSettings,
+              ),
+            if (space.type == SpaceType.company && space.role == 'OWNER')
+              _NavItem(
+                icon: Icons.admin_panel_settings_outlined,
+                label: '部門與權限',
+                selected: permissionsSelected,
+                onTap: onOpenPermissions,
               ),
             if (space.type == SpaceType.company && space.role == 'OWNER')
               _NavItem(
