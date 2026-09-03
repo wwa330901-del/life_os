@@ -4,6 +4,7 @@ import { SpacesModule } from '../spaces/spaces.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { DocumentApprovalsModule } from '../document-approvals/document-approvals.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 import { VendorsController } from './vendors.controller';
 import { VendorsService } from './vendors.service';
 import { EngineeringQuotationController } from './engineering-quotation.controller';
@@ -22,6 +23,7 @@ import { PaymentRequestPeriodsService } from './payment-request-periods.service'
     KnowledgeModule,
     LineNotifierModule,
     DocumentApprovalsModule,
+    PermissionsModule,
   ],
   controllers: [
     VendorsController,

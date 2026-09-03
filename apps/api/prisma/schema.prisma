@@ -23,6 +23,28 @@ enum MembershipRole {
   MEMBER
 }
 
+/// 公司空間權限引擎（2026-08-31 設計）覆蓋的既有模組——一個模組一條，不細
+/// 拆到個別資料表。行事曆刻意不在這份清單：`SpaceType.CALENDAR` 是每人 1
+/// 對 1 的個人空間，不是公司空間底下的東西，沒有部門/職級可套用。
+enum PermissionResourceType {
+  PROJECT
+  TODOS
+  DOCUMENTS
+  VENDOR
+  QUOTATION
+  COST_CONTROL
+  PROCUREMENT
+  PAYMENT_REQUEST
+}
+
+/// 「讀」永遠允許給空間內任何成員，不受這套規則管——只有下面三種動作才會
+/// 被 PermissionRule 檔控。詳見 PermissionsService.assertCan。
+enum PermissionAction {
+  WRITE
+  APPROVE
+  EXPORT
+}
+
 enum ProjectRole {
   PM
   MEMBER
@@ -231,6 +253,8 @@ model Space {
   stockRecurringInvestments    StockRecurringInvestment[]
   stockHoldings                StockHolding[]
   financeNetWorthSnapshots     FinanceNetWorthSnapshot[]
+  departments                  Department[]
+  permissionRules              PermissionRule[]
 }
 
 /// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
@@ -701,7 +725,78 @@ model CompanyMembership {
   spaceId String
   space   Space  @relation(fields: [spaceId], references: [id])
 
+  /// 部門/職級都可為空（尚未指派）——沒部門/職級的人只吃 PermissionRule
+  /// 裡「department=空 且 rank=空」那種通用規則，見 PermissionsService。
+  /// 不用 DB 層強制 rank 必屬於 department（那要跨兩張表驗證），app 層在
+  /// 指派時檢查，同一套「不確定的一致性交給 app 層」慣例見 ProjectTodo 的
+  /// dueDate/isOngoing XOR。
+  departmentId String?
+  department   Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  rankId       String?
+  rank         DepartmentRank? @relation(fields: [rankId], references: [id], onDelete: SetNull)
+
   @@unique([userId, spaceId])
+}
+
+/// 公司空間的部門，OWNER 自建/排序（跟 ProjectTypeOption 一樣的自訂選項模
+/// 式）。只有公司空間會有部門——一個空間一份部門清單，不跨空間共用。
+model Department {
+  id        String   @id @default(uuid())
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  ranks       DepartmentRank[]
+  memberships CompanyMembership[]
+  rules       PermissionRule[]
+}
+
+/// 職級/業務性質——2026-08-31 使用者選擇「每個部門自己定義自己的職級清
+/// 單」，所以掛在 Department 底下而不是 Space 底下，不同部門的職級名稱可
+/// 以完全不一樣（例如工務部有「工地主任」，財務部有「出納」）。
+model DepartmentRank {
+  id        String   @id @default(uuid())
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  memberships CompanyMembership[]
+  rules       PermissionRule[]
+}
+
+/// 公司空間權限規則——一條規則＝「這個資源類型的這個動作，開放給這個部門
+/// ＋這個職級的人」。department/rank 都可留空代表「不限」，但**兩者要同時
+/// 符合才算命中（AND，不是 OR）**——2026-08-31 使用者明確選的組合邏輯，對
+/// 齊規劃書「部門×業務性質」的字面意思。找不到符合的規則＝該動作一律拒
+/// 絕（含「無部門/無職級」的人只吃 department=null 且 rank=null 的規則），
+/// 這是 2026-08-31 使用者選的「預設鎖死」語意，只管 WRITE/APPROVE/EXPORT
+/// 三種動作，READ 永遠放行不受這張表影響。
+///
+/// 沒有 @@unique：department/rank 都可為 null，Postgres 的唯一約束對多個
+/// null 不會擋重複，硬加只會製造假的安全感——重複規則交給
+/// PermissionsService 在新增時自己查重擋掉，不靠 DB 層。
+model PermissionRule {
+  id     String                 @id @default(uuid())
+  action PermissionAction
+
+  resourceType PermissionResourceType
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  rankId String?
+  rank   DepartmentRank? @relation(fields: [rankId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
 
 model ProjectTypeOption {

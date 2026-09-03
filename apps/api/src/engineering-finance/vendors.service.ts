@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpacesService } from '../spaces/spaces.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import {
+  PermissionAction,
+  PermissionResourceType,
+} from '../../generated/prisma/client.js';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 
@@ -18,9 +23,11 @@ export class VendorsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly spacesService: SpacesService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async list(userId: string, spaceId: string) {
+    // 讀取一律放行，不經過權限引擎——見 PermissionsService 的說明。
     await this.spacesService.getForUserOrThrow(userId, spaceId);
     return this.prisma.vendor.findMany({
       where: { spaceId },
@@ -29,7 +36,12 @@ export class VendorsService {
   }
 
   async create(userId: string, spaceId: string, dto: CreateVendorDto) {
-    await this.spacesService.getForUserOrThrow(userId, spaceId);
+    await this.permissionsService.assertCan(
+      userId,
+      spaceId,
+      PermissionResourceType.VENDOR,
+      PermissionAction.WRITE,
+    );
     return this.prisma.vendor.create({
       data: {
         spaceId,
@@ -55,7 +67,12 @@ export class VendorsService {
     vendorId: string,
     dto: UpdateVendorDto,
   ) {
-    await this.spacesService.getForUserOrThrow(userId, spaceId);
+    await this.permissionsService.assertCan(
+      userId,
+      spaceId,
+      PermissionResourceType.VENDOR,
+      PermissionAction.WRITE,
+    );
     await this.getVendorOrThrow(spaceId, vendorId);
     return this.prisma.vendor.update({
       where: { id: vendorId },
@@ -87,7 +104,12 @@ export class VendorsService {
   }
 
   async remove(userId: string, spaceId: string, vendorId: string) {
-    await this.spacesService.getForUserOrThrow(userId, spaceId);
+    await this.permissionsService.assertCan(
+      userId,
+      spaceId,
+      PermissionResourceType.VENDOR,
+      PermissionAction.WRITE,
+    );
     await this.getVendorOrThrow(spaceId, vendorId);
     // 有引用這家廠商的 ProcurementVendorQuote 會擋在 RESTRICT 外鍵上，直接讓
     // Prisma 的 P2003 錯誤傳出去即可，不用先手動查詢——這是低頻管理操作，不
