@@ -7,7 +7,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { EngineeringQuotationService } from './engineering-quotation.service';
 import { DocumentApprovalsService } from '../document-approvals/document-approvals.service';
-import { DocumentApprovalStatus } from '../../generated/prisma/client.js';
+import { PermissionsService } from '../permissions/permissions.service';
+import {
+  DocumentApprovalStatus,
+  PermissionAction,
+  PermissionResourceType,
+} from '../../generated/prisma/client.js';
 import type {
   CostControlAdjustmentSide,
   CostControlRow,
@@ -51,6 +56,7 @@ export class CostControlService {
     private readonly projectsService: ProjectsService,
     private readonly quotationService: EngineeringQuotationService,
     private readonly documentApprovals: DocumentApprovalsService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   // --- ①初始管制表 ------------------------------------------------------
@@ -151,7 +157,7 @@ export class CostControlService {
     projectId: string,
     dto: CreateCostControlRowDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     if (dto.procurementComparisonId) {
       await this.getComparisonOrThrow(projectId, dto.procurementComparisonId);
     }
@@ -178,7 +184,7 @@ export class CostControlService {
     rowId: string,
     dto: UpdateCostControlRowDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getRowOrThrow(projectId, rowId);
     if (dto.procurementComparisonId) {
       await this.getComparisonOrThrow(projectId, dto.procurementComparisonId);
@@ -197,7 +203,7 @@ export class CostControlService {
   }
 
   async remove(userId: string, projectId: string, rowId: string) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getRowOrThrow(projectId, rowId);
     const hasPeriods = await this.prisma.paymentRequestPeriod.findFirst({
       where: { costControlRowId: rowId },
@@ -214,7 +220,7 @@ export class CostControlService {
     rowId: string,
     dto: ReorderCostControlRowDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const row = await this.getRowOrThrow(projectId, rowId);
     await this.getRowOrThrow(projectId, dto.targetId);
 
@@ -245,7 +251,7 @@ export class CostControlService {
     rowId: string,
     dto: SetCostControlRowItemsDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getRowOrThrow(projectId, rowId);
 
     if (dto.quotationLineItemIds.length > 0) {
@@ -329,7 +335,7 @@ export class CostControlService {
     rowId: string,
     dto: CreateCostControlAdjustmentDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getRowOrThrow(projectId, rowId);
     await this.prisma.costControlAdjustment.create({
       data: {
@@ -349,7 +355,7 @@ export class CostControlService {
     rowId: string,
     adjustmentId: string,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getRowOrThrow(projectId, rowId);
     const adjustment = await this.prisma.costControlAdjustment.findUnique({
       where: { id: adjustmentId },
@@ -491,6 +497,23 @@ export class CostControlService {
   private async getAuthorizedProject(userId: string, projectId: string) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
+    return project;
+  }
+
+  /** Same as `getAuthorizedProject` plus the COST_CONTROL/WRITE permission-
+   * engine check. Not used for ①初始管制表's `submitInitialSheet` — that's
+   * an APPROVE action routed entirely through the existing
+   * `DocumentApprovalsService` fixed-role chain, 2026-09 使用者確認新引擎
+   * 不疊加在這套既有簽核之上（見 project_life_os_company_space_target_scope
+   * 記憶）。 */
+  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+    const project = await this.getAuthorizedProject(userId, projectId);
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.COST_CONTROL,
+      PermissionAction.WRITE,
+    );
     return project;
   }
 

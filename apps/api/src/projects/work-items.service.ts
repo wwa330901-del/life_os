@@ -34,7 +34,7 @@ export class WorkItemsService {
    * every single edit action.
    */
   async create(userId: string, projectId: string, dto: CreateWorkItemDto) {
-    const project = await this.getAuthorizedProject(userId, projectId);
+    const project = await this.getAuthorizedProjectForWrite(userId, projectId);
 
     if (dto.parentId) {
       await this.getWorkItemOrThrow(projectId, dto.parentId);
@@ -71,7 +71,7 @@ export class WorkItemsService {
     workItemId: string,
     dto: UpdateWorkItemDto,
   ) {
-    const project = await this.getAuthorizedProject(userId, projectId);
+    const project = await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getWorkItemOrThrow(projectId, workItemId);
 
     if (dto.parentId !== undefined && dto.parentId !== null) {
@@ -119,7 +119,7 @@ export class WorkItemsService {
   }
 
   async remove(userId: string, projectId: string, workItemId: string) {
-    const project = await this.getAuthorizedProject(userId, projectId);
+    const project = await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getWorkItemOrThrow(projectId, workItemId);
 
     // No DB-level cascade on WorkItem's self-relation (Postgres rejects
@@ -143,7 +143,7 @@ export class WorkItemsService {
     workItemId: string,
     dto: ReorderWorkItemDto,
   ) {
-    const project = await this.getAuthorizedProject(userId, projectId);
+    const project = await this.getAuthorizedProjectForWrite(userId, projectId);
 
     const item = await this.getWorkItemOrThrow(projectId, workItemId);
     const target = await this.getWorkItemOrThrow(projectId, dto.targetId);
@@ -177,6 +177,15 @@ export class WorkItemsService {
   private async getAuthorizedProject(userId: string, projectId: string) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
+    return project;
+  }
+
+  /** Same as `getAuthorizedProject` plus the PROJECT/WRITE permission-engine
+   * check — use for create/update/remove/reorder, not for the read-only
+   * `list`. See `ProjectsService.assertCanWrite`. */
+  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+    const project = await this.projectsService.getProjectOrThrow(projectId);
+    await this.projectsService.assertCanWrite(userId, project);
     return project;
   }
 

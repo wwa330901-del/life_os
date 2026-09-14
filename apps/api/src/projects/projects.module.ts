@@ -13,9 +13,10 @@ import { ProjectOptionsService } from './project-options.service';
 import { ProjectPropertiesService } from './project-properties.service';
 import { SpacesModule } from '../spaces/spaces.module';
 import { UsersModule } from '../users/users.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 
 @Module({
-  imports: [SpacesModule, UsersModule],
+  imports: [SpacesModule, UsersModule, PermissionsModule],
   controllers: [
     SpaceProjectsController,
     ProjectsController,

@@ -4,6 +4,11 @@ import Docxtemplater from 'docxtemplater';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { DocumentApprovalsService } from '../document-approvals/document-approvals.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import {
+  PermissionAction,
+  PermissionResourceType,
+} from '../../generated/prisma/client.js';
 import { FillDocumentDto } from './dto/fill-document.dto';
 
 const metadataSelect = {
@@ -56,6 +61,7 @@ export class ProjectDocumentsService {
     private readonly prisma: PrismaService,
     private readonly projectsService: ProjectsService,
     private readonly documentApprovalsService: DocumentApprovalsService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async listForProject(userId: string, projectId: string) {
@@ -95,6 +101,12 @@ export class ProjectDocumentsService {
   ) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.DOCUMENTS,
+      PermissionAction.WRITE,
+    );
 
     const template = await this.prisma.documentTemplate.findUnique({
       where: { id: templateId },
@@ -155,6 +167,12 @@ export class ProjectDocumentsService {
   async removeGenerated(userId: string, projectId: string, id: string) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.DOCUMENTS,
+      PermissionAction.WRITE,
+    );
 
     const doc = await this.prisma.generatedDocument.findUnique({ where: { id } });
     if (!doc || doc.projectId !== projectId) {

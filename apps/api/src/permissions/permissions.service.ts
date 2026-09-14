@@ -10,6 +10,7 @@ import {
   MembershipRole,
   PermissionAction,
   PermissionResourceType,
+  SpaceType,
 } from '../../generated/prisma/client.js';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
@@ -37,14 +38,44 @@ export class PermissionsService {
     private readonly spacesService: SpacesService,
   ) {}
 
+  /** Throwing form — use at every actual mutation call site. */
   async assertCan(
     userId: string,
     spaceId: string,
     resourceType: PermissionResourceType,
     action: PermissionAction,
   ): Promise<void> {
+    const allowed = await this.can(userId, spaceId, resourceType, action);
+    if (!allowed) {
+      throw new ForbiddenException(
+        `您沒有權限執行此操作（${resourceType} / ${action}）`,
+      );
+    }
+  }
+
+  /** Non-throwing form — for a "should I even show this button" probe from
+   * the client (e.g. 工程報價單 PDF 匯出是純前端渲染，沒有天然的後端寫入
+   * 關口可以擋，App 改成先問這個端點決定要不要顯示匯出按鈕，見
+   * `EngineeringQuotationController`'s `checkExportPermission`). */
+  async can(
+    userId: string,
+    spaceId: string,
+    resourceType: PermissionResourceType,
+    action: PermissionAction,
+  ): Promise<boolean> {
     const space = await this.spacesService.getForUserOrThrow(userId, spaceId);
-    if (space.role === MembershipRole.OWNER) return;
+    // Department/PermissionRule 只可能存在於 COMPANY 空間——個人/行事曆空間
+    // 完全沒有部門概念，也永遠不會有任何 PermissionRule 掛在它們的 spaceId
+    // 底下。不在這裡先擋住的話，PROJECT/TODOS 這類同時橫跨個人與公司專案
+    // 的 resourceType，一碰到個人空間的專案就會因為「找不到規則」被誤判拒
+    // 絕，把自己空間的擁有者鎖在自己的資料外面。
+    if (space.type !== SpaceType.COMPANY) return true;
+    // ADMIN 在既有程式碼裡到處都跟 OWNER 同權（見 ProjectsService.assertAccess
+    // 等），2026-09 使用者確認新引擎維持這個慣例，不因為接上新權限檢查就讓
+    // ADMIN 反而變得比現在更受限。只有真正的一般 MEMBER 才吃 PermissionRule。
+    if (space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN) {
+      return true;
+    }
 
     const membership = await this.prisma.companyMembership.findUnique({
       where: { userId_spaceId: { userId, spaceId } },
@@ -58,11 +89,7 @@ export class PermissionsService {
       where: { spaceId, resourceType, action, departmentId, rankId },
       select: { id: true },
     });
-    if (!rule) {
-      throw new ForbiddenException(
-        `您沒有權限執行此操作（${resourceType} / ${action}）`,
-      );
-    }
+    return rule !== null;
   }
 
   // ---- 部門 ----

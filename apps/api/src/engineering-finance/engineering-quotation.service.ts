@@ -5,6 +5,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import {
+  PermissionAction,
+  PermissionResourceType,
+} from '../../generated/prisma/client.js';
 import type {
   QuotationLineItem,
   QuotationSurchargeItem,
@@ -52,6 +57,7 @@ export class EngineeringQuotationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectsService: ProjectsService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async getTree(userId: string, projectId: string) {
@@ -98,7 +104,7 @@ export class EngineeringQuotationService {
     projectId: string,
     dto: CreateQuotationItemDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
 
     if (dto.parentId) {
@@ -132,7 +138,7 @@ export class EngineeringQuotationService {
     itemId: string,
     dto: UpdateQuotationItemDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
     await this.getItemOrThrow(quotation.id, itemId);
 
@@ -165,7 +171,7 @@ export class EngineeringQuotationService {
   }
 
   async removeItem(userId: string, projectId: string, itemId: string) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
     await this.getItemOrThrow(quotation.id, itemId);
 
@@ -206,7 +212,7 @@ export class EngineeringQuotationService {
     itemId: string,
     dto: ReorderQuotationItemDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
     const item = await this.getItemOrThrow(quotation.id, itemId);
     const target = await this.getItemOrThrow(quotation.id, dto.targetId);
@@ -241,7 +247,7 @@ export class EngineeringQuotationService {
     projectId: string,
     dto: ApplyMarginTargetDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
     if (dto.targetMarginPercent >= 100) {
       throw new BadRequestException('目標毛利率必須小於 100%');
@@ -281,7 +287,7 @@ export class EngineeringQuotationService {
     projectId: string,
     dto: ApplyNegotiatedTotalDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
 
     const items = await this.prisma.quotationLineItem.findMany({
@@ -328,7 +334,7 @@ export class EngineeringQuotationService {
     projectId: string,
     dto: CreateSurchargeItemDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
     const maxSortOrder = await this.prisma.quotationSurchargeItem.aggregate({
       where: { quotationId: quotation.id },
@@ -352,7 +358,7 @@ export class EngineeringQuotationService {
     surchargeId: string,
     dto: UpdateSurchargeItemDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
     await this.getSurchargeOrThrow(quotation.id, surchargeId);
     await this.prisma.quotationSurchargeItem.update({
@@ -371,7 +377,7 @@ export class EngineeringQuotationService {
     projectId: string,
     surchargeId: string,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
     await this.getSurchargeOrThrow(quotation.id, surchargeId);
     await this.prisma.quotationSurchargeItem.delete({
@@ -386,7 +392,7 @@ export class EngineeringQuotationService {
     surchargeId: string,
     dto: ReorderSurchargeItemDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
     const item = await this.getSurchargeOrThrow(quotation.id, surchargeId);
     await this.getSurchargeOrThrow(quotation.id, dto.targetId);
@@ -580,6 +586,36 @@ export class EngineeringQuotationService {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
     return project;
+  }
+
+  /** Same as `getAuthorizedProject` plus the QUOTATION/WRITE permission-
+   * engine check — every mutating endpoint on this service uses this
+   * instead; `getTree` (the only read) keeps using the plain one above. */
+  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+    const project = await this.getAuthorizedProject(userId, projectId);
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.QUOTATION,
+      PermissionAction.WRITE,
+    );
+    return project;
+  }
+
+  /** 報價單 PDF 匯出/列印是純前端渲染（見 App 端
+   * `services/export/quotation_export_service.dart`），資料早就透過
+   * `getTree`（讀取，不受限）給前端了，沒有天然的後端寫入關口可以擋。App
+   * 改成進畫面時先問這個端點決定要不要顯示匯出/列印按鈕——2026-09 使用者
+   * 確認的做法，是介面層的把關，不是真正的資料保護。 */
+  async checkExportPermission(userId: string, projectId: string) {
+    const project = await this.getAuthorizedProject(userId, projectId);
+    const allowed = await this.permissionsService.can(
+      userId,
+      project.spaceId,
+      PermissionResourceType.QUOTATION,
+      PermissionAction.EXPORT,
+    );
+    return { allowed };
   }
 
   private async getItemOrThrow(

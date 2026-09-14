@@ -89,7 +89,7 @@ export class ProjectMembersService {
    * self-serve invites).
    */
   private async assertCanManage(userId: string, project: Project): Promise<void> {
-    await this.projectsService.assertAccess(userId, project);
+    await this.projectsService.assertCanWrite(userId, project);
     const space = await this.spacesService.getForUserOrThrow(userId, project.spaceId);
     if (space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN) return;
 

@@ -1,7 +1,16 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpacesService } from '../spaces/spaces.service';
-import { MembershipRole, Prisma, ProjectRole, PropertyType, SpaceType } from '../../generated/prisma/client.js';
+import { PermissionsService } from '../permissions/permissions.service';
+import {
+  MembershipRole,
+  PermissionAction,
+  PermissionResourceType,
+  Prisma,
+  ProjectRole,
+  PropertyType,
+  SpaceType,
+} from '../../generated/prisma/client.js';
 import type { Project } from '../../generated/prisma/client.js';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -17,6 +26,7 @@ export class ProjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly spacesService: SpacesService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   /**
@@ -68,6 +78,15 @@ export class ProjectsService {
 
   async create(userId: string, spaceId: string, dto: CreateProjectDto) {
     await this.spacesService.getForUserOrThrow(userId, spaceId);
+    // PermissionsService.can/assertCan auto-bypasses non-COMPANY spaces
+    // (personal spaces have no department/rank concept at all) — safe to
+    // call unconditionally here.
+    await this.permissionsService.assertCan(
+      userId,
+      spaceId,
+      PermissionResourceType.PROJECT,
+      PermissionAction.WRITE,
+    );
     // One transaction: a bad property value (e.g. an unparseable number)
     // must not leave behind a half-created project with no PM and no
     // values — either all of this lands, or none of it does.
@@ -99,7 +118,7 @@ export class ProjectsService {
 
   async update(userId: string, projectId: string, dto: UpdateProjectDto) {
     const project = await this.getProjectOrThrow(projectId);
-    await this.assertAccess(userId, project);
+    await this.assertCanWrite(userId, project);
     await this.prisma.$transaction(async (tx) => {
       await tx.project.update({
         where: { id: projectId },
@@ -122,7 +141,7 @@ export class ProjectsService {
 
   async remove(userId: string, projectId: string) {
     const project = await this.getProjectOrThrow(projectId);
-    await this.assertAccess(userId, project);
+    await this.assertCanWrite(userId, project);
     // WorkItem.projectId has onDelete: Cascade, so this takes every work
     // item with it.
     await this.prisma.project.delete({ where: { id: projectId } });
@@ -130,7 +149,7 @@ export class ProjectsService {
 
   async updateCalendar(userId: string, projectId: string, dto: UpdateCalendarDto) {
     const project = await this.getProjectOrThrow(projectId);
-    await this.assertAccess(userId, project);
+    await this.assertCanWrite(userId, project);
     return this.prisma.project.update({
       where: { id: projectId },
       data: {
@@ -257,5 +276,21 @@ export class ProjectsService {
     if (!membership) {
       throw new ForbiddenException('You do not have access to this project');
     }
+  }
+
+  /** `assertAccess` (read) plus the 2026-09 PROJECT/WRITE permission-engine
+   * check (see PermissionsService) — call this instead of `assertAccess`
+   * wherever the caller is about to mutate a project, its work items
+   * (工期表), or its member roster. PermissionsService.can/assertCan
+   * auto-bypasses non-COMPANY spaces, so this is safe to call unconditionally
+   * even for a personal-space project. */
+  async assertCanWrite(userId: string, project: Project): Promise<void> {
+    await this.assertAccess(userId, project);
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.PROJECT,
+      PermissionAction.WRITE,
+    );
   }
 }

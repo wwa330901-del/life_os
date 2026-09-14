@@ -8,6 +8,11 @@ import { ProjectsService } from '../projects/projects.service';
 import { SupabaseStorageService } from '../knowledge/supabase-storage.service';
 import { CostControlService } from './cost-control.service';
 import { DocumentApprovalsService } from '../document-approvals/document-approvals.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import {
+  PermissionAction,
+  PermissionResourceType,
+} from '../../generated/prisma/client.js';
 import type { PaymentRequestPeriod } from '../../generated/prisma/client.js';
 import { CreatePaymentRequestPeriodDto } from './dto/create-payment-request-period.dto';
 import { AddAdditionalChargeDto } from './dto/add-additional-charge.dto';
@@ -29,6 +34,7 @@ export class PaymentRequestPeriodsService {
     private readonly storage: SupabaseStorageService,
     private readonly costControlService: CostControlService,
     private readonly documentApprovals: DocumentApprovalsService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async list(userId: string, projectId: string) {
@@ -51,7 +57,7 @@ export class PaymentRequestPeriodsService {
     projectId: string,
     dto: CreatePaymentRequestPeriodDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
 
     const row = await this.prisma.costControlRow.findUnique({
       where: { id: dto.costControlRowId },
@@ -104,7 +110,7 @@ export class PaymentRequestPeriodsService {
       throw new BadRequestException('填了追加款金額就必須附上追加報價單');
     if (!this.storage.configured)
       throw new BadRequestException('檔案儲存服務尚未設定');
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const period = await this.getEditablePeriodOrThrow(projectId, periodId);
 
     const extension = file.originalname.includes('.')
@@ -179,6 +185,22 @@ export class PaymentRequestPeriodsService {
   private async getAuthorizedProject(userId: string, projectId: string) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
+    return project;
+  }
+
+  /** Same as `getAuthorizedProject` plus the PAYMENT_REQUEST/WRITE
+   * permission-engine check. `submit` stays on the plain read-only helper
+   * above — it's an APPROVE action through the existing
+   * DocumentApprovalsService fixed-role chain, not overlaid by this engine
+   * (2026-09 使用者決定). */
+  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+    const project = await this.getAuthorizedProject(userId, projectId);
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.PAYMENT_REQUEST,
+      PermissionAction.WRITE,
+    );
     return project;
   }
 

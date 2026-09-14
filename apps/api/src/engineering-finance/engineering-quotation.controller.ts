@@ -34,6 +34,17 @@ export class EngineeringQuotationController {
     return this.quotationService.getTree(user.id, projectId);
   }
 
+  /** App 進畫面時先問這個決定要不要顯示 PDF 匯出/列印按鈕——PDF 產生本身
+   * 是純前端渲染，沒有其他後端關口可以擋，見
+   * `EngineeringQuotationService.checkExportPermission`。 */
+  @Get('export-permission')
+  checkExportPermission(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+  ) {
+    return this.quotationService.checkExportPermission(user.id, projectId);
+  }
+
   @Post('items')
   createItem(
     @CurrentUser() user: AuthenticatedUser,

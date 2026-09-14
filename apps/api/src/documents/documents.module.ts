@@ -6,9 +6,10 @@ import { ProjectDocumentsService } from './project-documents.service';
 import { ProjectsModule } from '../projects/projects.module';
 import { UsersModule } from '../users/users.module';
 import { DocumentApprovalsModule } from '../document-approvals/document-approvals.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 
 @Module({
-  imports: [ProjectsModule, UsersModule, DocumentApprovalsModule],
+  imports: [ProjectsModule, UsersModule, DocumentApprovalsModule, PermissionsModule],
   controllers: [DocumentTemplatesController, ProjectDocumentsController, GeneratedDocumentsController],
   providers: [DocumentTemplatesService, ProjectDocumentsService],
 })

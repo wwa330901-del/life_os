@@ -9,6 +9,11 @@ import { SupabaseStorageService } from '../knowledge/supabase-storage.service';
 import { CostControlService } from './cost-control.service';
 import { EngineeringQuotationService } from './engineering-quotation.service';
 import { DocumentApprovalsService } from '../document-approvals/document-approvals.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import {
+  PermissionAction,
+  PermissionResourceType,
+} from '../../generated/prisma/client.js';
 import type {
   ProcurementComparison,
   ProcurementVendorQuote,
@@ -45,6 +50,7 @@ export class ProcurementComparisonsService {
     private readonly costControlService: CostControlService,
     private readonly quotationService: EngineeringQuotationService,
     private readonly documentApprovals: DocumentApprovalsService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async list(userId: string, projectId: string) {
@@ -62,7 +68,7 @@ export class ProcurementComparisonsService {
     projectId: string,
     dto: CreateProcurementComparisonDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
 
     const itemsById =
       await this.quotationService.getComputedItemsById(projectId);
@@ -100,7 +106,7 @@ export class ProcurementComparisonsService {
     comparisonId: string,
     dto: UpdateProcurementComparisonDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getEditableComparisonOrThrow(projectId, comparisonId);
     const updated = await this.prisma.procurementComparison.update({
       where: { id: comparisonId },
@@ -124,7 +130,7 @@ export class ProcurementComparisonsService {
   }
 
   async remove(userId: string, projectId: string, comparisonId: string) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getEditableComparisonOrThrow(projectId, comparisonId);
     const inUse = await this.prisma.costControlRow.findFirst({
       where: { procurementComparisonId: comparisonId },
@@ -151,7 +157,7 @@ export class ProcurementComparisonsService {
     comparisonId: string,
     dto: CreateVendorQuoteDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getEditableComparisonOrThrow(projectId, comparisonId);
     await this.getVendorOrThrow(projectId, dto.vendorId);
     await this.prisma.procurementVendorQuote.create({
@@ -173,7 +179,7 @@ export class ProcurementComparisonsService {
     vendorQuoteId: string,
     dto: UpdateVendorQuoteDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getEditableComparisonOrThrow(projectId, comparisonId);
     await this.getVendorQuoteOrThrow(comparisonId, vendorQuoteId);
     if (dto.vendorId) await this.getVendorOrThrow(projectId, dto.vendorId);
@@ -199,7 +205,7 @@ export class ProcurementComparisonsService {
     comparisonId: string,
     vendorQuoteId: string,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     const comparison = await this.getEditableComparisonOrThrow(
       projectId,
       comparisonId,
@@ -226,7 +232,7 @@ export class ProcurementComparisonsService {
     if (!file) throw new BadRequestException('缺少附件檔案');
     if (!this.storage.configured)
       throw new BadRequestException('檔案儲存服務尚未設定');
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getEditableComparisonOrThrow(projectId, comparisonId);
     await this.getVendorQuoteOrThrow(comparisonId, vendorQuoteId);
 
@@ -255,7 +261,7 @@ export class ProcurementComparisonsService {
     comparisonId: string,
     dto: SelectVendorQuoteDto,
   ) {
-    await this.getAuthorizedProject(userId, projectId);
+    await this.getAuthorizedProjectForWrite(userId, projectId);
     await this.getEditableComparisonOrThrow(projectId, comparisonId);
     const vendorQuote = await this.getVendorQuoteOrThrow(
       comparisonId,
@@ -368,6 +374,21 @@ export class ProcurementComparisonsService {
   private async getAuthorizedProject(userId: string, projectId: string) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
+    return project;
+  }
+
+  /** Same as `getAuthorizedProject` plus the PROCUREMENT/WRITE permission-
+   * engine check. `submit` stays on the plain read-only helper above — it's
+   * an APPROVE action through the existing DocumentApprovalsService fixed-
+   * role chain, not overlaid by this engine (2026-09 使用者決定). */
+  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+    const project = await this.getAuthorizedProject(userId, projectId);
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.PROCUREMENT,
+      PermissionAction.WRITE,
+    );
     return project;
   }
 

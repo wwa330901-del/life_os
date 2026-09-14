@@ -2,6 +2,11 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import {
+  PermissionAction,
+  PermissionResourceType,
+} from '../../generated/prisma/client.js';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
 
@@ -40,6 +45,7 @@ export class TodosService {
     private readonly prisma: PrismaService,
     private readonly projectsService: ProjectsService,
     private readonly calendarEventsService: CalendarEventsService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   /** Grouped view for the top-level 代辦事項 screen: 個人 as one flat list,
@@ -144,6 +150,14 @@ export class TodosService {
     }
 
     const project = await this.getAuthorizedProject(userId, dto.projectId);
+    // 個人代辦不屬於公司空間資源，不受這套權限管——只有掛在專案底下的工作
+    // 代辦才檢查（見 project_life_os_company_space_target_scope 記憶）。
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.TODOS,
+      PermissionAction.WRITE,
+    );
     if (dto.assigneeUserId) {
       await this.assertProjectMember(project.id, dto.assigneeUserId);
     }
@@ -318,6 +332,10 @@ export class TodosService {
     return project;
   }
 
+  /** Only ever called from `update`/`remove` — both writes — so gating
+   * TODOS/WRITE here (for the 工作 branch only; 個人 todos have no spaceId
+   * and stay untouched) covers both without a separate read/write split
+   * like `ProjectsService.assertAccess`/`assertCanWrite` needed. */
   private async getAuthorizedTodo(userId: string, id: string) {
     const todo = await this.prisma.projectTodo.findUnique({ where: { id } });
     if (!todo) {
@@ -331,6 +349,12 @@ export class TodosService {
     }
     const project = await this.projectsService.getProjectOrThrow(todo.projectId!);
     await this.projectsService.assertAccess(userId, project);
+    await this.permissionsService.assertCan(
+      userId,
+      project.spaceId,
+      PermissionResourceType.TODOS,
+      PermissionAction.WRITE,
+    );
     return todo;
   }
 
