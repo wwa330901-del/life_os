@@ -153,6 +153,8 @@ model User {
 
   personalSpace              Space?                     @relation("PersonalSpaceOwner")
   calendarSpace              Space?                     @relation("CalendarSpaceOwner")
+  generalManagerOfSpaces     Space[]                    @relation("SpaceGeneralManager")
+  fieldChangeLogsMade        FieldChangeLog[]
   memberships                CompanyMembership[]
   projectMemberships         ProjectMember[]
   generatedDocuments         GeneratedDocument[]
@@ -233,6 +235,13 @@ model Space {
   calendarOwnerUserId String? @unique
   calendarOwner       User?   @relation("CalendarSpaceOwner", fields: [calendarOwnerUserId], references: [id])
 
+  /// 「總經理」（2026-09 異動留痕通知對象，見 FieldChangeLog）——使用者在
+  /// 部門/職級畫面裡指定該空間的哪一位成員扮演這個角色,不是綁死 OWNER 或
+  /// 任何固定職級名稱。Nullable：沒指定就不發通知（FieldChangeLogService
+  /// 靜默跳過，同 LineNotifierService 對未綁定 LINE 帳號的處理慣例）。
+  generalManagerUserId String?
+  generalManager       User?   @relation("SpaceGeneralManager", fields: [generalManagerUserId], references: [id])
+
   memberships                  CompanyMembership[]
   projects                     Project[]
   propertyDefinitions          ProjectPropertyDefinition[]
@@ -255,6 +264,7 @@ model Space {
   financeNetWorthSnapshots     FinanceNetWorthSnapshot[]
   departments                  Department[]
   permissionRules              PermissionRule[]
+  fieldChangeLogs              FieldChangeLog[]
 }
 
 /// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
@@ -782,7 +792,7 @@ model DepartmentRank {
 /// null 不會擋重複，硬加只會製造假的安全感——重複規則交給
 /// PermissionsService 在新增時自己查重擋掉，不靠 DB 層。
 model PermissionRule {
-  id     String                 @id @default(uuid())
+  id     String           @id @default(uuid())
   action PermissionAction
 
   resourceType PermissionResourceType
@@ -797,6 +807,46 @@ model PermissionRule {
   rank   DepartmentRank? @relation(fields: [rankId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+}
+
+/// 異動留痕機制（2026-09，顧問文件「數值變更留痕與回報」）——目前只覆蓋兩個
+/// 真的有「使用者可以把既有值改成別的值」這種編輯動作的欄位：報價單細項的
+/// 單價/成本單價/數量（EngineeringQuotationService.updateItem），跟採發比
+/// 價表的決標金額（ProcurementComparisonsService.selectVendor）。成控表①
+/// 初始管制表核准後鎖定、只用一次性快照，沒有可編輯欄位；③執行中成控表本
+/// 身沒有存自己的金額欄位（全部現算或透過已有的 CostControlAdjustment 追
+/// 加減紀錄）；工程請款單一期送出後不能修改，只能新增下一期——這三個地方
+/// 結構上就不存在「改掉既有數值」的動作，故不需要這套機制。之後若新增其他
+/// 真的可編輯的金額欄位，比照這兩個呼叫點的模式擴充 FieldChangeEntityType
+/// 即可，不需要改這張表的結構。
+enum FieldChangeEntityType {
+  QUOTATION_LINE_ITEM
+  PROCUREMENT_COMPARISON
+}
+
+model FieldChangeLog {
+  id String @id @default(uuid())
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  entityType FieldChangeEntityType
+  entityId   String
+
+  fieldName  String // 例如 "unitPrice"，App 端不需要知道 schema 欄位名，只顯示 fieldLabel
+  fieldLabel String // 給使用者看的中文欄位名，例如「單價」
+
+  // 統一存成字串（不論原始型別是不是數字）——純顯示用途，不在這張表上做任
+  // 何數值運算。null 代表改之前/改之後是空值。
+  oldValue String?
+  newValue String?
+
+  changedByUserId String
+  changedByUser   User   @relation(fields: [changedByUserId], references: [id])
+
+  changedAt DateTime @default(now())
+
+  @@index([spaceId, entityType, entityId])
 }
 
 /// 案件類型（2026-09 案件類型分流＋九大階段狀態機設計）——重用原本死掉沒人

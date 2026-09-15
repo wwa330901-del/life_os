@@ -5,11 +5,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../../core/api_client.dart';
 import '../../../../../core/models/engineering_finance.dart';
+import '../../../../../core/models/field_change_log.dart';
 import '../../../../../state/auth_provider.dart';
 import '../../../../../state/engineering_finance_provider.dart';
 import '../../../../../state/project_editor_provider.dart';
 import '../../../finance/widgets/finance_format.dart';
 import 'widgets/approval_widgets.dart';
+import 'widgets/field_change_history_dialog.dart';
 
 /// 採發比價表 — 一張對應報價單的一個大項，比較多家廠商報價（從廠商主檔
 /// 選），決標後回填成控表對應列的「實際發包」，簽核通過後鎖定。
@@ -158,7 +160,20 @@ class _ComparisonCard extends ConsumerWidget {
             Row(
               children: [
                 Expanded(child: Text(itemName, style: Theme.of(context).textTheme.titleMedium)),
-                if (comparison.finalAwardedAmount != null) Chip(label: Text('決標 ${formatAmount(comparison.finalAwardedAmount!)}')),
+                if (comparison.finalAwardedAmount != null) ...[
+                  Chip(label: Text('決標 ${formatAmount(comparison.finalAwardedAmount!)}')),
+                  IconButton(
+                    icon: const Icon(Icons.history, size: 20),
+                    tooltip: '決標金額修改歷史',
+                    onPressed: () => FieldChangeHistoryDialog.show(
+                      context,
+                      projectId: projectId,
+                      entityType: FieldChangeEntityType.procurementComparison,
+                      entityId: comparison.id,
+                      title: itemName,
+                    ),
+                  ),
+                ],
                 if (!comparison.locked)
                   IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _delete(context, ref)),
               ],

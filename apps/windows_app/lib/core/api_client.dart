@@ -14,6 +14,7 @@ import 'models/friend.dart';
 import 'models/finance_report.dart';
 import 'models/document_approval.dart';
 import 'models/engineering_finance.dart';
+import 'models/field_change_log.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
 import 'models/generated_document.dart';
@@ -501,6 +502,16 @@ class ApiClient {
 
   Future<void> deletePermissionRule(String spaceId, String ruleId) async {
     await _delete('/spaces/$spaceId/permission-rules/$ruleId');
+  }
+
+  /// 異動留痕通知對象（2026-09）——null 代表這個空間還沒指定總經理。
+  Future<String?> getGeneralManager(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/general-manager');
+    return body['userId'] as String?;
+  }
+
+  Future<void> setGeneralManager(String spaceId, String? userId) async {
+    await _patch('/spaces/$spaceId/general-manager', {'userId': userId});
   }
 
   Future<List<AdminUserSummary>> adminListUsers() async {
@@ -1403,6 +1414,19 @@ class ApiClient {
   Future<EngineeringQuotationTree> deleteQuotationItem(String projectId, String itemId) async {
     final body = await _deleteWithBody('/projects/$projectId/engineering-quotation/items/$itemId');
     return EngineeringQuotationTree.fromJson(body);
+  }
+
+  /// 異動留痕（2026-09）——"頁面歷史紀錄可查"，最新的在最前面。
+  Future<List<FieldChangeLogEntry>> listFieldChangeLog({
+    required String projectId,
+    required FieldChangeEntityType entityType,
+    required String entityId,
+  }) async {
+    final body = await _getList(
+      '/projects/$projectId/field-change-log'
+      '?entityType=${fieldChangeEntityTypeToJson(entityType)}&entityId=$entityId',
+    );
+    return body.map((e) => FieldChangeLogEntry.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<EngineeringQuotationTree> reorderQuotationItem({

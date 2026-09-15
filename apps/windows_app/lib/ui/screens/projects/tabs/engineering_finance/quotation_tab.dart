@@ -7,12 +7,14 @@ import 'package:printing/printing.dart';
 
 import '../../../../../core/api_client.dart';
 import '../../../../../core/models/engineering_finance.dart';
+import '../../../../../core/models/field_change_log.dart';
 import '../../../../../services/export/quotation_export_service.dart';
 import '../../../../../state/auth_provider.dart';
 import '../../../../../state/engineering_finance_provider.dart';
 import '../../../../../state/project_editor_provider.dart';
 import '../../../../widgets/projects/export/quotation_export_options_dialog.dart';
 import '../../../finance/widgets/finance_format.dart';
+import 'widgets/field_change_history_dialog.dart';
 
 /// 工程報價單 — 大項/中項/細項三層自由樹狀結構，20 大類只是預設可刪改的
 /// 範本。金額只有最底層細項才有意義，複價/成本複價/毛利率跟往上彙總的
@@ -581,7 +583,7 @@ class _QuotationHeaderRow extends StatelessWidget {
           SizedBox(width: 70, child: Text('毛利率', style: style, textAlign: TextAlign.right)),
           SizedBox(width: 100, child: Text('A建議單價', style: style, textAlign: TextAlign.right)),
           SizedBox(width: 100, child: Text('B議價後單價', style: style, textAlign: TextAlign.right)),
-          const SizedBox(width: 90, child: Text('')),
+          const SizedBox(width: 120, child: Text('')),
         ],
       ),
     );
@@ -620,7 +622,7 @@ class _QuotationItemRow extends ConsumerWidget {
           SizedBox(width: 100, child: Text(_amountOrDash(node.marginAdjustedUnitPrice), textAlign: TextAlign.right)),
           SizedBox(width: 100, child: Text(_amountOrDash(node.negotiatedUnitPrice), textAlign: TextAlign.right)),
           SizedBox(
-            width: 90,
+            width: 120,
             child: Row(
               children: [
                 IconButton(
@@ -632,6 +634,18 @@ class _QuotationItemRow extends ConsumerWidget {
                   icon: const Icon(Icons.edit_outlined, size: 16),
                   onPressed: () => _edit(context, ref),
                 ),
+                if (node.isLeaf)
+                  IconButton(
+                    icon: const Icon(Icons.history, size: 16),
+                    tooltip: '修改歷史',
+                    onPressed: () => FieldChangeHistoryDialog.show(
+                      context,
+                      projectId: projectId,
+                      entityType: FieldChangeEntityType.quotationLineItem,
+                      entityId: node.id,
+                      title: node.name,
+                    ),
+                  ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 16),
                   onPressed: () => _delete(context, ref),

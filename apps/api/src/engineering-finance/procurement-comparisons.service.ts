@@ -10,7 +10,9 @@ import { CostControlService } from './cost-control.service';
 import { EngineeringQuotationService } from './engineering-quotation.service';
 import { DocumentApprovalsService } from '../document-approvals/document-approvals.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { FieldChangeLogService } from '../audit/field-change-log.service';
 import {
+  FieldChangeEntityType,
   PermissionAction,
   PermissionResourceType,
 } from '../../generated/prisma/client.js';
@@ -51,6 +53,7 @@ export class ProcurementComparisonsService {
     private readonly quotationService: EngineeringQuotationService,
     private readonly documentApprovals: DocumentApprovalsService,
     private readonly permissionsService: PermissionsService,
+    private readonly fieldChangeLog: FieldChangeLogService,
   ) {}
 
   async list(userId: string, projectId: string) {
@@ -261,8 +264,11 @@ export class ProcurementComparisonsService {
     comparisonId: string,
     dto: SelectVendorQuoteDto,
   ) {
-    await this.getAuthorizedProjectForWrite(userId, projectId);
-    await this.getEditableComparisonOrThrow(projectId, comparisonId);
+    const project = await this.getAuthorizedProjectForWrite(userId, projectId);
+    const existing = await this.getEditableComparisonOrThrow(
+      projectId,
+      comparisonId,
+    );
     const vendorQuote = await this.getVendorQuoteOrThrow(
       comparisonId,
       dto.vendorQuoteId,
@@ -285,6 +291,27 @@ export class ProcurementComparisonsService {
         data: { awardedAmount },
       }),
     ]);
+
+    const quotationItem = await this.prisma.quotationLineItem.findUnique({
+      where: { id: existing.quotationLineItemId },
+      select: { name: true },
+    });
+    await this.fieldChangeLog.record({
+      spaceId: project.spaceId,
+      entityType: FieldChangeEntityType.PROCUREMENT_COMPARISON,
+      entityId: comparisonId,
+      entityLabel: `採發比價表「${quotationItem?.name ?? comparisonId}」`,
+      changedByUserId: userId,
+      changes: [
+        {
+          field: 'finalAwardedAmount',
+          label: '決標金額',
+          oldValue: existing.finalAwardedAmount,
+          newValue: awardedAmount,
+        },
+      ],
+    });
+
     return this.getComparisonForResponse(comparisonId);
   }
 
@@ -381,7 +408,10 @@ export class ProcurementComparisonsService {
    * engine check. `submit` stays on the plain read-only helper above — it's
    * an APPROVE action through the existing DocumentApprovalsService fixed-
    * role chain, not overlaid by this engine (2026-09 使用者決定). */
-  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+  private async getAuthorizedProjectForWrite(
+    userId: string,
+    projectId: string,
+  ) {
     const project = await this.getAuthorizedProject(userId, projectId);
     await this.permissionsService.assertCan(
       userId,

@@ -14,3 +14,9 @@ final departmentsProvider = FutureProvider.family<List<Department>, String>((ref
 final permissionRulesProvider = FutureProvider.family<List<PermissionRule>, String>((ref, spaceId) async {
   return ref.read(apiClientProvider).listPermissionRules(spaceId);
 });
+
+/// This company space's designated 總經理 (異動留痕通知對象, 2026-09) — null
+/// means none set yet.
+final generalManagerProvider = FutureProvider.family<String?, String>((ref, spaceId) async {
+  return ref.read(apiClientProvider).getGeneralManager(spaceId);
+});

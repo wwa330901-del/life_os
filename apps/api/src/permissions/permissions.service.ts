@@ -18,6 +18,7 @@ import { CreateDepartmentRankDto } from './dto/create-department-rank.dto';
 import { UpdateDepartmentRankDto } from './dto/update-department-rank.dto';
 import { AssignMemberDepartmentDto } from './dto/assign-member-department.dto';
 import { CreatePermissionRuleDto } from './dto/create-permission-rule.dto';
+import { SetGeneralManagerDto } from './dto/set-general-manager.dto';
 
 /**
  * 公司空間權限引擎（2026-08-31 設計，見
@@ -73,7 +74,10 @@ export class PermissionsService {
     // ADMIN 在既有程式碼裡到處都跟 OWNER 同權（見 ProjectsService.assertAccess
     // 等），2026-09 使用者確認新引擎維持這個慣例，不因為接上新權限檢查就讓
     // ADMIN 反而變得比現在更受限。只有真正的一般 MEMBER 才吃 PermissionRule。
-    if (space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN) {
+    if (
+      space.role === MembershipRole.OWNER ||
+      space.role === MembershipRole.ADMIN
+    ) {
       return true;
     }
 
@@ -250,6 +254,37 @@ export class PermissionsService {
       where: { id: membership.id },
       data: { departmentId, rankId },
     });
+  }
+
+  // ---- 總經理（2026-09 異動留痕通知對象，見 FieldChangeLog）----
+
+  async getGeneralManager(
+    userId: string,
+    spaceId: string,
+  ): Promise<{ userId: string | null }> {
+    const space = await this.spacesService.getForUserOrThrow(userId, spaceId);
+    return { userId: space.generalManagerUserId ?? null };
+  }
+
+  async setGeneralManager(
+    userId: string,
+    spaceId: string,
+    dto: SetGeneralManagerDto,
+  ): Promise<{ userId: string | null }> {
+    await this.assertOwner(userId, spaceId);
+    if (dto.userId) {
+      const membership = await this.prisma.companyMembership.findUnique({
+        where: { userId_spaceId: { userId: dto.userId, spaceId } },
+      });
+      if (!membership) {
+        throw new NotFoundException('這個人不是這個空間的成員');
+      }
+    }
+    await this.prisma.space.update({
+      where: { id: spaceId },
+      data: { generalManagerUserId: dto.userId ?? null },
+    });
+    return { userId: dto.userId ?? null };
   }
 
   // ---- 權限規則 ----

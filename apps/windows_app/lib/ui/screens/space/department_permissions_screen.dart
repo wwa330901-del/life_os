@@ -39,6 +39,10 @@ class DepartmentPermissionsScreen extends ConsumerWidget {
           Divider(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.25)),
           const SizedBox(height: 16),
           _PermissionRulesSection(spaceId: spaceId),
+          const SizedBox(height: 32),
+          Divider(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.25)),
+          const SizedBox(height: 16),
+          _GeneralManagerSection(spaceId: spaceId),
         ],
       ),
     );
@@ -626,6 +630,68 @@ class _CreateRuleDialogState extends State<_CreateRuleDialog> {
           ],
         );
       },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 總經理（異動留痕通知對象）
+// ---------------------------------------------------------------------------
+
+class _GeneralManagerSection extends ConsumerWidget {
+  const _GeneralManagerSection({required this.spaceId});
+
+  final String spaceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final membersAsync = ref.watch(spaceMembersProvider(spaceId));
+    final gmAsync = ref.watch(generalManagerProvider(spaceId));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('總經理', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text(
+          '工程財務四表（報價單/採發比價表）的金額被修改時，會用 LINE 通知這個人。留空就不發通知。',
+          style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 12),
+        membersAsync.when(
+          data: (members) => gmAsync.when(
+            data: (gmUserId) => SizedBox(
+              width: 320,
+              child: DropdownButtonFormField<String?>(
+                initialValue: members.any((m) => m.userId == gmUserId) ? gmUserId : null,
+                decoration: const InputDecoration(labelText: '總經理', isDense: true),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('未指定')),
+                  for (final m in members) DropdownMenuItem(value: m.userId, child: Text(m.name)),
+                ],
+                onChanged: (userId) async {
+                  try {
+                    await ref.read(apiClientProvider).setGeneralManager(spaceId, userId);
+                    ref.invalidate(generalManagerProvider(spaceId));
+                  } on ApiException catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                    }
+                  }
+                },
+              ),
+            ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Text('讀取總經理設定失敗：$error'),
+          ),
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (error, _) => Text('讀取成員失敗：$error'),
+        ),
+      ],
     );
   }
 }

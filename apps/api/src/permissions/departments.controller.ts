@@ -17,6 +17,7 @@ import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { CreateDepartmentRankDto } from './dto/create-department-rank.dto';
 import { UpdateDepartmentRankDto } from './dto/update-department-rank.dto';
 import { AssignMemberDepartmentDto } from './dto/assign-member-department.dto';
+import { SetGeneralManagerDto } from './dto/set-general-manager.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('spaces/:spaceId')
@@ -128,5 +129,22 @@ export class DepartmentsController {
       targetUserId,
       dto,
     );
+  }
+
+  @Get('general-manager')
+  getGeneralManager(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+  ) {
+    return this.permissionsService.getGeneralManager(user.id, spaceId);
+  }
+
+  @Patch('general-manager')
+  setGeneralManager(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Body() dto: SetGeneralManagerDto,
+  ) {
+    return this.permissionsService.setGeneralManager(user.id, spaceId, dto);
   }
 }

@@ -6,7 +6,9 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { FieldChangeLogService } from '../audit/field-change-log.service';
 import {
+  FieldChangeEntityType,
   PermissionAction,
   PermissionResourceType,
 } from '../../generated/prisma/client.js';
@@ -58,6 +60,7 @@ export class EngineeringQuotationService {
     private readonly prisma: PrismaService,
     private readonly projectsService: ProjectsService,
     private readonly permissionsService: PermissionsService,
+    private readonly fieldChangeLog: FieldChangeLogService,
   ) {}
 
   async getTree(userId: string, projectId: string) {
@@ -138,9 +141,9 @@ export class EngineeringQuotationService {
     itemId: string,
     dto: UpdateQuotationItemDto,
   ) {
-    await this.getAuthorizedProjectForWrite(userId, projectId);
+    const project = await this.getAuthorizedProjectForWrite(userId, projectId);
     const quotation = await this.getOrCreateQuotation(projectId);
-    await this.getItemOrThrow(quotation.id, itemId);
+    const existing = await this.getItemOrThrow(quotation.id, itemId);
 
     if (dto.parentId !== undefined && dto.parentId !== null) {
       if (dto.parentId === itemId) {
@@ -167,6 +170,43 @@ export class EngineeringQuotationService {
         ...(dto.note !== undefined && { note: dto.note }),
       },
     });
+
+    await this.fieldChangeLog.record({
+      spaceId: project.spaceId,
+      entityType: FieldChangeEntityType.QUOTATION_LINE_ITEM,
+      entityId: itemId,
+      entityLabel: `報價單項目「${existing.name}」`,
+      changedByUserId: userId,
+      // dto.<field> !== undefined (not ??) mirrors the write above exactly
+      // — a field explicitly sent as null (clearing it) must show up as a
+      // real change, not fall through to the old value.
+      changes: [
+        {
+          field: 'quantity',
+          label: '數量',
+          oldValue: existing.quantity,
+          newValue:
+            dto.quantity !== undefined ? dto.quantity : existing.quantity,
+        },
+        {
+          field: 'unitPrice',
+          label: '單價',
+          oldValue: existing.unitPrice,
+          newValue:
+            dto.unitPrice !== undefined ? dto.unitPrice : existing.unitPrice,
+        },
+        {
+          field: 'costUnitPrice',
+          label: '成本單價',
+          oldValue: existing.costUnitPrice,
+          newValue:
+            dto.costUnitPrice !== undefined
+              ? dto.costUnitPrice
+              : existing.costUnitPrice,
+        },
+      ],
+    });
+
     return this.getTree(userId, projectId);
   }
 
@@ -591,7 +631,10 @@ export class EngineeringQuotationService {
   /** Same as `getAuthorizedProject` plus the QUOTATION/WRITE permission-
    * engine check — every mutating endpoint on this service uses this
    * instead; `getTree` (the only read) keeps using the plain one above. */
-  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+  private async getAuthorizedProjectForWrite(
+    userId: string,
+    projectId: string,
+  ) {
     const project = await this.getAuthorizedProject(userId, projectId);
     await this.permissionsService.assertCan(
       userId,
