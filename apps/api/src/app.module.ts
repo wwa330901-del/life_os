@@ -24,6 +24,7 @@ import { FriendsModule } from './friends/friends.module';
 import { FinanceReportModule } from './finance/finance-report.module';
 import { EngineeringFinanceModule } from './engineering-finance/engineering-finance.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { ClientsModule } from './clients/clients.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { PermissionsModule } from './permissions/permissions.module';
     FinanceReportModule,
     EngineeringFinanceModule,
     PermissionsModule,
+    ClientsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

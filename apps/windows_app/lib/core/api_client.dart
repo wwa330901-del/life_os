@@ -9,6 +9,7 @@ import 'models/ai_assistant.dart';
 import 'models/app_user.dart';
 import 'models/calendar_event.dart';
 import 'models/calendar_share.dart';
+import 'models/client.dart';
 import 'models/department.dart';
 import 'models/friend.dart';
 import 'models/finance_report.dart';
@@ -568,11 +569,13 @@ class ApiClient {
   Future<Project> createProject({
     required String spaceId,
     required String name,
+    required String clientId,
     required DateTime projectStartDate,
     List<PropertyValueInput> propertyValues = const [],
   }) async {
     final body = await _post('/spaces/$spaceId/projects', {
       'name': name,
+      'clientId': clientId,
       'projectStartDate': _dateOnly(projectStartDate),
       if (propertyValues.isNotEmpty)
         'propertyValues': propertyValues.map((v) => v.toJson()).toList(),
@@ -1357,6 +1360,56 @@ class ApiClient {
   Future<List<VendorHistoryEntry>> vendorHistory(String spaceId, String vendorId) async {
     final body = await _getList('/spaces/$spaceId/vendors/$vendorId/history');
     return body.map((e) => VendorHistoryEntry.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // --- 客戶資料庫（CRM 客戶端那一半，Vendor 是協力商那一半）---
+
+  Future<List<Client>> clients(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/clients');
+    return body.map((e) => Client.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createClient({
+    required String spaceId,
+    required String name,
+    String? contactPerson,
+    String? contactPhone,
+    String? contactEmail,
+    String? address,
+    String? note,
+  }) async {
+    await _post('/spaces/$spaceId/clients', {
+      'name': name,
+      if (contactPerson != null && contactPerson.isNotEmpty) 'contactPerson': contactPerson,
+      if (contactPhone != null && contactPhone.isNotEmpty) 'contactPhone': contactPhone,
+      if (contactEmail != null && contactEmail.isNotEmpty) 'contactEmail': contactEmail,
+      if (address != null && address.isNotEmpty) 'address': address,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  Future<void> updateClient({
+    required String spaceId,
+    required String clientId,
+    String? name,
+    String? contactPerson,
+    String? contactPhone,
+    String? contactEmail,
+    String? address,
+    String? note,
+  }) async {
+    await _patch('/spaces/$spaceId/clients/$clientId', {
+      if (name != null) 'name': name,
+      if (contactPerson != null) 'contactPerson': contactPerson,
+      if (contactPhone != null) 'contactPhone': contactPhone,
+      if (contactEmail != null) 'contactEmail': contactEmail,
+      if (address != null) 'address': address,
+      if (note != null) 'note': note,
+    });
+  }
+
+  Future<void> deleteClient(String spaceId, String clientId) async {
+    await _delete('/spaces/$spaceId/clients/$clientId');
   }
 
   // --- 工程財務四表：工程報價單 ---

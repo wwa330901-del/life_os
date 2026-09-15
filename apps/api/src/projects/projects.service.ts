@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SpacesService } from '../spaces/spaces.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { ClientsService } from '../clients/clients.service';
 import {
   MembershipRole,
   PermissionAction,
@@ -25,6 +26,7 @@ import { PropertyValueInputDto } from './dto/property-value-input.dto';
 
 const propertyValuesInclude = {
   propertyValues: { include: { definition: true, option: true } },
+  client: true,
 } as const;
 
 /// Fixed forward order for `advanceStage` — see the `ProjectStage` enum
@@ -47,6 +49,7 @@ export class ProjectsService {
     private readonly prisma: PrismaService,
     private readonly spacesService: SpacesService,
     private readonly permissionsService: PermissionsService,
+    private readonly clientsService: ClientsService,
   ) {}
 
   /**
@@ -110,6 +113,31 @@ export class ProjectsService {
       PermissionResourceType.PROJECT,
       PermissionAction.WRITE,
     );
+    // 2026-09 使用者要求：新建專案一定要選客戶——驗證這個客戶真的屬於這個
+    // 空間（不是隨便傳一個別的空間的 id 進來）。
+    const client = await this.clientsService.getClientOrThrow(
+      spaceId,
+      dto.clientId,
+    );
+
+    // 選了客戶就自動帶入「業主名稱」屬性（如果這個空間有定義這個 TEXT 屬
+    // 性的話）——沒有就靜默跳過，不強迫每個空間都要有這個屬性。呼叫端明
+    // 確給的 propertyValues 優先（同一個 definitionId 不重複塞）。
+    const clientNameDefinition =
+      await this.prisma.projectPropertyDefinition.findFirst({
+        where: { spaceId, name: '業主名稱', type: PropertyType.TEXT },
+      });
+    const propertyValues = [...(dto.propertyValues ?? [])];
+    if (
+      clientNameDefinition &&
+      !propertyValues.some((v) => v.definitionId === clientNameDefinition.id)
+    ) {
+      propertyValues.push({
+        definitionId: clientNameDefinition.id,
+        value: client.name,
+      });
+    }
+
     // One transaction: a bad property value (e.g. an unparseable number)
     // must not leave behind a half-created project with no PM and no
     // values — either all of this lands, or none of it does.
@@ -117,16 +145,17 @@ export class ProjectsService {
       const project = await tx.project.create({
         data: {
           name: dto.name,
+          clientId: dto.clientId,
           projectStartDate: new Date(dto.projectStartDate),
           spaceId,
         },
       });
-      if (dto.propertyValues?.length) {
+      if (propertyValues.length) {
         await this.upsertPropertyValues(
           tx,
           project.id,
           spaceId,
-          dto.propertyValues,
+          propertyValues,
         );
       }
       // Whoever creates a project is its PM (project lead) by default.
@@ -147,6 +176,9 @@ export class ProjectsService {
   async update(userId: string, projectId: string, dto: UpdateProjectDto) {
     const project = await this.getProjectOrThrow(projectId);
     await this.assertCanWrite(userId, project);
+    if (dto.clientId !== undefined) {
+      await this.clientsService.getClientOrThrow(project.spaceId, dto.clientId);
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.project.update({
         where: { id: projectId },
@@ -162,6 +194,7 @@ export class ProjectsService {
           ...(dto.skipDesignPhase !== undefined && {
             skipDesignPhase: dto.skipDesignPhase,
           }),
+          ...(dto.clientId !== undefined && { clientId: dto.clientId }),
         },
       });
       if (dto.propertyValues?.length) {

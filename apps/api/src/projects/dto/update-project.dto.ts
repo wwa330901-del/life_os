@@ -35,6 +35,11 @@ export class UpdateProjectDto {
   skipDesignPhase?: boolean;
 
   @IsOptional()
+  @IsString()
+  @MinLength(1)
+  clientId?: string;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PropertyValueInputDto)

@@ -33,6 +33,8 @@ class AppSidebar extends ConsumerStatefulWidget {
     required this.approvalsSelected,
     required this.onOpenVendors,
     required this.vendorsSelected,
+    required this.onOpenClients,
+    required this.clientsSelected,
     required this.onOpenPermissions,
     required this.permissionsSelected,
   });
@@ -45,6 +47,8 @@ class AppSidebar extends ConsumerStatefulWidget {
   final bool approvalsSelected;
   final VoidCallback onOpenVendors;
   final bool vendorsSelected;
+  final VoidCallback onOpenClients;
+  final bool clientsSelected;
   final VoidCallback onOpenPermissions;
   final bool permissionsSelected;
 
@@ -106,6 +110,8 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                 approvalsSelected: widget.approvalsSelected,
                 onOpenVendors: widget.onOpenVendors,
                 vendorsSelected: widget.vendorsSelected,
+                onOpenClients: widget.onOpenClients,
+                clientsSelected: widget.clientsSelected,
                 onOpenPermissions: widget.onOpenPermissions,
                 permissionsSelected: widget.permissionsSelected,
                 collapsed: true,
@@ -135,6 +141,8 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
           approvalsSelected: widget.approvalsSelected,
           onOpenVendors: widget.onOpenVendors,
           vendorsSelected: widget.vendorsSelected,
+          onOpenClients: widget.onOpenClients,
+          clientsSelected: widget.clientsSelected,
           onOpenPermissions: widget.onOpenPermissions,
           permissionsSelected: widget.permissionsSelected,
           collapsed: false,
@@ -174,6 +182,8 @@ class _SidebarPanel extends ConsumerWidget {
     required this.approvalsSelected,
     required this.onOpenVendors,
     required this.vendorsSelected,
+    required this.onOpenClients,
+    required this.clientsSelected,
     required this.onOpenPermissions,
     required this.permissionsSelected,
     required this.collapsed,
@@ -188,6 +198,8 @@ class _SidebarPanel extends ConsumerWidget {
   final bool approvalsSelected;
   final VoidCallback onOpenVendors;
   final bool vendorsSelected;
+  final VoidCallback onOpenClients;
+  final bool clientsSelected;
   final VoidCallback onOpenPermissions;
   final bool permissionsSelected;
 
@@ -257,6 +269,13 @@ class _SidebarPanel extends ConsumerWidget {
                 label: '廠商管理',
                 selected: vendorsSelected,
                 onTap: onOpenVendors,
+              ),
+            if (space.type == SpaceType.company)
+              _NavItem(
+                icon: Icons.groups_outlined,
+                label: '客戶管理',
+                selected: clientsSelected,
+                onTap: onOpenClients,
               ),
             if (space.type == SpaceType.company && (session?.user.isPlatformAdmin ?? false))
               _NavItem(

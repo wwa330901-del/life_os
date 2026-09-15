@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_client.dart';
+import '../../../core/models/client.dart';
 import '../../../core/models/project_property.dart';
 import '../../../state/auth_provider.dart';
+import '../../../state/clients_provider.dart';
 import '../../../state/project_properties_provider.dart';
 import '../../../state/projects_provider.dart';
 
@@ -49,6 +51,7 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
   String _lastAutoName = '';
   final _startDate = DateTime.now();
   bool _submitting = false;
+  String? _selectedClientId;
 
   @override
   void dispose() {
@@ -118,6 +121,11 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
   Future<void> _submit() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
+    final clientId = _selectedClientId;
+    if (clientId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('請選擇這個專案的客戶')));
+      return;
+    }
 
     final propertyValues = <PropertyValueInput>[];
     for (final definition in _definitions) {
@@ -154,6 +162,7 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
           .createProject(
             spaceId: widget.spaceId,
             name: name,
+            clientId: clientId,
             projectStartDate: _startDate,
             propertyValues: propertyValues,
           );
@@ -170,6 +179,7 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
   @override
   Widget build(BuildContext context) {
     final propertiesAsync = ref.watch(spacePropertiesProvider(widget.spaceId));
+    final clientsAsync = ref.watch(clientsProvider(widget.spaceId));
     _namingTemplate = ref.watch(namingTemplateProvider(widget.spaceId)).value;
 
     return AlertDialog(
@@ -179,7 +189,11 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
         child: propertiesAsync.when(
           data: (definitions) {
             _ensureFieldsFor(definitions);
-            return _buildForm(definitions);
+            return clientsAsync.when(
+              data: (clients) => _buildForm(definitions, clients),
+              loading: () => const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
+              error: (error, _) => Text('讀取客戶清單失敗：$error'),
+            );
           },
           loading: () => const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
           error: (error, _) => Text('讀取屬性設定失敗：$error'),
@@ -200,19 +214,33 @@ class _CreateProjectDialogState extends ConsumerState<CreateProjectDialog> {
     );
   }
 
-  Widget _buildForm(List<PropertyDefinition> definitions) {
+  Widget _buildForm(List<PropertyDefinition> definitions, List<Client> clients) {
+    if (clients.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text('這個公司空間還沒有任何客戶——請先到側邊欄「客戶管理」新增至少一位客戶，才能建立專案。'),
+      );
+    }
+    _selectedClientId ??= clients.first.id;
+
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          DropdownButtonFormField<String>(
+            initialValue: _selectedClientId,
+            decoration: const InputDecoration(labelText: '客戶'),
+            items: [for (final c in clients) DropdownMenuItem(value: c.id, child: Text(c.name))],
+            onChanged: (value) => setState(() => _selectedClientId = value),
+          ),
+          const SizedBox(height: 12),
           for (final definition in definitions) ...[
             _buildField(definition),
             const SizedBox(height: 12),
           ],
           TextField(
             controller: _nameController,
-            autofocus: definitions.isEmpty,
             decoration: const InputDecoration(labelText: '專案名稱'),
           ),
         ],

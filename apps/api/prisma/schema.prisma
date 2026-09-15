@@ -35,6 +35,7 @@ enum PermissionResourceType {
   COST_CONTROL
   PROCUREMENT
   PAYMENT_REQUEST
+  CLIENT
 }
 
 /// 「讀」永遠允許給空間內任何成員，不受這套規則管——只有下面三種動作才會
@@ -266,6 +267,7 @@ model Space {
   departments                  Department[]
   permissionRules              PermissionRule[]
   fieldChangeLogs              FieldChangeLog[]
+  clients                      Client[]
 }
 
 /// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
@@ -901,6 +903,14 @@ model Project {
   /// decision) — when true, advanceStage() skips straight over
   /// DESIGN_PHASE only; DESIGN_CONTRACT still happens either way.
   skipDesignPhase Boolean @default(false)
+
+  /// 客戶資料庫連結（2026-09）——不是上面 clientName 那個舊的自由文字欄位
+  /// （那個已經死了，被 ProjectPropertyValue 系統取代，這裡沒有要復活
+  /// 它）。Nullable 在 DB 層（既有專案沒有客戶），但 CreateProjectDto 要求
+  /// 新建專案一定要選，使用者決定：一致性交給 app 層，同一套慣例見
+  /// ProjectTodo 的 dueDate/isOngoing XOR。
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
 
   // Baseline anchor date: items with no predecessors start here. Date-only —
   // no time-of-day, no timezone (see WorkItem's date fields for the same rule).
@@ -1816,6 +1826,33 @@ model Vendor {
 
   procurementVendorQuotes ProcurementVendorQuote[]
   workItemAssignments     WorkItemVendor[]
+
+  @@index([spaceId])
+}
+
+/// 客戶資料庫（2026-09，顧問文件「CRM：客戶與協力廠商雙軌管理」的客戶端那
+/// 一半——Vendor 是協力商那一半，本來就已經存在）。掛在公司空間底下，該空
+/// 間所有成員共用同一份清單，跟 Vendor 同一個信任邊界慣例。設計確認：這輪
+/// 只做「基本資料」＋「關聯專案」，顧問文件原本還提到的「聯繫紀錄」「業務
+/// 成案比例分析」使用者這輪明確要求跳過，之後如果要做要另外設計。
+model Client {
+  id String @id @default(uuid())
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  name String
+
+  contactPerson String?
+  contactPhone  String?
+  contactEmail  String?
+  address       String?
+  note          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
 
   @@index([spaceId])
 }

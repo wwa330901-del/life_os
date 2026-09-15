@@ -8,6 +8,7 @@ import '../screens/calendar/calendar_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
 import '../screens/projects/project_list_screen.dart';
 import '../screens/projects/tabs/engineering_finance/vendor_management_screen.dart';
+import '../screens/space/client_management_screen.dart';
 import '../screens/space/department_permissions_screen.dart';
 import '../screens/space/space_properties_screen.dart';
 import 'app_sidebar.dart';
@@ -39,6 +40,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
   bool _showPropertiesSettings = false;
   bool _showApprovals = false;
   bool _showVendors = false;
+  bool _showClients = false;
   bool _showPermissions = false;
 
   // `_RootRouter` reuses this same `SpaceShell` widget instance across
@@ -56,6 +58,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showPropertiesSettings = false;
     _showApprovals = false;
     _showVendors = false;
+    _showClients = false;
     _showPermissions = false;
   });
 
@@ -64,6 +67,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showPropertiesSettings = true;
     _showApprovals = false;
     _showVendors = false;
+    _showClients = false;
     _showPermissions = false;
   });
 
@@ -72,6 +76,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showPropertiesSettings = false;
     _showApprovals = true;
     _showVendors = false;
+    _showClients = false;
     _showPermissions = false;
   });
 
@@ -80,6 +85,16 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showPropertiesSettings = false;
     _showApprovals = false;
     _showVendors = true;
+    _showClients = false;
+    _showPermissions = false;
+  });
+
+  void _openClients() => setState(() {
+    _openProjectId = null;
+    _showPropertiesSettings = false;
+    _showApprovals = false;
+    _showVendors = false;
+    _showClients = true;
     _showPermissions = false;
   });
 
@@ -88,6 +103,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showPropertiesSettings = false;
     _showApprovals = false;
     _showVendors = false;
+    _showClients = false;
     _showPermissions = true;
   });
 
@@ -103,6 +119,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
       _showPropertiesSettings = false;
       _showApprovals = false;
       _showVendors = false;
+      _showClients = false;
       _showPermissions = false;
     }
 
@@ -115,6 +132,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
       ),
       SpaceType.company when _showApprovals => const ApprovalsHomeScreen(),
       SpaceType.company when _showVendors => VendorManagementScreen(spaceId: space.id),
+      SpaceType.company when _showClients => ClientManagementScreen(spaceId: space.id),
       SpaceType.company when _showPermissions => DepartmentPermissionsScreen(
         spaceId: space.id,
         onBack: _backToList,
@@ -143,6 +161,8 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
             approvalsSelected: _showApprovals,
             onOpenVendors: _openVendors,
             vendorsSelected: _showVendors,
+            onOpenClients: _openClients,
+            clientsSelected: _showClients,
             onOpenPermissions: _openPermissions,
             permissionsSelected: _showPermissions,
           ),

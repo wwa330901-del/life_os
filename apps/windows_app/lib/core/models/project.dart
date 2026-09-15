@@ -1,3 +1,4 @@
+import 'client.dart';
 import 'holiday_calendar.dart';
 import 'project_property.dart';
 
@@ -105,6 +106,11 @@ class Project {
   final ProjectStage stage;
   final bool skipDesignPhase;
 
+  /// 2026-09 — nullable only because projects created before this feature
+  /// have none; every project created from now on always has one (see
+  /// `CreateProjectDto.clientId`, required, not optional).
+  final Client? client;
+
   const Project({
     required this.id,
     required this.name,
@@ -117,6 +123,7 @@ class Project {
     this.caseType,
     required this.stage,
     required this.skipDesignPhase,
+    this.client,
   });
 
   /// Looks up this project's value for the property named [name] within
@@ -157,6 +164,9 @@ class Project {
         : projectCaseTypeFromJson(json['caseType'] as String),
     stage: projectStageFromJson(json['stage'] as String),
     skipDesignPhase: json['skipDesignPhase'] as bool,
+    client: json['client'] == null
+        ? null
+        : Client.fromJson(json['client'] as Map<String, dynamic>),
   );
 }
 
