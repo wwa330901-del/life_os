@@ -1,5 +1,15 @@
-import { IsArray, IsDateString, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+import { ProjectCaseType } from '../../../generated/prisma/client.js';
 import { PropertyValueInputDto } from './property-value-input.dto';
 
 export class UpdateProjectDto {
@@ -15,6 +25,14 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsDateString()
   projectEndDate?: string;
+
+  @IsOptional()
+  @IsEnum(ProjectCaseType)
+  caseType?: ProjectCaseType;
+
+  @IsOptional()
+  @IsBoolean()
+  skipDesignPhase?: boolean;
 
   @IsOptional()
   @IsArray()

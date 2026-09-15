@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { ScheduleService } from './schedule.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -41,6 +50,14 @@ export class ProjectsController {
     return this.projectsService.remove(user.id, id);
   }
 
+  @Post(':id/advance-stage')
+  advanceStage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.projectsService.advanceStage(user.id, id);
+  }
+
   @Patch(':id/calendar')
   updateCalendar(
     @CurrentUser() user: AuthenticatedUser,
@@ -61,7 +78,10 @@ export class ProjectsController {
    * for why this exists instead of three separate GETs.
    */
   @Get(':id/editor-state')
-  getEditorState(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+  getEditorState(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
     return this.scheduleService.getEditorState(user.id, id);
   }
 }

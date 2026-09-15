@@ -197,6 +197,8 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
                 onSubmitted: (_) => _nameFocusNode.unfocus(),
               ),
             ),
+            field(_buildCaseTypeField(project)),
+            field(_buildStageSection(project)),
             for (final definition in definitions) field(_buildField(project, definition)),
             // 簽約日期/預計結案日 are still backed by the fixed `projectStartDate`/
             // `projectEndDate` columns (the schedule/Gantt engine anchors off
@@ -302,6 +304,104 @@ class _ProjectInfoTabState extends ConsumerState<ProjectInfoTab> {
           },
         );
     }
+  }
+
+  Widget _buildCaseTypeField(Project project) {
+    return DropdownButtonFormField<ProjectCaseType>(
+      initialValue: project.caseType,
+      decoration: const InputDecoration(labelText: '案件類型'),
+      items: [
+        for (final type in ProjectCaseType.values)
+          DropdownMenuItem(value: type, child: Text(projectCaseTypeLabel(type))),
+      ],
+      onChanged: (value) {
+        if (value == null) return;
+        _run(
+          () => ref
+              .read(apiClientProvider)
+              .updateProject(projectId: widget.projectId, caseType: value),
+        );
+      },
+    );
+  }
+
+  /// 九大階段 progress + manual advance — see `ProjectStage` for the fixed
+  /// order and `advanceProjectStage` for why this is a dedicated action
+  /// rather than a free-pick dropdown (forward-only, one step at a time).
+  Widget _buildStageSection(Project project) {
+    final currentIndex = ProjectStage.values.indexOf(project.stage);
+    final isLastStage = currentIndex == ProjectStage.values.length - 1;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('目前階段', style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (final stage in ProjectStage.values)
+                if (!(project.skipDesignPhase && stage == ProjectStage.designPhase))
+                  _buildStageChip(stage, stage == project.stage, ProjectStage.values.indexOf(stage) < currentIndex),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text('跳過設計階段'),
+                  subtitle: const Text('業主自己提供設計時開啟；設計簽約仍會進行，只跳過設計階段本身'),
+                  value: project.skipDesignPhase,
+                  onChanged: (value) => _run(
+                    () => ref
+                        .read(apiClientProvider)
+                        .updateProject(projectId: widget.projectId, skipDesignPhase: value),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: isLastStage
+                  ? null
+                  : () => _run(
+                      () => ref.read(apiClientProvider).advanceProjectStage(widget.projectId),
+                    ),
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('前進下一階段'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStageChip(ProjectStage stage, bool isCurrent, bool isPast) {
+    final theme = Theme.of(context);
+    return Chip(
+      label: Text(projectStageLabel(stage)),
+      backgroundColor: isCurrent
+          ? theme.colorScheme.primaryContainer
+          : isPast
+          ? theme.colorScheme.surfaceContainerHighest
+          : null,
+      labelStyle: isCurrent
+          ? TextStyle(color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold)
+          : isPast
+          ? TextStyle(color: theme.colorScheme.onSurfaceVariant)
+          : null,
+    );
   }
 
   /// Same boxed/labeled look as the `TextField`/`DropdownButtonFormField`

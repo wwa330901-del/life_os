@@ -1,22 +1,86 @@
 import 'holiday_calendar.dart';
 import 'project_property.dart';
 
-/// One 類型/狀態 dropdown option from the old platform-wide admin system
-/// (`apps/api/src/projects/project-options.service.ts`) — superseded by the
-/// per-space [PropertyDefinition]/[PropertyOption] system, but the old
-/// tables/endpoints/admin screen are still around (stage-2 cleanup, not yet
-/// done), so this stays until that's removed.
+/// 案件類型（2026-09 案件類型分流＋九大階段狀態機）— reuses the schema slot
+/// the old dead `typeId` used to occupy. Three values, not the consultant
+/// doc's plain two, because a real existing local-dev category (設計工程混合
+/// 案) didn't fit the binary split and the user chose to keep it as a third
+/// value rather than force-collapse it.
+enum ProjectCaseType { design, engineering, designEngineering }
+
+ProjectCaseType projectCaseTypeFromJson(String value) => switch (value) {
+  'DESIGN' => ProjectCaseType.design,
+  'ENGINEERING' => ProjectCaseType.engineering,
+  'DESIGN_ENGINEERING' => ProjectCaseType.designEngineering,
+  _ => throw ArgumentError('Unknown ProjectCaseType: $value'),
+};
+
+String projectCaseTypeToJson(ProjectCaseType type) => switch (type) {
+  ProjectCaseType.design => 'DESIGN',
+  ProjectCaseType.engineering => 'ENGINEERING',
+  ProjectCaseType.designEngineering => 'DESIGN_ENGINEERING',
+};
+
+String projectCaseTypeLabel(ProjectCaseType type) => switch (type) {
+  ProjectCaseType.design => '設計案',
+  ProjectCaseType.engineering => '工程案',
+  ProjectCaseType.designEngineering => '設計工程混合案',
+};
+
+/// 全案九大階段，固定順序（`ProjectStage.values` here matches the backend's
+/// `STAGE_ORDER` — keep them declared in the same order if either ever
+/// changes). Only advances forward, one step at a time, via
+/// `POST /projects/:id/advance-stage` — never set directly by picking a
+/// value out of order.
+enum ProjectStage {
+  businessContact,
+  designContract,
+  designPhase,
+  engineeringQuotation,
+  engineeringContract,
+  preparation,
+  procurement,
+  construction,
+  completionSettlement,
+}
+
+ProjectStage projectStageFromJson(String value) => switch (value) {
+  'BUSINESS_CONTACT' => ProjectStage.businessContact,
+  'DESIGN_CONTRACT' => ProjectStage.designContract,
+  'DESIGN_PHASE' => ProjectStage.designPhase,
+  'ENGINEERING_QUOTATION' => ProjectStage.engineeringQuotation,
+  'ENGINEERING_CONTRACT' => ProjectStage.engineeringContract,
+  'PREPARATION' => ProjectStage.preparation,
+  'PROCUREMENT' => ProjectStage.procurement,
+  'CONSTRUCTION' => ProjectStage.construction,
+  'COMPLETION_SETTLEMENT' => ProjectStage.completionSettlement,
+  _ => throw ArgumentError('Unknown ProjectStage: $value'),
+};
+
+String projectStageLabel(ProjectStage stage) => switch (stage) {
+  ProjectStage.businessContact => '業務接洽',
+  ProjectStage.designContract => '設計簽約',
+  ProjectStage.designPhase => '設計階段',
+  ProjectStage.engineeringQuotation => '工程估價',
+  ProjectStage.engineeringContract => '工程簽約',
+  ProjectStage.preparation => '前置作業',
+  ProjectStage.procurement => '發包作業',
+  ProjectStage.construction => '施工作業',
+  ProjectStage.completionSettlement => '完工驗收・結算保固',
+};
+
 /// One 專案 under a company space. The backend's Project row also carries
 /// the holiday calendar fields flattened onto it (see schema.prisma) — this
 /// client model embeds them as a [HolidayCalendar] for convenience, same
 /// shape reno_pm's Gantt widgets expect.
 ///
-/// Project-info fields (類型/狀態/業主名稱/... or whatever else a space has
-/// defined) are no longer fixed columns — each space defines its own set of
+/// Project-info fields (業主名稱/... or whatever else a space has defined)
+/// are no longer fixed columns — each space defines its own set of
 /// properties (see `project_properties_provider.dart`), and a project just
-/// carries a value per definition in [propertyValues]. The backend still
-/// returns the old fixed `type`/`status` fields too (a stage-1 safety net),
-/// but nothing on the client reads them anymore.
+/// carries a value per definition in [propertyValues]. `caseType`/`stage`/
+/// `skipDesignPhase` above are the exception — those genuinely are fixed
+/// columns again (2026-09), since they drive real cross-space automation
+/// (顧問文件's 九大階段流程) rather than being per-space free-form data.
 class Project {
   final String id;
   final String name;
@@ -36,6 +100,11 @@ class Project {
   /// a Project.
   final String? pmName;
 
+  /// Null until the user assigns one — no default, unlike [stage].
+  final ProjectCaseType? caseType;
+  final ProjectStage stage;
+  final bool skipDesignPhase;
+
   const Project({
     required this.id,
     required this.name,
@@ -45,6 +114,9 @@ class Project {
     required this.spaceId,
     required this.propertyValues,
     this.pmName,
+    this.caseType,
+    required this.stage,
+    required this.skipDesignPhase,
   });
 
   /// Looks up this project's value for the property named [name] within
@@ -80,6 +152,11 @@ class Project {
         .map((e) => ProjectPropertyValue.fromJson(e as Map<String, dynamic>))
         .toList(),
     pmName: json['pmName'] as String?,
+    caseType: json['caseType'] == null
+        ? null
+        : projectCaseTypeFromJson(json['caseType'] as String),
+    stage: projectStageFromJson(json['stage'] as String),
+    skipDesignPhase: json['skipDesignPhase'] as bool,
   );
 }
 

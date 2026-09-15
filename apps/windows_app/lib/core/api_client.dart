@@ -957,15 +957,26 @@ class ApiClient {
     String? name,
     DateTime? projectStartDate,
     DateTime? projectEndDate,
+    ProjectCaseType? caseType,
+    bool? skipDesignPhase,
     List<PropertyValueInput> propertyValues = const [],
   }) async {
     final body = await _patch('/projects/$projectId', {
       if (name != null) 'name': name,
       if (projectStartDate != null) 'projectStartDate': _dateOnly(projectStartDate),
       if (projectEndDate != null) 'projectEndDate': _dateOnly(projectEndDate),
+      if (caseType != null) 'caseType': projectCaseTypeToJson(caseType),
+      if (skipDesignPhase != null) 'skipDesignPhase': skipDesignPhase,
       if (propertyValues.isNotEmpty)
         'propertyValues': propertyValues.map((v) => v.toJson()).toList(),
     });
+    return Project.fromJson(body);
+  }
+
+  /// Steps the project one stage forward (see `ProjectStage`) — throws
+  /// [ApiException] if it's already at the last stage.
+  Future<Project> advanceProjectStage(String projectId) async {
+    final body = await _post('/projects/$projectId/advance-stage', {});
     return Project.fromJson(body);
   }
 

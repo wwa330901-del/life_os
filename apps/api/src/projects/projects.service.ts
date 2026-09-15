@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpacesService } from '../spaces/spaces.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -8,6 +13,7 @@ import {
   PermissionResourceType,
   Prisma,
   ProjectRole,
+  ProjectStage,
   PropertyType,
   SpaceType,
 } from '../../generated/prisma/client.js';
@@ -20,6 +26,20 @@ import { PropertyValueInputDto } from './dto/property-value-input.dto';
 const propertyValuesInclude = {
   propertyValues: { include: { definition: true, option: true } },
 } as const;
+
+/// Fixed forward order for `advanceStage` — see the `ProjectStage` enum
+/// comment in schema.prisma for where this list comes from.
+const STAGE_ORDER: ProjectStage[] = [
+  ProjectStage.BUSINESS_CONTACT,
+  ProjectStage.DESIGN_CONTRACT,
+  ProjectStage.DESIGN_PHASE,
+  ProjectStage.ENGINEERING_QUOTATION,
+  ProjectStage.ENGINEERING_CONTRACT,
+  ProjectStage.PREPARATION,
+  ProjectStage.PROCUREMENT,
+  ProjectStage.CONSTRUCTION,
+  ProjectStage.COMPLETION_SETTLEMENT,
+];
 
 @Injectable()
 export class ProjectsService {
@@ -55,9 +75,12 @@ export class ProjectsService {
   async listForSpace(userId: string, spaceId: string) {
     const space = await this.spacesService.getForUserOrThrow(userId, spaceId);
     const canSeeEverything =
-      space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN;
+      space.role === MembershipRole.OWNER ||
+      space.role === MembershipRole.ADMIN;
     const projects = await this.prisma.project.findMany({
-      where: canSeeEverything ? { spaceId } : { spaceId, members: { some: { userId } } },
+      where: canSeeEverything
+        ? { spaceId }
+        : { spaceId, members: { some: { userId } } },
       include: {
         ...propertyValuesInclude,
         // Only the PM(s) — the project list card just needs "who's
@@ -99,7 +122,12 @@ export class ProjectsService {
         },
       });
       if (dto.propertyValues?.length) {
-        await this.upsertPropertyValues(tx, project.id, spaceId, dto.propertyValues);
+        await this.upsertPropertyValues(
+          tx,
+          project.id,
+          spaceId,
+          dto.propertyValues,
+        );
       }
       // Whoever creates a project is its PM (project lead) by default.
       await tx.projectMember.create({
@@ -130,10 +158,19 @@ export class ProjectsService {
           ...(dto.projectEndDate !== undefined && {
             projectEndDate: new Date(dto.projectEndDate),
           }),
+          ...(dto.caseType !== undefined && { caseType: dto.caseType }),
+          ...(dto.skipDesignPhase !== undefined && {
+            skipDesignPhase: dto.skipDesignPhase,
+          }),
         },
       });
       if (dto.propertyValues?.length) {
-        await this.upsertPropertyValues(tx, projectId, project.spaceId, dto.propertyValues);
+        await this.upsertPropertyValues(
+          tx,
+          projectId,
+          project.spaceId,
+          dto.propertyValues,
+        );
       }
     });
     return this.getProjectOrThrow(projectId);
@@ -147,7 +184,11 @@ export class ProjectsService {
     await this.prisma.project.delete({ where: { id: projectId } });
   }
 
-  async updateCalendar(userId: string, projectId: string, dto: UpdateCalendarDto) {
+  async updateCalendar(
+    userId: string,
+    projectId: string,
+    dto: UpdateCalendarDto,
+  ) {
     const project = await this.getProjectOrThrow(projectId);
     await this.assertCanWrite(userId, project);
     return this.prisma.project.update({
@@ -173,18 +214,45 @@ export class ProjectsService {
    * + chosen option) included — it's a cheap join on a single-row lookup,
    * and centralizing it here means every screen that loads a project
    * (detail, schedule, work items, calendar) sees the same shape without
-   * each one remembering to ask for it separately. `type`/`status` (the
-   * old fixed fields) are still included too — stage-1 safety net, not
-   * used by the frontend anymore. */
+   * each one remembering to ask for it separately. */
   async getProjectOrThrow(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { type: true, status: true, ...propertyValuesInclude },
+      include: propertyValuesInclude,
     });
     if (!project) {
       throw new NotFoundException('Project not found');
     }
     return project;
+  }
+
+  /** Moves a project to the next stage in `STAGE_ORDER`. Manual-only, one
+   * step forward at a time (2026-09 user decision — no auto-advance, no
+   * jumping, no going back through this endpoint). If `skipDesignPhase` is
+   * on and the next stage would be DESIGN_PHASE, steps one further to
+   * ENGINEERING_QUOTATION instead — DESIGN_CONTRACT still happens either
+   * way, only the DESIGN_PHASE stage itself is skipped. */
+  async advanceStage(userId: string, projectId: string) {
+    const project = await this.getProjectOrThrow(projectId);
+    await this.assertCanWrite(userId, project);
+
+    const currentIndex = STAGE_ORDER.indexOf(project.stage);
+    if (currentIndex === STAGE_ORDER.length - 1) {
+      throw new BadRequestException('已經是最後階段（完工驗收・結算保固）');
+    }
+    let nextIndex = currentIndex + 1;
+    if (
+      project.skipDesignPhase &&
+      STAGE_ORDER[nextIndex] === ProjectStage.DESIGN_PHASE
+    ) {
+      nextIndex += 1;
+    }
+
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { stage: STAGE_ORDER[nextIndex] },
+    });
+    return this.getProjectOrThrow(projectId);
   }
 
   /**
@@ -213,7 +281,12 @@ export class ProjectsService {
         numberValue: number | null;
         dateValue: Date | null;
         optionId: string | null;
-      } = { textValue: null, numberValue: null, dateValue: null, optionId: null };
+      } = {
+        textValue: null,
+        numberValue: null,
+        dateValue: null,
+        optionId: null,
+      };
 
       switch (definition.type) {
         case PropertyType.TEXT:
@@ -248,7 +321,9 @@ export class ProjectsService {
       }
 
       await tx.projectPropertyValue.upsert({
-        where: { projectId_definitionId: { projectId, definitionId: definition.id } },
+        where: {
+          projectId_definitionId: { projectId, definitionId: definition.id },
+        },
         create: { projectId, definitionId: definition.id, ...data },
         update: data,
       });
@@ -266,9 +341,16 @@ export class ProjectsService {
    * space-level access is confirmed.
    */
   async assertAccess(userId: string, project: Project): Promise<void> {
-    const space = await this.spacesService.getForUserOrThrow(userId, project.spaceId);
+    const space = await this.spacesService.getForUserOrThrow(
+      userId,
+      project.spaceId,
+    );
     if (space.type === SpaceType.PERSONAL) return;
-    if (space.role === MembershipRole.OWNER || space.role === MembershipRole.ADMIN) return;
+    if (
+      space.role === MembershipRole.OWNER ||
+      space.role === MembershipRole.ADMIN
+    )
+      return;
 
     const membership = await this.prisma.projectMember.findUnique({
       where: { userId_projectId: { userId, projectId: project.id } },
