@@ -655,6 +655,49 @@ class PaymentRequestPeriod {
 }
 
 // ---------------------------------------------------------------------------
+// 業主端估驗計價（對業主收款，PaymentRequestPeriod 是對廠商付款）
+// ---------------------------------------------------------------------------
+
+/// 掛在 Project 底下，不綁定任何一個 CostControlRow/發包——業主的估驗計價
+/// 針對整個工程進度。金額手動輸入、不自動試算；不走簽核，純記錄與匯出用
+/// 途，因此（跟 PaymentRequestPeriod 不同）支援 update/delete。
+class OwnerBillingPeriod {
+  const OwnerBillingPeriod({
+    required this.id,
+    required this.periodLabel,
+    required this.amount,
+    required this.requestDate,
+    required this.note,
+    required this.contractAmountSnapshot,
+    required this.billedPercentBefore,
+    required this.createdByUserId,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String periodLabel;
+  final double amount;
+  final DateTime requestDate;
+  final String? note;
+  final double contractAmountSnapshot;
+  final double billedPercentBefore;
+  final String createdByUserId;
+  final DateTime createdAt;
+
+  factory OwnerBillingPeriod.fromJson(Map<String, dynamic> json) => OwnerBillingPeriod(
+    id: json['id'] as String,
+    periodLabel: json['periodLabel'] as String,
+    amount: (json['amount'] as num).toDouble(),
+    requestDate: DateTime.parse(json['requestDate'] as String),
+    note: json['note'] as String?,
+    contractAmountSnapshot: (json['contractAmountSnapshot'] as num).toDouble(),
+    billedPercentBefore: (json['billedPercentBefore'] as num).toDouble(),
+    createdByUserId: json['createdByUserId'] as String,
+    createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 簽核固定關卡職稱（顯示用，跟後端 FIXED_ROLE_CHAINS 一致）
 // ---------------------------------------------------------------------------
 

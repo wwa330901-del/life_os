@@ -177,6 +177,7 @@ model User {
   friendshipsReceived        Friendship[]               @relation("FriendshipAddressee")
 
   paymentRequestPeriodsSubmitted PaymentRequestPeriod[]
+  ownerBillingPeriodsCreated     OwnerBillingPeriod[]
 }
 
 /// 好友 (2026-08-06) — a mutual, symmetric relationship: unlike CalendarShare
@@ -940,6 +941,7 @@ model Project {
   costControlInitialSheet CostControlInitialSheet?
   procurementComparisons  ProcurementComparison[]
   costControlRows         CostControlRow[]
+  ownerBillingPeriods     OwnerBillingPeriod[]
 }
 
 model ProjectMember {
@@ -2131,4 +2133,38 @@ model PaymentRequestPeriod {
   approvals DocumentApproval[]
 
   @@index([costControlRowId])
+}
+
+/// 業主端估驗計價（2026-09，顧問文件「對業主（估驗計價）＋對廠商兩類請款
+/// 單」的業主端那一半——PaymentRequestPeriod 只做對廠商付款，這裡補上對
+/// 業主收款）。設計確認（兩方案二選一）：(1) 掛在 Project 底下，不綁定任
+/// 何一個 CostControlRow/發包——業主的估驗計價針對整個工程進度，不是特定
+/// 一個發包合約；(2) 金額由使用者依實際估驗進度手動輸入，不自動試算；(3)
+/// 純記錄與匯出用途，不走簽核（業主端對外文件，跟對廠商的請款簽核流程不
+/// 同）。期數自由新增，沒有「鎖定」狀態——create/update/delete 都能做，跟
+/// PaymentRequestPeriod（create-only，鎖定靠簽核）不同。
+model OwnerBillingPeriod {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  periodLabel String // 使用者自訂，例如「第一期估驗」
+  amount      Float
+  requestDate DateTime @db.Date
+  note        String?
+
+  /// 建立當下自動帶入的快照（報價單當時的合約總金額、建立前的累計已估驗
+  /// 百分比）——純紀錄用途，之後報價單金額若再變動，這裡仍保留當時的值，
+  /// 跟 PaymentRequestPeriod 的 contractAmountSnapshot/billedPercentBefore
+  /// 同一個理由。只在 create 時算一次，update 不重新計算。
+  contractAmountSnapshot Float
+  billedPercentBefore    Float
+
+  createdByUserId String
+  createdBy       User   @relation(fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
 }

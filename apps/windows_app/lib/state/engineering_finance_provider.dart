@@ -63,6 +63,13 @@ final paymentRequestPeriodsProvider = FutureProvider.autoDispose.family<List<Pay
 
 typedef PaymentRequestPeriodApprovalsQuery = ({String projectId, String periodId});
 
+final ownerBillingPeriodsProvider = FutureProvider.autoDispose.family<List<OwnerBillingPeriod>, String>((
+  ref,
+  projectId,
+) {
+  return ref.read(apiClientProvider).ownerBillingPeriods(projectId);
+});
+
 final paymentRequestPeriodApprovalsProvider = FutureProvider.autoDispose
     .family<List<DocumentApprovalSummary>, PaymentRequestPeriodApprovalsQuery>((ref, query) {
       return ref

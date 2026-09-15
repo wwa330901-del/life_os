@@ -16,6 +16,8 @@ import { ProcurementComparisonsController } from './procurement-comparisons.cont
 import { ProcurementComparisonsService } from './procurement-comparisons.service';
 import { PaymentRequestPeriodsController } from './payment-request-periods.controller';
 import { PaymentRequestPeriodsService } from './payment-request-periods.service';
+import { OwnerBillingPeriodsController } from './owner-billing-periods.controller';
+import { OwnerBillingPeriodsService } from './owner-billing-periods.service';
 
 @Module({
   imports: [
@@ -33,6 +35,7 @@ import { PaymentRequestPeriodsService } from './payment-request-periods.service'
     CostControlController,
     ProcurementComparisonsController,
     PaymentRequestPeriodsController,
+    OwnerBillingPeriodsController,
   ],
   providers: [
     VendorsService,
@@ -40,6 +43,7 @@ import { PaymentRequestPeriodsService } from './payment-request-periods.service'
     CostControlService,
     ProcurementComparisonsService,
     PaymentRequestPeriodsService,
+    OwnerBillingPeriodsService,
   ],
   exports: [CostControlService, EngineeringQuotationService],
 })

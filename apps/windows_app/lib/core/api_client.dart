@@ -1801,6 +1801,48 @@ class ApiClient {
     return body.map((e) => DocumentApprovalSummary.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  /// 業主端估驗計價（對業主收款）——PaymentRequestPeriod 是對廠商付款。
+  /// 不走簽核，所以（跟上面不同）支援 update/delete。
+  Future<List<OwnerBillingPeriod>> ownerBillingPeriods(String projectId) async {
+    final body = await _getList('/projects/$projectId/owner-billing-periods');
+    return body.map((e) => OwnerBillingPeriod.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createOwnerBillingPeriod({
+    required String projectId,
+    required String periodLabel,
+    required double amount,
+    required DateTime requestDate,
+    String? note,
+  }) async {
+    await _post('/projects/$projectId/owner-billing-periods', {
+      'periodLabel': periodLabel,
+      'amount': amount,
+      'requestDate': _dateOnly(requestDate),
+      if (note != null) 'note': note,
+    });
+  }
+
+  Future<void> updateOwnerBillingPeriod({
+    required String projectId,
+    required String periodId,
+    String? periodLabel,
+    double? amount,
+    DateTime? requestDate,
+    String? note,
+  }) async {
+    await _patch('/projects/$projectId/owner-billing-periods/$periodId', {
+      if (periodLabel != null) 'periodLabel': periodLabel,
+      if (amount != null) 'amount': amount,
+      if (requestDate != null) 'requestDate': _dateOnly(requestDate),
+      if (note != null) 'note': note,
+    });
+  }
+
+  Future<void> deleteOwnerBillingPeriod({required String projectId, required String periodId}) async {
+    await _delete('/projects/$projectId/owner-billing-periods/$periodId');
+  }
+
   Future<void> createFinanceTransaction({
     required String spaceId,
     required FinanceTransactionType type,
