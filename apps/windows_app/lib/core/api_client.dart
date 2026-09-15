@@ -10,6 +10,7 @@ import 'models/app_user.dart';
 import 'models/calendar_event.dart';
 import 'models/calendar_share.dart';
 import 'models/client.dart';
+import 'models/daily_report.dart';
 import 'models/department.dart';
 import 'models/friend.dart';
 import 'models/finance_report.dart';
@@ -1410,6 +1411,39 @@ class ApiClient {
 
   Future<void> deleteClient(String spaceId, String clientId) async {
     await _delete('/spaces/$spaceId/clients/$clientId');
+  }
+
+  // --- 工程日報表（工程執行紀錄系統第一項）---
+
+  Future<List<DailyReport>> dailyReports(String projectId) async {
+    final body = await _getList('/projects/$projectId/daily-reports');
+    return body.map((e) => DailyReport.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// 省略 [reportDate] 就是今天——同一天重複送出視為覆蓋（後端 upsert）。
+  Future<void> submitDailyReport({
+    required String projectId,
+    DateTime? reportDate,
+    required String workContent,
+    int? manpower,
+    String? issues,
+  }) async {
+    await _post('/projects/$projectId/daily-reports', {
+      if (reportDate != null) 'reportDate': _dateOnly(reportDate),
+      'workContent': workContent,
+      if (manpower != null) 'manpower': manpower,
+      if (issues != null && issues.isNotEmpty) 'issues': issues,
+    });
+  }
+
+  Future<void> deleteDailyReport({required String projectId, required String reportId}) async {
+    await _delete('/projects/$projectId/daily-reports/$reportId');
+  }
+
+  /// 今日未交日報的專案清單（空間層級彙總，已跳過公休日）。
+  Future<List<MissingDailyReportProject>> missingDailyReportsToday(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/daily-reports/missing-today');
+    return body.map((e) => MissingDailyReportProject.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   // --- 工程財務四表：工程報價單 ---

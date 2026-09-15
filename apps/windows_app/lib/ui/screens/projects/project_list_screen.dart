@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_client.dart';
 import '../../../state/auth_provider.dart';
+import '../../../state/daily_reports_provider.dart';
 import '../../../state/projects_provider.dart';
 import '../../shell/breadcrumb_bar.dart';
 import '../../widgets/projects/create_project_dialog.dart';
@@ -24,6 +25,7 @@ class ProjectListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projectsAsync = ref.watch(spaceProjectsProvider(spaceId));
+    final missingReportsAsync = ref.watch(missingDailyReportsTodayProvider(spaceId));
     final scheme = Theme.of(context).colorScheme;
 
     return Column(
@@ -38,6 +40,21 @@ class ProjectListScreen extends ConsumerWidget {
               label: const Text('新增專案'),
             ),
           ],
+        ),
+        missingReportsAsync.when(
+          data: (missing) => missing.isEmpty
+              ? const SizedBox.shrink()
+              : Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  color: scheme.errorContainer.withValues(alpha: 0.5),
+                  child: Text(
+                    '今日未交日報：${missing.map((m) => m.projectName).join('、')}',
+                    style: TextStyle(fontSize: 12.5, color: scheme.onErrorContainer),
+                  ),
+                ),
+          loading: () => const SizedBox.shrink(),
+          error: (_, _) => const SizedBox.shrink(),
         ),
         Expanded(
           child: projectsAsync.when(

@@ -179,6 +179,7 @@ model User {
 
   paymentRequestPeriodsSubmitted PaymentRequestPeriod[]
   ownerBillingPeriodsCreated     OwnerBillingPeriod[]
+  dailyReportsSubmitted          DailyReport[]
 }
 
 /// 好友 (2026-08-06) — a mutual, symmetric relationship: unlike CalendarShare
@@ -952,6 +953,37 @@ model Project {
   procurementComparisons  ProcurementComparison[]
   costControlRows         CostControlRow[]
   ownerBillingPeriods     OwnerBillingPeriod[]
+  dailyReports            DailyReport[]
+}
+
+/// 工程日報表（2026-09，顧問文件「工程執行紀錄系統」第一項）。設計確認
+/// （三方案二選一問過）：(1) 任何專案成員都能填，不限定 PM——「未交日
+/// 報」因此是「這個專案今天有沒有人交」，不是指名道姓；(2) 這輪先不做
+/// 照片上傳（顧問文件另列的「執行紀錄留存」項），純文字：工作內容/人力
+/// /問題記錄；(3) 「未交」判斷會跳過這個專案自己的公休日曆
+/// （isWorkingDay，跟工期表排程引擎同一套邏輯，見 DailyReportsService），
+/// 公休日不要求交報。一個專案一天只有一筆——同一天重複送出視為覆蓋（見
+/// DailyReportsService.submit 的 upsert by [projectId, reportDate]），不
+/// 是新增多筆，submittedByUserId 永遠是最後編輯的人。
+model DailyReport {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  reportDate DateTime @db.Date
+
+  workContent String // 今日工作內容
+  manpower    Int? // 今日人力（選填）
+  issues      String? // 問題記錄（選填）
+
+  submittedByUserId String
+  submittedBy       User   @relation(fields: [submittedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, reportDate])
 }
 
 model ProjectMember {
