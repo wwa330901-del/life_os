@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/models/engineering_finance.dart';
 import '../../../../core/models/work_item.dart';
 import '../../../../core/models/work_item_hierarchy.dart';
 import '../gantt/gantt_colors.dart';
@@ -8,6 +9,7 @@ import '../gantt/gantt_layout.dart';
 import '../gantt/gantt_painter.dart';
 import '../gantt/linked_scroll_controllers.dart';
 import 'dependency_picker_dialog.dart';
+import 'vendor_picker_dialog.dart';
 
 const _indentWidth = 18.0;
 const _minColumnWidth = 40.0;
@@ -34,6 +36,7 @@ class _ColumnWidths {
   double actualStartDate = 88;
   double actualDuration = 56;
   double predecessor = 60;
+  double vendor = 60;
 }
 
 /// A thin draggable seam between two header columns. Dragging only grows/
@@ -103,6 +106,11 @@ class TaskTable extends StatefulWidget {
   final void Function(String id, int? days) onActualDurationChanged;
   final void Function(String id, DateTime endDate) onEndDateChanged;
   final void Function(String id, List<String> predecessorIds) onPredecessorsChanged;
+
+  /// Vendors available to assign, for the picker dialog — empty until the
+  /// caller has loaded the space's Vendor list.
+  final List<Vendor> allVendors;
+  final void Function(String id, List<String> vendorIds) onVendorsChanged;
   final void Function(String id) onDelete;
   final void Function(String id) onToggleCollapse;
   final VoidCallback onAdd;
@@ -120,11 +128,13 @@ class TaskTable extends StatefulWidget {
     required this.onActualDurationChanged,
     required this.onEndDateChanged,
     required this.onPredecessorsChanged,
+    required this.onVendorsChanged,
     required this.onDelete,
     required this.onAdd,
     required this.onAddChild,
     required this.onToggleCollapse,
     required this.onReorder,
+    this.allVendors = const [],
     this.computedStartDates = const {},
     this.computedEndDates = const {},
     this.issueItemIds = const {},
@@ -242,6 +252,15 @@ class _TaskTableState extends State<TaskTable> {
                     () => _widths.predecessor = (_widths.predecessor + dx).clamp(_minColumnWidth, double.infinity),
                   ),
                 ),
+                SizedBox(
+                  width: _widths.vendor,
+                  child: Text('廠商', textAlign: TextAlign.center, style: headerStyle),
+                ),
+                _ColumnResizeHandle(
+                  onDrag: (dx) => setState(
+                    () => _widths.vendor = (_widths.vendor + dx).clamp(_minColumnWidth, double.infinity),
+                  ),
+                ),
                 const SizedBox(width: 32),
                 const SizedBox(width: 40),
               ],
@@ -280,6 +299,8 @@ class _TaskTableState extends State<TaskTable> {
                       onActualDurationChanged: (d) => widget.onActualDurationChanged(node.item.id, d),
                       onEndDateChanged: (date) => widget.onEndDateChanged(node.item.id, date),
                       onPredecessorsChanged: (ids) => widget.onPredecessorsChanged(node.item.id, ids),
+                      allVendors: widget.allVendors,
+                      onVendorsChanged: (ids) => widget.onVendorsChanged(node.item.id, ids),
                       onDelete: () => widget.onDelete(node.item.id),
                       onToggleCollapse: () => widget.onToggleCollapse(node.item.id),
                       onAddChild: () => widget.onAddChild(node.item.id),
@@ -323,6 +344,8 @@ class _TaskRow extends StatefulWidget {
   final ValueChanged<int?> onActualDurationChanged;
   final ValueChanged<DateTime> onEndDateChanged;
   final ValueChanged<List<String>> onPredecessorsChanged;
+  final List<Vendor> allVendors;
+  final ValueChanged<List<String>> onVendorsChanged;
   final VoidCallback onDelete;
   final VoidCallback onToggleCollapse;
   final VoidCallback onAddChild;
@@ -347,10 +370,12 @@ class _TaskRow extends StatefulWidget {
     required this.onActualDurationChanged,
     required this.onEndDateChanged,
     required this.onPredecessorsChanged,
+    required this.onVendorsChanged,
     required this.onDelete,
     required this.onToggleCollapse,
     required this.onAddChild,
     required this.onReorder,
+    this.allVendors = const [],
     this.computedStartDate,
     this.computedEndDate,
   });
@@ -459,6 +484,13 @@ class _TaskRowState extends State<_TaskRow> {
     }
   }
 
+  Future<void> _openVendorPicker() async {
+    final result = await VendorPickerDialog.show(context, widget.item.vendorIds, widget.allVendors);
+    if (result != null) {
+      widget.onVendorsChanged(result);
+    }
+  }
+
   Future<void> _pickStartDate() async {
     final initial = widget.item.manualStartDate ?? widget.computedStartDate ?? DateTime.now();
     final picked = await showDatePicker(
@@ -506,6 +538,10 @@ class _TaskRowState extends State<_TaskRow> {
     final color = colorForItem(widget.item, widget.allItems, widget.palette);
     final predecessorNames = widget.item.predecessorIds
         .map((id) => widget.allItems.where((i) => i.id == id).firstOrNull?.name)
+        .whereType<String>()
+        .join('、');
+    final vendorNames = widget.item.vendorIds
+        .map((id) => widget.allVendors.where((v) => v.id == id).firstOrNull?.name)
         .whereType<String>()
         .join('、');
 
@@ -731,6 +767,27 @@ class _TaskRowState extends State<_TaskRow> {
                           widget.item.predecessorIds.isEmpty
                               ? '設定'
                               : '${widget.item.predecessorIds.length} 項',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 9),
+            SizedBox(
+              width: widths.vendor,
+              child: isParentRow
+                  ? Text('—', style: TextStyle(fontSize: 13, color: faintText))
+                  : Tooltip(
+                      message: vendorNames.isEmpty ? '未指定負責廠商' : '廠商: $vendorNames',
+                      child: TextButton(
+                        onPressed: _openVendorPicker,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(40, 28),
+                          alignment: Alignment.centerLeft,
+                        ),
+                        child: Text(
+                          widget.item.vendorIds.isEmpty ? '設定' : '${widget.item.vendorIds.length} 家',
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),

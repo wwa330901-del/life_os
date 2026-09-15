@@ -256,6 +256,17 @@ class ProjectEditorNotifier extends AsyncNotifier<ProjectEditorState> {
     }
   }
 
+  /// 多工項對多廠商（2026-09）— no undo/redo support, unlike
+  /// [changePredecessors]; a wrong vendor assignment is low-stakes enough
+  /// (pure schedule-side metadata, not a date/structure change) that this
+  /// wasn't worth a dedicated undo-stack action type.
+  Future<void> changeVendors(String id, List<String> vendorIds) async {
+    final result = await ref
+        .read(apiClientProvider)
+        .updateWorkItem(projectId: projectId, workItemId: id, vendorIds: vendorIds);
+    _applyEditorState(project: result.project, items: result.items, schedule: result.schedule);
+  }
+
   Future<void> removeWorkItem(String id, {bool recordHistory = true}) async {
     final snapshot = recordHistory ? _find(id) : null;
     final result = await ref

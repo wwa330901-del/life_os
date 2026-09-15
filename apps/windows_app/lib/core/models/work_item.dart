@@ -46,6 +46,12 @@ class WorkItem {
   /// whether any other item points to it here — not a stored flag.
   final String? parentId;
 
+  /// Ids of the vendors assigned to this work item (2026-09 多工項對多廠商
+  /// 結構) — purely schedule-side "who's actually doing this", independent
+  /// of and not synced with 成控表/採發比價表's own vendor selection. Names
+  /// are looked up against the space's `vendorsProvider` list by the UI.
+  final List<String> vendorIds;
+
   const WorkItem({
     required this.id,
     required this.name,
@@ -61,6 +67,7 @@ class WorkItem {
     this.isManuallyPinned = false,
     this.sortOrder = 0,
     this.parentId,
+    this.vendorIds = const [],
   });
 
   factory WorkItem.fromJson(Map<String, dynamic> json) => WorkItem(
@@ -82,5 +89,10 @@ class WorkItem {
     isManuallyPinned: json['isManuallyPinned'] as bool,
     sortOrder: json['sortOrder'] as int,
     parentId: json['parentId'] as String?,
+    vendorIds: json['vendors'] == null
+        ? const []
+        : (json['vendors'] as List<dynamic>)
+              .map((e) => (e as Map<String, dynamic>)['vendorId'] as String)
+              .toList(),
   );
 }

@@ -1067,6 +1067,7 @@ class ApiClient {
     bool? isManuallyPinned,
     String? parentId,
     bool clearParentId = false,
+    List<String>? vendorIds,
   }) async {
     final body = await _patch('/projects/$projectId/work-items/$workItemId', {
       if (name != null) 'name': name,
@@ -1089,6 +1090,7 @@ class ApiClient {
         'parentId': null
       else if (parentId != null)
         'parentId': parentId,
+      if (vendorIds != null) 'vendorIds': vendorIds,
     });
     return _parseEditorState(body);
   }

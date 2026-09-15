@@ -59,4 +59,9 @@ export class CreateWorkItemDto {
   @IsOptional()
   @IsString()
   parentId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  vendorIds?: string[];
 }

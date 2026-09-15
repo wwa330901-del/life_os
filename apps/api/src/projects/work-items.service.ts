@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from './projects.service';
 import { ScheduleService } from './schedule.service';
@@ -20,6 +24,7 @@ export class WorkItemsService {
     return this.prisma.workItem.findMany({
       where: { projectId },
       orderBy: { sortOrder: 'asc' },
+      include: { vendors: { include: { vendor: true } } },
     });
   }
 
@@ -45,6 +50,10 @@ export class WorkItemsService {
       _max: { sortOrder: true },
     });
 
+    if (dto.vendorIds?.length) {
+      await this.assertVendorIdsInSpace(project.spaceId, dto.vendorIds);
+    }
+
     const created = await this.prisma.workItem.create({
       data: {
         name: dto.name,
@@ -54,15 +63,27 @@ export class WorkItemsService {
         colorValue: dto.colorValue,
         progressPercent: dto.progressPercent ?? 0,
         notes: dto.notes,
-        manualStartDate: dto.manualStartDate ? new Date(dto.manualStartDate) : null,
+        manualStartDate: dto.manualStartDate
+          ? new Date(dto.manualStartDate)
+          : null,
         isManuallyPinned: dto.isManuallyPinned ?? false,
         parentId: dto.parentId ?? null,
         sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
         projectId,
+        ...(dto.vendorIds?.length && {
+          vendors: {
+            createMany: {
+              data: dto.vendorIds.map((vendorId) => ({ vendorId })),
+            },
+          },
+        }),
       },
     });
 
-    return { createdId: created.id, ...(await this.scheduleService.buildEditorState(project)) };
+    return {
+      createdId: created.id,
+      ...(await this.scheduleService.buildEditorState(project)),
+    };
   }
 
   async update(
@@ -81,6 +102,10 @@ export class WorkItemsService {
       await this.getWorkItemOrThrow(projectId, dto.parentId);
     }
 
+    if (dto.vendorIds !== undefined && dto.vendorIds.length) {
+      await this.assertVendorIdsInSpace(project.spaceId, dto.vendorIds);
+    }
+
     await this.prisma.workItem.update({
       where: { id: workItemId },
       data: {
@@ -89,7 +114,9 @@ export class WorkItemsService {
           durationDays: dto.durationDays,
         }),
         ...(dto.actualStartDate !== undefined && {
-          actualStartDate: dto.actualStartDate ? new Date(dto.actualStartDate) : null,
+          actualStartDate: dto.actualStartDate
+            ? new Date(dto.actualStartDate)
+            : null,
         }),
         ...(dto.actualDurationDays !== undefined && {
           actualDurationDays: dto.actualDurationDays,
@@ -106,12 +133,24 @@ export class WorkItemsService {
         }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
         ...(dto.manualStartDate !== undefined && {
-          manualStartDate: dto.manualStartDate ? new Date(dto.manualStartDate) : null,
+          manualStartDate: dto.manualStartDate
+            ? new Date(dto.manualStartDate)
+            : null,
         }),
         ...(dto.isManuallyPinned !== undefined && {
           isManuallyPinned: dto.isManuallyPinned,
         }),
         ...(dto.parentId !== undefined && { parentId: dto.parentId }),
+        // Full-set replace, not incremental — mirrors predecessorIds'
+        // "send the whole new list" convention.
+        ...(dto.vendorIds !== undefined && {
+          vendors: {
+            deleteMany: {},
+            createMany: {
+              data: dto.vendorIds.map((vendorId) => ({ vendorId })),
+            },
+          },
+        }),
       },
     });
 
@@ -183,10 +222,29 @@ export class WorkItemsService {
   /** Same as `getAuthorizedProject` plus the PROJECT/WRITE permission-engine
    * check — use for create/update/remove/reorder, not for the read-only
    * `list`. See `ProjectsService.assertCanWrite`. */
-  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+  private async getAuthorizedProjectForWrite(
+    userId: string,
+    projectId: string,
+  ) {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertCanWrite(userId, project);
     return project;
+  }
+
+  /** Rejects a vendorIds list containing an id that doesn't exist or
+   * belongs to a different space — same "extend, don't trust the client"
+   * boundary as `upsertPropertyValues`'s definition/option ownership
+   * checks. */
+  private async assertVendorIdsInSpace(
+    spaceId: string,
+    vendorIds: string[],
+  ): Promise<void> {
+    const count = await this.prisma.vendor.count({
+      where: { id: { in: vendorIds }, spaceId },
+    });
+    if (count !== new Set(vendorIds).size) {
+      throw new BadRequestException('選到的廠商不存在，或不屬於這個空間');
+    }
   }
 
   private async getWorkItemOrThrow(

@@ -6,6 +6,7 @@ import '../../../../core/api_client.dart';
 import '../../../../core/models/schedule_result.dart';
 import '../../../../core/models/work_item_hierarchy.dart';
 import '../../../../core/scheduling/working_day_calculator.dart';
+import '../../../../state/engineering_finance_provider.dart';
 import '../../../../state/export_controller.dart';
 import '../../../../state/project_editor_provider.dart';
 import '../../../../state/ui_prefs_provider.dart';
@@ -73,6 +74,7 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
 
     final editor = editorAsync.value!;
     final dayWidth = ref.watch(zoomDayWidthProvider);
+    final allVendors = ref.watch(vendorsProvider(editor.project.spaceId)).value ?? const [];
     final flatTree = flattenTree(editor.items, collapsedIds: _collapsedIds);
     final orderedItems = flatTree.map((f) => f.item).toList();
     final issueItemIds = <String>{
@@ -213,6 +215,9 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
                         onEndDateChanged: handleEndDateChanged,
                         onPredecessorsChanged: (id, predecessorIds) =>
                             _run(() => _notifier.changePredecessors(id, predecessorIds)),
+                        allVendors: allVendors,
+                        onVendorsChanged: (id, vendorIds) =>
+                            _run(() => _notifier.changeVendors(id, vendorIds)),
                         onDelete: (id) {
                           _run(() => _notifier.removeWorkItem(id));
                           if (_selectedItemId == id) {

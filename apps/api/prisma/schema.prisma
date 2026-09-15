@@ -956,6 +956,29 @@ model WorkItem {
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  vendors WorkItemVendor[]
+}
+
+/// WorkItem ↔ Vendor 多對多（2026-09 多工項對多廠商結構，顧問文件：「專案、
+/// 工程工項與協力廠商之間為多對多關聯」）——純排程/甘特圖用途，標記「這個
+/// 工項實際上是哪些廠商在做」，跟成控表/採發比價表已經選定的廠商資料
+/// （ProcurementVendorQuote）完全分開存、不互相同步（設計確認：不透過
+/// QuotationLineItem/CostControlRow 反推，因為兩邊的工項樹狀結構是各自獨立
+/// 建立的，沒有天然對應關係）。
+model WorkItemVendor {
+  id String @id @default(uuid())
+
+  workItemId String
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([workItemId, vendorId])
+  @@index([vendorId])
 }
 
 /// First 個人功能 module: a personal-space money container (現金/銀行/信用卡/
@@ -1740,6 +1763,7 @@ model Vendor {
   updatedAt DateTime @updatedAt
 
   procurementVendorQuotes ProcurementVendorQuote[]
+  workItemAssignments     WorkItemVendor[]
 
   @@index([spaceId])
 }

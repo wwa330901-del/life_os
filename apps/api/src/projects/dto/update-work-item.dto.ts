@@ -71,4 +71,11 @@ export class UpdateWorkItemDto {
   @IsOptional()
   @IsString()
   parentId?: string | null;
+
+  /// Replaces the full assigned-vendor set (not incremental add/remove) —
+  /// same "send the whole new list" convention as predecessorIds.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  vendorIds?: string[];
 }

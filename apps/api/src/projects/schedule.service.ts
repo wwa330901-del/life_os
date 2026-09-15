@@ -21,7 +21,10 @@ export class ScheduleService {
     const project = await this.projectsService.getProjectOrThrow(projectId);
     await this.projectsService.assertAccess(userId, project);
 
-    const items = await this.prisma.workItem.findMany({ where: { projectId } });
+    const items = await this.prisma.workItem.findMany({
+      where: { projectId },
+      include: { vendors: { include: { vendor: true } } },
+    });
     return this.compute(project, items);
   }
 
@@ -54,6 +57,7 @@ export class ScheduleService {
     const items = await this.prisma.workItem.findMany({
       where: { projectId: project.id },
       orderBy: { sortOrder: 'asc' },
+      include: { vendors: { include: { vendor: true } } },
     });
     return { project, items, schedule: this.compute(project, items) };
   }
