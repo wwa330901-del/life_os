@@ -32,22 +32,30 @@ export class DailyReportReminderService {
       },
     });
 
+    /** 一人身兼多個專案 PM 時，今晚只收到一則整合訊息，不是每個專案各發一
+     * 則——先依 userId 分組收集專案名稱，迴圈跑完全部專案後才逐人發送。 */
+    const missingByUser = new Map<string, string[]>();
     for (const project of projects) {
       if (!isWorkingDay(today, project)) continue;
       if (project.dailyReports.length > 0) continue;
 
       for (const pm of project.members) {
-        try {
-          await this.lineNotifier.notifyByUser(
-            pm.userId,
-            `📋 日報催辦提醒\n「${project.name}」今天還沒有人填寫工程日報表。`,
-          );
-        } catch (error) {
-          this.logger.error(
-            `日報催辦通知失敗（projectId=${project.id}, userId=${pm.userId}）`,
-            error,
-          );
-        }
+        const names = missingByUser.get(pm.userId) ?? [];
+        names.push(project.name);
+        missingByUser.set(pm.userId, names);
+      }
+    }
+
+    for (const [userId, projectNames] of missingByUser) {
+      const message =
+        projectNames.length === 1
+          ? `📋 日報催辦提醒\n「${projectNames[0]}」今天還沒有人填寫工程日報表。`
+          : `📋 日報催辦提醒\n今天還沒有人填寫工程日報表的專案：\n${projectNames.map((name) => `・「${name}」`).join('\n')}`;
+
+      try {
+        await this.lineNotifier.notifyByUser(userId, message);
+      } catch (error) {
+        this.logger.error(`日報催辦通知失敗（userId=${userId}）`, error);
       }
     }
   }
