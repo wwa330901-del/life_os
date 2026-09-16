@@ -96,6 +96,41 @@ export class PermissionsService {
     return rule !== null;
   }
 
+  /** 欄位級唯讀限制（見 PermissionRule.readOnlyFields 說明）——OWNER/ADMIN/
+   * 非公司空間一律回傳空陣列（沒有限制），其餘人找出符合 WRITE 動作的規
+   * 則,回傳它的 readOnlyFields（找不到規則代表 assertCan 那關就已經擋
+   * 下寫入了，這裡不會被呼叫到，保守回傳空陣列）。呼叫端負責把回傳的欄
+   * 位名稱從 payload 裡靜默剔除，不拋錯。 */
+  async getReadOnlyFields(
+    userId: string,
+    spaceId: string,
+    resourceType: PermissionResourceType,
+  ): Promise<string[]> {
+    const space = await this.spacesService.getForUserOrThrow(userId, spaceId);
+    if (space.type !== SpaceType.COMPANY) return [];
+    if (
+      space.role === MembershipRole.OWNER ||
+      space.role === MembershipRole.ADMIN
+    ) {
+      return [];
+    }
+
+    const membership = await this.prisma.companyMembership.findUnique({
+      where: { userId_spaceId: { userId, spaceId } },
+    });
+    const rule = await this.prisma.permissionRule.findFirst({
+      where: {
+        spaceId,
+        resourceType,
+        action: PermissionAction.WRITE,
+        departmentId: membership?.departmentId ?? null,
+        rankId: membership?.rankId ?? null,
+      },
+      select: { readOnlyFields: true },
+    });
+    return rule?.readOnlyFields ?? [];
+  }
+
   // ---- 部門 ----
 
   async listDepartments(userId: string, spaceId: string) {
@@ -347,6 +382,7 @@ export class PermissionsService {
         action: dto.action,
         departmentId,
         rankId,
+        readOnlyFields: dto.readOnlyFields ?? [],
       },
     });
   }

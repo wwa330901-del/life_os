@@ -156,6 +156,19 @@ export class EngineeringQuotationService {
       }
     }
 
+    // 欄位級唯讀限制（見 PermissionRule.readOnlyFields）——命中的欄位從
+    // dto 靜默剔除,不拋錯，其餘欄位正常更新；下面的寫入跟 FieldChangeLog
+    // 都直接讀過濾後的 dto，剔除的欄位自然落回 existing 的值，不會被誤判
+    // 成「有變動」。
+    const readOnlyFields = await this.permissionsService.getReadOnlyFields(
+      userId,
+      project.spaceId,
+      PermissionResourceType.QUOTATION,
+    );
+    if (readOnlyFields.includes('quantity')) dto.quantity = undefined;
+    if (readOnlyFields.includes('unitPrice')) dto.unitPrice = undefined;
+    if (readOnlyFields.includes('costUnitPrice')) dto.costUnitPrice = undefined;
+
     await this.prisma.quotationLineItem.update({
       where: { id: itemId },
       data: {

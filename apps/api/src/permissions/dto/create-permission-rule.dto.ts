@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
 import {
   PermissionAction,
   PermissionResourceType,
@@ -23,4 +23,10 @@ export class CreatePermissionRuleDto {
   @IsOptional()
   @IsString()
   rankId?: string;
+
+  /// 只在 action=WRITE 時有意義——見 PermissionRule.readOnlyFields 的說明。
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  readOnlyFields?: string[];
 }

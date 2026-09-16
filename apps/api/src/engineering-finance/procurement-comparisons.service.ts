@@ -273,8 +273,19 @@ export class ProcurementComparisonsService {
       comparisonId,
       dto.vendorQuoteId,
     );
+
+    // 欄位級唯讀限制（見 PermissionRule.readOnlyFields）——命中時忽略呼叫
+    // 端傳入的 finalAwardedAmount，強制落回議價/報價金額，不拋錯。
+    const readOnlyFields = await this.permissionsService.getReadOnlyFields(
+      userId,
+      project.spaceId,
+      PermissionResourceType.PROCUREMENT,
+    );
+    const requestedAmount = readOnlyFields.includes('finalAwardedAmount')
+      ? undefined
+      : dto.finalAwardedAmount;
     const awardedAmount =
-      dto.finalAwardedAmount ??
+      requestedAmount ??
       vendorQuote.negotiatedAmount ??
       vendorQuote.quotedAmount;
 
