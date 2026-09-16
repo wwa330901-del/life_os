@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpacesService } from '../spaces/spaces.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { taipeiTodayRange } from '../common/taipei-date';
 import { mondayOfTaipeiWeek } from '../projects/weekly-reports.service';
 import {
   MaterialSubmissionStatus,
+  MembershipRole,
+  PermissionAction,
+  PermissionResourceType,
   ProjectRole,
 } from '../../generated/prisma/client.js';
 
@@ -12,20 +16,26 @@ import {
  * 個人工作站（2026-09，顧問文件橫向基礎建設 A 的子項）——這是個人視角的
  * 唯讀彙總，不受 OWNER-only 限制，任何公司空間成員都能看自己的。三個區
  * 塊：自己是 PM 的專案（含今日日報/本週週報是否已交）、自己名下未完成
- * 的工作代辦、自己名下待審核的材料送審——因為 MaterialSubmission 的審
- * 核權限比照 assertCanWrite（沒有獨立的審核者角色），這裡用「自己是這
- * 個專案的 PM」當作「該審核」的判斷依據，是我自己選的合理近似，不是使
- * 用者確認過的規則。
+ * 的工作代辦、自己「可以審核」的材料送審。
+ *
+ * 「可以審核」直接比照 `MaterialSubmissionsService.review` 實際呼叫的
+ * `ProjectsService.assertCanWrite`（assertAccess 的專案成員資格 + PROJECT/
+ * WRITE 權限），不再用「自己是這個專案的 PM」近似——那個近似會漏掉「有
+ * 寫入權限但不是 PM」的一般專案成員，也會誤收「是 PM 但沒有 WRITE 權限」
+ * 的人。OWNER/ADMIN 對空間裡每個專案都算有權限；其餘人的 PROJECT/WRITE
+ * 是整個空間層級的單一規則（不分專案），只要通過就對自己是成員的每個專
+ * 案都算有審核資格。
  */
 @Injectable()
 export class MyWorkspaceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly spacesService: SpacesService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async get(userId: string, spaceId: string) {
-    await this.spacesService.getForUserOrThrow(userId, spaceId);
+    const space = await this.spacesService.getForUserOrThrow(userId, spaceId);
 
     const today = taipeiTodayRange().start;
     const weekStart = mondayOfTaipeiWeek(today);
@@ -63,12 +73,38 @@ export class MyWorkspaceService {
       orderBy: { dueDate: 'asc' },
     });
 
-    const myProjectIds = myProjectMemberships.map((m) => m.project.id);
-    const myPendingReviews = myProjectIds.length
+    const isOwnerOrAdmin =
+      space.role === MembershipRole.OWNER ||
+      space.role === MembershipRole.ADMIN;
+    const canWriteProjects =
+      isOwnerOrAdmin ||
+      (await this.permissionsService.can(
+        userId,
+        spaceId,
+        PermissionResourceType.PROJECT,
+        PermissionAction.WRITE,
+      ));
+    const reviewableProjectIds = !canWriteProjects
+      ? []
+      : isOwnerOrAdmin
+        ? (
+            await this.prisma.project.findMany({
+              where: { spaceId },
+              select: { id: true },
+            })
+          ).map((p) => p.id)
+        : (
+            await this.prisma.projectMember.findMany({
+              where: { userId, project: { spaceId } },
+              select: { projectId: true },
+            })
+          ).map((m) => m.projectId);
+
+    const myPendingReviews = reviewableProjectIds.length
       ? await this.prisma.materialSubmission.findMany({
           where: {
             status: MaterialSubmissionStatus.PENDING,
-            projectId: { in: myProjectIds },
+            projectId: { in: reviewableProjectIds },
           },
           include: {
             project: { select: { id: true, name: true } },
