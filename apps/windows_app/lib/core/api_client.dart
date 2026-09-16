@@ -18,6 +18,7 @@ import 'models/friend.dart';
 import 'models/finance_report.dart';
 import 'models/document_approval.dart';
 import 'models/engineering_finance.dart';
+import 'models/execution_photo.dart';
 import 'models/field_change_log.dart';
 import 'models/document_template.dart';
 import 'models/finance.dart';
@@ -1508,6 +1509,35 @@ class ApiClient {
 
   Future<void> deleteContactRecord({required String projectId, required String recordId}) async {
     await _delete('/projects/$projectId/contact-records/$recordId');
+  }
+
+  // --- 執行照片（工程執行紀錄系統第四項）---
+
+  Future<List<ExecutionPhoto>> executionPhotos(String projectId) async {
+    final body = await _getList('/projects/$projectId/execution-photos');
+    return body.map((e) => ExecutionPhoto.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> uploadExecutionPhoto({
+    required String projectId,
+    required DateTime photoDate,
+    String? caption,
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    final uri = Uri.parse('$baseUrl/projects/$projectId/execution-photos');
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll({if (_token != null) 'Authorization': 'Bearer $_token'})
+      ..fields['photoDate'] = _dateOnly(photoDate)
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
+    if (caption != null && caption.isNotEmpty) request.fields['caption'] = caption;
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    _checkStatus(res);
+  }
+
+  Future<void> deleteExecutionPhoto({required String projectId, required String photoId}) async {
+    await _delete('/projects/$projectId/execution-photos/$photoId');
   }
 
   // --- 工程財務四表：工程報價單 ---

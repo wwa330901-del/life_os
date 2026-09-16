@@ -23,30 +23,67 @@ export class SupabaseStorageService {
   }
 
   private get headers() {
-    return { Authorization: `Bearer ${this.serviceKey}`, apikey: this.serviceKey };
+    return {
+      Authorization: `Bearer ${this.serviceKey}`,
+      apikey: this.serviceKey,
+    };
   }
 
   async upload(path: string, data: Buffer, contentType: string): Promise<void> {
-    if (!this.configured) throw new Error('Supabase Storage 尚未設定（缺少環境變數）');
-    const res = await fetch(`${this.baseUrl}/storage/v1/object/${BUCKET}/${path}`, {
-      method: 'POST',
-      headers: { ...this.headers, 'Content-Type': contentType, 'x-upsert': 'true' },
-      body: new Uint8Array(data),
-    });
+    if (!this.configured)
+      throw new Error('Supabase Storage 尚未設定（缺少環境變數）');
+    const res = await fetch(
+      `${this.baseUrl}/storage/v1/object/${BUCKET}/${path}`,
+      {
+        method: 'POST',
+        headers: {
+          ...this.headers,
+          'Content-Type': contentType,
+          'x-upsert': 'true',
+        },
+        body: new Uint8Array(data),
+      },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      this.logger.error(`Supabase Storage 上傳失敗 path=${path} status=${res.status} ${body}`);
+      this.logger.error(
+        `Supabase Storage 上傳失敗 path=${path} status=${res.status} ${body}`,
+      );
       throw new Error('原始檔上傳失敗');
     }
   }
 
+  async delete(path: string): Promise<void> {
+    if (!this.configured)
+      throw new Error('Supabase Storage 尚未設定（缺少環境變數）');
+    const res = await fetch(
+      `${this.baseUrl}/storage/v1/object/${BUCKET}/${path}`,
+      {
+        method: 'DELETE',
+        headers: this.headers,
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      this.logger.error(
+        `Supabase Storage 刪除失敗 path=${path} status=${res.status} ${body}`,
+      );
+      throw new Error('原始檔刪除失敗');
+    }
+  }
+
   async download(path: string): Promise<{ data: Buffer; contentType: string }> {
-    if (!this.configured) throw new Error('Supabase Storage 尚未設定（缺少環境變數）');
-    const res = await fetch(`${this.baseUrl}/storage/v1/object/${BUCKET}/${path}`, {
-      headers: this.headers,
-    });
+    if (!this.configured)
+      throw new Error('Supabase Storage 尚未設定（缺少環境變數）');
+    const res = await fetch(
+      `${this.baseUrl}/storage/v1/object/${BUCKET}/${path}`,
+      {
+        headers: this.headers,
+      },
+    );
     if (!res.ok) throw new Error('原始檔下載失敗（可能已經被刪除）');
-    const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+    const contentType =
+      res.headers.get('content-type') ?? 'application/octet-stream';
     return { data: Buffer.from(await res.arrayBuffer()), contentType };
   }
 
@@ -55,14 +92,19 @@ export class SupabaseStorageService {
   async getSignedUrl(path: string): Promise<string | null> {
     if (!this.configured) return null;
     try {
-      const res = await fetch(`${this.baseUrl}/storage/v1/object/sign/${BUCKET}/${path}`, {
-        method: 'POST',
-        headers: { ...this.headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expiresIn: SIGNED_URL_TTL_SECONDS }),
-      });
+      const res = await fetch(
+        `${this.baseUrl}/storage/v1/object/sign/${BUCKET}/${path}`,
+        {
+          method: 'POST',
+          headers: { ...this.headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expiresIn: SIGNED_URL_TTL_SECONDS }),
+        },
+      );
       if (!res.ok) return null;
       const body = (await res.json()) as { signedURL?: string };
-      return body.signedURL ? `${this.baseUrl}/storage/v1${body.signedURL}` : null;
+      return body.signedURL
+        ? `${this.baseUrl}/storage/v1${body.signedURL}`
+        : null;
     } catch (error) {
       this.logger.warn(`簽名網址產生失敗 path=${path}: ${error}`);
       return null;
