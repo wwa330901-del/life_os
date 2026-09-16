@@ -180,6 +180,11 @@ model User {
   paymentRequestPeriodsSubmitted PaymentRequestPeriod[]
   ownerBillingPeriodsCreated     OwnerBillingPeriod[]
   dailyReportsSubmitted          DailyReport[]
+  weeklyReportsSubmitted         WeeklyReport[]
+  contactRecordsCreated          ProjectContactRecord[]
+  executionPhotosUploaded        ExecutionPhoto[]
+  materialSubmissionsSubmitted   MaterialSubmission[]   @relation("MaterialSubmissionSubmitter")
+  materialSubmissionsReviewed    MaterialSubmission[]   @relation("MaterialSubmissionReviewer")
 }
 
 /// 好友 (2026-08-06) — a mutual, symmetric relationship: unlike CalendarShare
@@ -954,6 +959,10 @@ model Project {
   costControlRows         CostControlRow[]
   ownerBillingPeriods     OwnerBillingPeriod[]
   dailyReports            DailyReport[]
+  weeklyReports           WeeklyReport[]
+  contactRecords          ProjectContactRecord[]
+  executionPhotos         ExecutionPhoto[]
+  materialSubmissions     MaterialSubmission[]
 }
 
 /// 工程日報表（2026-09，顧問文件「工程執行紀錄系統」第一項）。設計確認
@@ -984,6 +993,124 @@ model DailyReport {
   updatedAt DateTime @updatedAt
 
   @@unique([projectId, reportDate])
+}
+
+/// 工程週報表（2026-09，顧問文件「工程執行紀錄系統」第二項）——跟 DailyReport
+/// 同一套 upsert 慣例，一個專案一週只有一筆，key 是該週週一（Asia/Taipei，
+/// 見 WeeklyReportsService 的 mondayOfTaipeiWeek），同一週重複送出視為覆
+/// 蓋。不像日報表要逐日檢查公休日，週報只看「這週有沒有交」。
+model WeeklyReport {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  weekStartDate DateTime @db.Date // 該週週一
+
+  summary      String // 本週工作摘要
+  nextWeekPlan String? // 下週計畫（選填）
+  issues       String? // 問題記錄（選填）
+
+  submittedByUserId String
+  submittedBy       User   @relation(fields: [submittedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, weekStartDate])
+}
+
+/// 聯絡單與會議記錄（2026-09，顧問文件「工程執行紀錄系統」第三項）——純
+/// CRUD 隨手記錄，不是週期性繳交，不需要 reminder service。
+enum ContactRecordType {
+  CONTACT_SHEET
+  MEETING_MINUTES
+}
+
+model ProjectContactRecord {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  type       ContactRecordType
+  recordDate DateTime          @db.Date
+  title      String
+  content    String
+  attendees  String? // 自由文字，逗號分隔即可，不另建關聯表
+
+  createdByUserId String
+  createdBy       User   @relation(fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, recordDate])
+}
+
+/// 執行照片（2026-09，顧問文件「工程執行紀錄系統」第四項，即日報表當初刻
+/// 意排除的「執行紀錄留存」）。實際檔案存在共用的 Supabase Storage
+/// （knowledge-media bucket，見 SupabaseStorageService），這裡只存
+/// storagePath，顯示時現簽 URL，不落地任何永久公開連結。獨立於
+/// DailyReport，不建關聯——日報表當初排除照片是刻意的設計，這裡是另一
+/// 個獨立功能，不回頭改日報表。
+model ExecutionPhoto {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  photoDate   DateTime @db.Date
+  caption     String? // 選填文字說明
+  storagePath String // Supabase Storage 內的路徑
+
+  uploadedByUserId String
+  uploadedBy       User   @relation(fields: [uploadedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, photoDate])
+}
+
+/// 材料送審（2026-09，顧問文件「工程執行紀錄系統」第五項，也是最後一
+/// 項）。跟 DocumentApproval 那套多關卡簽核鏈刻意分開——這裡只是單一
+/// 送審人→單一審核結果的輕量流程，不需要固定角色關卡；審核權限比照既
+/// 有工程財務模組的慣例，用 PROJECT/WRITE 權限（assertCanWrite），不另
+/// 外定義新的審核者角色概念。
+enum MaterialSubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model MaterialSubmission {
+  id String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  materialName String
+  spec         String? // 規格說明（選填）
+
+  vendorId String?
+  vendor   Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  status MaterialSubmissionStatus @default(PENDING)
+
+  submittedDate DateTime  @db.Date
+  reviewedDate  DateTime?
+  reviewComment String?
+
+  submittedByUserId String
+  submittedBy       User   @relation("MaterialSubmissionSubmitter", fields: [submittedByUserId], references: [id])
+
+  reviewedByUserId String?
+  reviewedBy       User?   @relation("MaterialSubmissionReviewer", fields: [reviewedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, status])
 }
 
 model ProjectMember {
@@ -1858,6 +1985,7 @@ model Vendor {
 
   procurementVendorQuotes ProcurementVendorQuote[]
   workItemAssignments     WorkItemVendor[]
+  materialSubmissions     MaterialSubmission[]
 
   @@index([spaceId])
 }

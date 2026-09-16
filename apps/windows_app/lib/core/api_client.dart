@@ -11,6 +11,7 @@ import 'models/calendar_event.dart';
 import 'models/calendar_share.dart';
 import 'models/client.dart';
 import 'models/daily_report.dart';
+import 'models/weekly_report.dart';
 import 'models/department.dart';
 import 'models/friend.dart';
 import 'models/finance_report.dart';
@@ -1444,6 +1445,40 @@ class ApiClient {
   Future<List<MissingDailyReportProject>> missingDailyReportsToday(String spaceId) async {
     final body = await _getList('/spaces/$spaceId/daily-reports/missing-today');
     return body.map((e) => MissingDailyReportProject.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // --- 工程週報表（工程執行紀錄系統第二項）---
+
+  Future<List<WeeklyReport>> weeklyReports(String projectId) async {
+    final body = await _getList('/projects/$projectId/weekly-reports');
+    return body.map((e) => WeeklyReport.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// 省略 [weekStartDate] 就是本週——同一週重複送出視為覆蓋（後端 upsert，
+  /// 不論傳的是週間哪一天都會正規化成當週週一）。
+  Future<void> submitWeeklyReport({
+    required String projectId,
+    DateTime? weekStartDate,
+    required String summary,
+    String? nextWeekPlan,
+    String? issues,
+  }) async {
+    await _post('/projects/$projectId/weekly-reports', {
+      if (weekStartDate != null) 'weekStartDate': _dateOnly(weekStartDate),
+      'summary': summary,
+      if (nextWeekPlan != null && nextWeekPlan.isNotEmpty) 'nextWeekPlan': nextWeekPlan,
+      if (issues != null && issues.isNotEmpty) 'issues': issues,
+    });
+  }
+
+  Future<void> deleteWeeklyReport({required String projectId, required String reportId}) async {
+    await _delete('/projects/$projectId/weekly-reports/$reportId');
+  }
+
+  /// 本週未交週報的專案清單（空間層級彙總）。
+  Future<List<MissingWeeklyReportProject>> missingWeeklyReportsThisWeek(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/weekly-reports/missing-this-week');
+    return body.map((e) => MissingWeeklyReportProject.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   // --- 工程財務四表：工程報價單 ---

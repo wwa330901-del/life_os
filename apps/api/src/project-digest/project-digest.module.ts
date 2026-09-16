@@ -4,6 +4,7 @@ import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { ProjectDigestService } from './project-digest.service';
 import { TodoDigestService } from './todo-digest.service';
 import { DailyReportReminderService } from './daily-report-reminder.service';
+import { WeeklyReportReminderService } from './weekly-report-reminder.service';
 
 @Module({
   imports: [HomeModule, LineNotifierModule],
@@ -11,6 +12,7 @@ import { DailyReportReminderService } from './daily-report-reminder.service';
     ProjectDigestService,
     TodoDigestService,
     DailyReportReminderService,
+    WeeklyReportReminderService,
   ],
 })
 export class ProjectDigestModule {}

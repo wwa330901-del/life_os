@@ -6,12 +6,15 @@ import { ProjectMembersController } from './project-members.controller';
 import { ProjectPropertiesController } from './project-properties.controller';
 import { DailyReportsController } from './daily-reports.controller';
 import { SpaceDailyReportsController } from './space-daily-reports.controller';
+import { WeeklyReportsController } from './weekly-reports.controller';
+import { SpaceWeeklyReportsController } from './space-weekly-reports.controller';
 import { ProjectsService } from './projects.service';
 import { WorkItemsService } from './work-items.service';
 import { ScheduleService } from './schedule.service';
 import { ProjectMembersService } from './project-members.service';
 import { ProjectPropertiesService } from './project-properties.service';
 import { DailyReportsService } from './daily-reports.service';
+import { WeeklyReportsService } from './weekly-reports.service';
 import { SpacesModule } from '../spaces/spaces.module';
 import { UsersModule } from '../users/users.module';
 import { PermissionsModule } from '../permissions/permissions.module';
@@ -27,6 +30,8 @@ import { ClientsModule } from '../clients/clients.module';
     ProjectPropertiesController,
     DailyReportsController,
     SpaceDailyReportsController,
+    WeeklyReportsController,
+    SpaceWeeklyReportsController,
   ],
   providers: [
     ProjectsService,
@@ -35,7 +40,13 @@ import { ClientsModule } from '../clients/clients.module';
     ProjectMembersService,
     ProjectPropertiesService,
     DailyReportsService,
+    WeeklyReportsService,
   ],
-  exports: [ProjectsService, ScheduleService, DailyReportsService],
+  exports: [
+    ProjectsService,
+    ScheduleService,
+    DailyReportsService,
+    WeeklyReportsService,
+  ],
 })
 export class ProjectsModule {}
