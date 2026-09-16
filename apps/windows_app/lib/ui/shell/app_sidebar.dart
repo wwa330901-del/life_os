@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/models/app_user.dart';
 import '../../state/auth_provider.dart';
+import '../../state/department_provider.dart';
 import '../../state/space_provider.dart';
 import '../../state/ui_prefs_provider.dart';
 import '../widgets/ai_settings_dialog.dart';
@@ -249,6 +250,11 @@ class _SidebarPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final session = ref.watch(authControllerProvider).value;
+    final generalManagerUserId = space.type == SpaceType.company
+        ? ref.watch(generalManagerProvider(space.id)).value
+        : null;
+    final isGeneralManager =
+        generalManagerUserId != null && generalManagerUserId == session?.user.id;
 
     return Container(
       decoration: BoxDecoration(
@@ -327,7 +333,8 @@ class _SidebarPanel extends ConsumerWidget {
                 selected: myWorkspaceSelected,
                 onTap: onOpenMyWorkspace,
               ),
-            if (space.type == SpaceType.company && (space.role == 'OWNER' || space.role == 'ADMIN'))
+            if (space.type == SpaceType.company &&
+                (space.role == 'OWNER' || space.role == 'ADMIN' || isGeneralManager))
               _NavItem(
                 icon: Icons.query_stats_outlined,
                 label: '監控儀表板',
