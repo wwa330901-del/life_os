@@ -25,6 +25,7 @@ import { FinanceReportModule } from './finance/finance-report.module';
 import { EngineeringFinanceModule } from './engineering-finance/engineering-finance.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { ClientsModule } from './clients/clients.module';
+import { PettyCashModule } from './petty-cash/petty-cash.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { ClientsModule } from './clients/clients.module';
     EngineeringFinanceModule,
     PermissionsModule,
     ClientsModule,
+    PettyCashModule,
   ],
   controllers: [AppController],
   providers: [AppService],

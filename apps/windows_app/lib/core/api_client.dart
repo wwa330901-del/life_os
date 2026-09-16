@@ -30,6 +30,7 @@ import 'models/project_todo.dart';
 import 'models/project.dart';
 import 'models/project_member.dart';
 import 'models/project_property.dart';
+import 'models/petty_cash.dart';
 import 'models/schedule_result.dart';
 import 'models/stock.dart';
 import 'models/work_item.dart';
@@ -1374,6 +1375,34 @@ class ApiClient {
   Future<VendorWinRate> vendorWinRate(String spaceId, String vendorId) async {
     final body = await _get('/spaces/$spaceId/vendors/$vendorId/win-rate');
     return VendorWinRate.fromJson(body);
+  }
+
+  // --- 零用金 ---
+
+  Future<PettyCashLedger> pettyCash(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/petty-cash');
+    return PettyCashLedger.fromJson(body);
+  }
+
+  Future<void> createPettyCashTransaction({
+    required String spaceId,
+    required String transactionDate,
+    required PettyCashType type,
+    required double amount,
+    required String purpose,
+    String? projectId,
+  }) async {
+    await _post('/spaces/$spaceId/petty-cash', {
+      'transactionDate': transactionDate,
+      'type': type == PettyCashType.deposit ? 'DEPOSIT' : 'EXPENSE',
+      'amount': amount,
+      'purpose': purpose,
+      if (projectId != null) 'projectId': projectId,
+    });
+  }
+
+  Future<void> deletePettyCashTransaction(String spaceId, String transactionId) async {
+    await _delete('/spaces/$spaceId/petty-cash/$transactionId');
   }
 
   // --- 客戶資料庫（CRM 客戶端那一半，Vendor 是協力商那一半）---
