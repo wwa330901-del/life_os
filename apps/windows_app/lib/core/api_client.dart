@@ -10,6 +10,7 @@ import 'models/app_user.dart';
 import 'models/calendar_event.dart';
 import 'models/calendar_share.dart';
 import 'models/client.dart';
+import 'models/contact_record.dart';
 import 'models/daily_report.dart';
 import 'models/weekly_report.dart';
 import 'models/department.dart';
@@ -1479,6 +1480,34 @@ class ApiClient {
   Future<List<MissingWeeklyReportProject>> missingWeeklyReportsThisWeek(String spaceId) async {
     final body = await _getList('/spaces/$spaceId/weekly-reports/missing-this-week');
     return body.map((e) => MissingWeeklyReportProject.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // --- 聯絡單與會議記錄（工程執行紀錄系統第三項）---
+
+  Future<List<ContactRecord>> contactRecords(String projectId) async {
+    final body = await _getList('/projects/$projectId/contact-records');
+    return body.map((e) => ContactRecord.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createContactRecord({
+    required String projectId,
+    required ContactRecordType type,
+    required DateTime recordDate,
+    required String title,
+    required String content,
+    String? attendees,
+  }) async {
+    await _post('/projects/$projectId/contact-records', {
+      'type': type.toJson(),
+      'recordDate': _dateOnly(recordDate),
+      'title': title,
+      'content': content,
+      if (attendees != null && attendees.isNotEmpty) 'attendees': attendees,
+    });
+  }
+
+  Future<void> deleteContactRecord({required String projectId, required String recordId}) async {
+    await _delete('/projects/$projectId/contact-records/$recordId');
   }
 
   // --- 工程財務四表：工程報價單 ---

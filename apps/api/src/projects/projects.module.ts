@@ -8,6 +8,7 @@ import { DailyReportsController } from './daily-reports.controller';
 import { SpaceDailyReportsController } from './space-daily-reports.controller';
 import { WeeklyReportsController } from './weekly-reports.controller';
 import { SpaceWeeklyReportsController } from './space-weekly-reports.controller';
+import { ContactRecordsController } from './contact-records.controller';
 import { ProjectsService } from './projects.service';
 import { WorkItemsService } from './work-items.service';
 import { ScheduleService } from './schedule.service';
@@ -15,6 +16,7 @@ import { ProjectMembersService } from './project-members.service';
 import { ProjectPropertiesService } from './project-properties.service';
 import { DailyReportsService } from './daily-reports.service';
 import { WeeklyReportsService } from './weekly-reports.service';
+import { ContactRecordsService } from './contact-records.service';
 import { SpacesModule } from '../spaces/spaces.module';
 import { UsersModule } from '../users/users.module';
 import { PermissionsModule } from '../permissions/permissions.module';
@@ -32,6 +34,7 @@ import { ClientsModule } from '../clients/clients.module';
     SpaceDailyReportsController,
     WeeklyReportsController,
     SpaceWeeklyReportsController,
+    ContactRecordsController,
   ],
   providers: [
     ProjectsService,
@@ -41,6 +44,7 @@ import { ClientsModule } from '../clients/clients.module';
     ProjectPropertiesService,
     DailyReportsService,
     WeeklyReportsService,
+    ContactRecordsService,
   ],
   exports: [
     ProjectsService,

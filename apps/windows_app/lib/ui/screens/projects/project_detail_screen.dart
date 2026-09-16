@@ -5,6 +5,7 @@ import '../../../state/project_editor_provider.dart';
 import '../../shell/breadcrumb_bar.dart';
 import 'tabs/daily_reports_tab.dart';
 import 'tabs/weekly_reports_tab.dart';
+import 'tabs/contact_records_tab.dart';
 import 'tabs/engineering_finance_tab.dart';
 import 'tabs/members_tab.dart';
 import 'tabs/project_documents_tab.dart';
@@ -39,6 +40,7 @@ class ProjectDetailScreen extends ConsumerWidget {
     Tab(text: '工程財務'),
     Tab(text: '工程日報'),
     Tab(text: '工程週報'),
+    Tab(text: '聯絡單/會議記錄'),
   ];
 
   @override
@@ -79,6 +81,7 @@ class ProjectDetailScreen extends ConsumerWidget {
                   EngineeringFinanceTab(projectId: projectId, spaceName: spaceName),
                   DailyReportsTab(projectId: projectId),
                   WeeklyReportsTab(projectId: projectId),
+                  ContactRecordsTab(projectId: projectId),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
