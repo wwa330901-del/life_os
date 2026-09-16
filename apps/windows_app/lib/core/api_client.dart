@@ -32,6 +32,7 @@ import 'models/project_member.dart';
 import 'models/project_property.dart';
 import 'models/petty_cash.dart';
 import 'models/my_workspace.dart';
+import 'models/dashboard.dart';
 import 'models/schedule_result.dart';
 import 'models/stock.dart';
 import 'models/work_item.dart';
@@ -2136,6 +2137,11 @@ class ApiClient {
   Future<MyWorkspace> myWorkspace(String spaceId) async {
     final body = await _get('/spaces/$spaceId/my-workspace');
     return MyWorkspace.fromJson(body);
+  }
+
+  Future<SpaceDashboard> spaceDashboard(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/dashboard');
+    return SpaceDashboard.fromJson(body);
   }
 
   Future<void> createFinanceTransaction({

@@ -9,6 +9,7 @@ import '../screens/projects/project_detail_screen.dart';
 import '../screens/projects/project_list_screen.dart';
 import '../screens/projects/tabs/engineering_finance/vendor_management_screen.dart';
 import '../screens/space/client_management_screen.dart';
+import '../screens/space/dashboard_screen.dart';
 import '../screens/space/department_permissions_screen.dart';
 import '../screens/space/my_workspace_screen.dart';
 import '../screens/space/petty_cash_screen.dart';
@@ -25,11 +26,6 @@ import 'dashboard_view.dart';
 /// 知識庫 is NOT reachable from here — it's account-level, not scoped to any
 /// Space, so it's a sibling top-level destination (`KnowledgeShell`) reached
 /// directly from the space picker instead of nested in this sidebar.
-///
-/// A company space goes straight to its project list — with only one real
-/// module so far, a dashboard step in between was just an extra click to
-/// the only place it could lead. Re-introduce a dashboard chooser if/when
-/// a second module exists.
 class SpaceShell extends ConsumerStatefulWidget {
   const SpaceShell({super.key});
 
@@ -46,6 +42,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
   bool _showPermissions = false;
   bool _showPettyCash = false;
   bool _showMyWorkspace = false;
+  bool _showDashboard = false;
 
   // `_RootRouter` reuses this same `SpaceShell` widget instance across
   // every space (it's `const SpaceShell()` regardless of which one is
@@ -57,8 +54,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
   // while inside a project didn't navigate away).
   String? _stateForSpaceId;
 
-  void _backToList() => setState(() {
-    _openProjectId = null;
+  void _resetScreenFlags() {
     _showPropertiesSettings = false;
     _showApprovals = false;
     _showVendors = false;
@@ -66,83 +62,60 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showPermissions = false;
     _showPettyCash = false;
     _showMyWorkspace = false;
+    _showDashboard = false;
+  }
+
+  void _backToList() => setState(() {
+    _openProjectId = null;
+    _resetScreenFlags();
   });
 
   void _openPropertiesSettings() => setState(() {
     _openProjectId = null;
+    _resetScreenFlags();
     _showPropertiesSettings = true;
-    _showApprovals = false;
-    _showVendors = false;
-    _showClients = false;
-    _showPermissions = false;
-    _showPettyCash = false;
-    _showMyWorkspace = false;
   });
 
   void _openApprovals() => setState(() {
     _openProjectId = null;
-    _showPropertiesSettings = false;
+    _resetScreenFlags();
     _showApprovals = true;
-    _showVendors = false;
-    _showClients = false;
-    _showPermissions = false;
-    _showPettyCash = false;
-    _showMyWorkspace = false;
   });
 
   void _openVendors() => setState(() {
     _openProjectId = null;
-    _showPropertiesSettings = false;
-    _showApprovals = false;
+    _resetScreenFlags();
     _showVendors = true;
-    _showClients = false;
-    _showPermissions = false;
-    _showPettyCash = false;
-    _showMyWorkspace = false;
   });
 
   void _openClients() => setState(() {
     _openProjectId = null;
-    _showPropertiesSettings = false;
-    _showApprovals = false;
-    _showVendors = false;
+    _resetScreenFlags();
     _showClients = true;
-    _showPermissions = false;
-    _showPettyCash = false;
-    _showMyWorkspace = false;
   });
 
   void _openPermissions() => setState(() {
     _openProjectId = null;
-    _showPropertiesSettings = false;
-    _showApprovals = false;
-    _showVendors = false;
-    _showClients = false;
+    _resetScreenFlags();
     _showPermissions = true;
-    _showPettyCash = false;
-    _showMyWorkspace = false;
   });
 
   void _openPettyCash() => setState(() {
     _openProjectId = null;
-    _showPropertiesSettings = false;
-    _showApprovals = false;
-    _showVendors = false;
-    _showClients = false;
-    _showPermissions = false;
+    _resetScreenFlags();
     _showPettyCash = true;
-    _showMyWorkspace = false;
   });
 
   void _openMyWorkspace() => setState(() {
     _openProjectId = null;
-    _showPropertiesSettings = false;
-    _showApprovals = false;
-    _showVendors = false;
-    _showClients = false;
-    _showPermissions = false;
-    _showPettyCash = false;
+    _resetScreenFlags();
     _showMyWorkspace = true;
+  });
+
+  void _openDashboard() => setState(() {
+    _openProjectId = null;
+    _resetScreenFlags();
+    _showDashboard = true;
   });
 
   @override
@@ -154,13 +127,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     if (space.id != _stateForSpaceId) {
       _stateForSpaceId = space.id;
       _openProjectId = null;
-      _showPropertiesSettings = false;
-      _showApprovals = false;
-      _showVendors = false;
-      _showClients = false;
-      _showPermissions = false;
-      _showPettyCash = false;
-      _showMyWorkspace = false;
+      _resetScreenFlags();
     }
 
     final content = switch (space.type) {
@@ -179,6 +146,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
       ),
       SpaceType.company when _showPettyCash => PettyCashScreen(spaceId: space.id),
       SpaceType.company when _showMyWorkspace => MyWorkspaceScreen(spaceId: space.id),
+      SpaceType.company when _showDashboard => DashboardScreen(spaceId: space.id),
       SpaceType.company when _openProjectId != null => ProjectDetailScreen(
         projectId: _openProjectId!,
         spaceName: space.name,
@@ -211,6 +179,8 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
             pettyCashSelected: _showPettyCash,
             onOpenMyWorkspace: _openMyWorkspace,
             myWorkspaceSelected: _showMyWorkspace,
+            onOpenDashboard: _openDashboard,
+            dashboardSelected: _showDashboard,
           ),
           Expanded(child: content),
         ],

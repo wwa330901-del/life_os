@@ -27,6 +27,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { ClientsModule } from './clients/clients.module';
 import { PettyCashModule } from './petty-cash/petty-cash.module';
 import { MyWorkspaceModule } from './my-workspace/my-workspace.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { MyWorkspaceModule } from './my-workspace/my-workspace.module';
     ClientsModule,
     PettyCashModule,
     MyWorkspaceModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],

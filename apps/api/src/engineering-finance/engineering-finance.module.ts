@@ -49,6 +49,10 @@ import { ReceivablesPayablesService } from './receivables-payables.service';
     OwnerBillingPeriodsService,
     ReceivablesPayablesService,
   ],
-  exports: [CostControlService, EngineeringQuotationService],
+  exports: [
+    CostControlService,
+    EngineeringQuotationService,
+    ReceivablesPayablesService,
+  ],
 })
 export class EngineeringFinanceModule {}
