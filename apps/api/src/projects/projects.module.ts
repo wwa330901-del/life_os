@@ -10,6 +10,7 @@ import { WeeklyReportsController } from './weekly-reports.controller';
 import { SpaceWeeklyReportsController } from './space-weekly-reports.controller';
 import { ContactRecordsController } from './contact-records.controller';
 import { ExecutionPhotosController } from './execution-photos.controller';
+import { MaterialSubmissionsController } from './material-submissions.controller';
 import { ProjectsService } from './projects.service';
 import { WorkItemsService } from './work-items.service';
 import { ScheduleService } from './schedule.service';
@@ -19,11 +20,13 @@ import { DailyReportsService } from './daily-reports.service';
 import { WeeklyReportsService } from './weekly-reports.service';
 import { ContactRecordsService } from './contact-records.service';
 import { ExecutionPhotosService } from './execution-photos.service';
+import { MaterialSubmissionsService } from './material-submissions.service';
 import { SpacesModule } from '../spaces/spaces.module';
 import { UsersModule } from '../users/users.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { ClientsModule } from '../clients/clients.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
+import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 
 @Module({
   imports: [
@@ -32,6 +35,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     PermissionsModule,
     ClientsModule,
     KnowledgeModule,
+    LineNotifierModule,
   ],
   controllers: [
     SpaceProjectsController,
@@ -45,6 +49,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     SpaceWeeklyReportsController,
     ContactRecordsController,
     ExecutionPhotosController,
+    MaterialSubmissionsController,
   ],
   providers: [
     ProjectsService,
@@ -56,6 +61,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     WeeklyReportsService,
     ContactRecordsService,
     ExecutionPhotosService,
+    MaterialSubmissionsService,
   ],
   exports: [
     ProjectsService,

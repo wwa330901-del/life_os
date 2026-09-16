@@ -16,6 +16,7 @@ import 'models/weekly_report.dart';
 import 'models/department.dart';
 import 'models/friend.dart';
 import 'models/finance_report.dart';
+import 'models/material_submission.dart';
 import 'models/document_approval.dart';
 import 'models/engineering_finance.dart';
 import 'models/execution_photo.dart';
@@ -1538,6 +1539,44 @@ class ApiClient {
 
   Future<void> deleteExecutionPhoto({required String projectId, required String photoId}) async {
     await _delete('/projects/$projectId/execution-photos/$photoId');
+  }
+
+  // --- 材料送審（工程執行紀錄系統第五項）---
+
+  Future<List<MaterialSubmission>> materialSubmissions(String projectId) async {
+    final body = await _getList('/projects/$projectId/material-submissions');
+    return body.map((e) => MaterialSubmission.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createMaterialSubmission({
+    required String projectId,
+    required String materialName,
+    String? spec,
+    String? vendorId,
+    required DateTime submittedDate,
+  }) async {
+    await _post('/projects/$projectId/material-submissions', {
+      'materialName': materialName,
+      if (spec != null && spec.isNotEmpty) 'spec': spec,
+      if (vendorId != null) 'vendorId': vendorId,
+      'submittedDate': _dateOnly(submittedDate),
+    });
+  }
+
+  Future<void> reviewMaterialSubmission({
+    required String projectId,
+    required String submissionId,
+    required MaterialSubmissionStatus status,
+    String? reviewComment,
+  }) async {
+    await _patch('/projects/$projectId/material-submissions/$submissionId/review', {
+      'status': status.toJson(),
+      if (reviewComment != null && reviewComment.isNotEmpty) 'reviewComment': reviewComment,
+    });
+  }
+
+  Future<void> deleteMaterialSubmission({required String projectId, required String submissionId}) async {
+    await _delete('/projects/$projectId/material-submissions/$submissionId');
   }
 
   // --- 工程財務四表：工程報價單 ---

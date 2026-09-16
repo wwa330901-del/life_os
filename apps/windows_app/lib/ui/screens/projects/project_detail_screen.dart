@@ -7,17 +7,19 @@ import 'tabs/daily_reports_tab.dart';
 import 'tabs/weekly_reports_tab.dart';
 import 'tabs/contact_records_tab.dart';
 import 'tabs/execution_photos_tab.dart';
+import 'tabs/material_submissions_tab.dart';
 import 'tabs/engineering_finance_tab.dart';
 import 'tabs/members_tab.dart';
 import 'tabs/project_documents_tab.dart';
 import 'tabs/project_info_tab.dart';
 import 'tabs/schedule_tab.dart';
 
-/// Project detail content — lives inside `SpaceShell`'s content pane. Seven
+/// Project detail content — lives inside `SpaceShell`'s content pane. Ten
 /// tabs: 工期 (schedule), 專案資料 (per-space custom properties), 專案成員,
 /// 相關文件 (document templates the project's 類型 allows), 工程財務 (工程報價單/
 /// 採發比價表/成控管制表/工程請款單/估驗計價五表，自己再往下分頁), 工程日報
-/// /工程週報（2026-09，工程執行紀錄系統第一/二項）. 代辦事項 used to be a tab here —
+/// /工程週報/聯絡單與會議記錄/執行照片/材料送審（2026-09，顧問文件「工程執行
+/// 紀錄系統」五個子功能，依序對應第一到第五項）. 代辦事項 used to be a tab here —
 /// moved out entirely into its own top-level 代辦事項 space (see
 /// `TodoShell`), since a todo can now be 個人 (no project at all) as well
 /// as 工作 (this project).
@@ -43,6 +45,7 @@ class ProjectDetailScreen extends ConsumerWidget {
     Tab(text: '工程週報'),
     Tab(text: '聯絡單/會議記錄'),
     Tab(text: '執行照片'),
+    Tab(text: '材料送審'),
   ];
 
   @override
@@ -85,6 +88,7 @@ class ProjectDetailScreen extends ConsumerWidget {
                   WeeklyReportsTab(projectId: projectId),
                   ContactRecordsTab(projectId: projectId),
                   ExecutionPhotosTab(projectId: projectId),
+                  MaterialSubmissionsTab(projectId: projectId),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
