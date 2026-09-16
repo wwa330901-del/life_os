@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -58,4 +59,8 @@ export class UpdateVendorDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  courtSeizureFlag?: boolean;
 }

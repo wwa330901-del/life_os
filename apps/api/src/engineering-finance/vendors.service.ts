@@ -57,6 +57,7 @@ export class VendorsService {
         accountHolder: dto.accountHolder,
         bankBranch: dto.bankBranch,
         note: dto.note,
+        courtSeizureFlag: dto.courtSeizureFlag,
       },
     });
   }
@@ -99,6 +100,9 @@ export class VendorsService {
         }),
         ...(dto.bankBranch !== undefined && { bankBranch: dto.bankBranch }),
         ...(dto.note !== undefined && { note: dto.note }),
+        ...(dto.courtSeizureFlag !== undefined && {
+          courtSeizureFlag: dto.courtSeizureFlag,
+        }),
       },
     });
   }
@@ -145,6 +149,29 @@ export class VendorsService {
       wasSelected: q.comparison.selectedVendorQuoteId === q.id,
       createdAt: q.createdAt,
     }));
+  }
+
+  /** 業務成案比例分析（2026-09，顧問文件協力商資料庫子項）——分母是這家
+   * 廠商在這個空間裡所有比價表中「被邀請報價」的次數（ProcurementVendorQuote
+   * 筆數），分子是其中「被決標」的次數（comparison.selectedVendorQuoteId
+   * 指向這筆報價，即 selectedFor 反關聯不為 null）。跟 getHistory 共用同
+   * 一組資料來源，這裡只回傳計數不回傳明細。 */
+  async getWinRate(userId: string, spaceId: string, vendorId: string) {
+    await this.spacesService.getForUserOrThrow(userId, spaceId);
+    await this.getVendorOrThrow(spaceId, vendorId);
+    const quotes = await this.prisma.procurementVendorQuote.findMany({
+      where: { vendorId, comparison: { project: { spaceId } } },
+      include: { comparison: { select: { selectedVendorQuoteId: true } } },
+    });
+    const invitedCount = quotes.length;
+    const awardedCount = quotes.filter(
+      (q) => q.comparison.selectedVendorQuoteId === q.id,
+    ).length;
+    return {
+      invitedCount,
+      awardedCount,
+      winRate: invitedCount > 0 ? awardedCount / invitedCount : 0,
+    };
   }
 
   private async getVendorOrThrow(spaceId: string, vendorId: string) {

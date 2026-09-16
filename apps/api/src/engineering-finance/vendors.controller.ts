@@ -64,4 +64,13 @@ export class VendorsController {
   ) {
     return this.vendorsService.getHistory(user.id, spaceId, vendorId);
   }
+
+  @Get(':vendorId/win-rate')
+  getWinRate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Param('vendorId') vendorId: string,
+  ) {
+    return this.vendorsService.getWinRate(user.id, spaceId, vendorId);
+  }
 }

@@ -1309,6 +1309,7 @@ class ApiClient {
     String? accountHolder,
     String? bankBranch,
     String? note,
+    bool? courtSeizureFlag,
   }) async {
     await _post('/spaces/$spaceId/vendors', {
       'name': name,
@@ -1323,6 +1324,7 @@ class ApiClient {
       if (accountHolder != null && accountHolder.isNotEmpty) 'accountHolder': accountHolder,
       if (bankBranch != null && bankBranch.isNotEmpty) 'bankBranch': bankBranch,
       if (note != null && note.isNotEmpty) 'note': note,
+      if (courtSeizureFlag != null) 'courtSeizureFlag': courtSeizureFlag,
     });
   }
 
@@ -1341,6 +1343,7 @@ class ApiClient {
     String? accountHolder,
     String? bankBranch,
     String? note,
+    bool? courtSeizureFlag,
   }) async {
     await _patch('/spaces/$spaceId/vendors/$vendorId', {
       if (name != null) 'name': name,
@@ -1355,6 +1358,7 @@ class ApiClient {
       if (accountHolder != null) 'accountHolder': accountHolder,
       if (bankBranch != null) 'bankBranch': bankBranch,
       if (note != null) 'note': note,
+      if (courtSeizureFlag != null) 'courtSeizureFlag': courtSeizureFlag,
     });
   }
 
@@ -1365,6 +1369,11 @@ class ApiClient {
   Future<List<VendorHistoryEntry>> vendorHistory(String spaceId, String vendorId) async {
     final body = await _getList('/spaces/$spaceId/vendors/$vendorId/history');
     return body.map((e) => VendorHistoryEntry.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<VendorWinRate> vendorWinRate(String spaceId, String vendorId) async {
+    final body = await _get('/spaces/$spaceId/vendors/$vendorId/win-rate');
+    return VendorWinRate.fromJson(body);
   }
 
   // --- 客戶資料庫（CRM 客戶端那一半，Vendor 是協力商那一半）---

@@ -36,7 +36,20 @@ class VendorManagementScreen extends ConsumerWidget {
             itemBuilder: (context, index) {
               final v = vendors[index];
               return ListTile(
-                title: Text(v.name),
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(v.name),
+                    if (v.courtSeizureFlag) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(4)),
+                        child: Text('法院查封', style: TextStyle(color: Colors.red.shade900, fontSize: 12)),
+                      ),
+                    ],
+                  ],
+                ),
                 subtitle: Text(
                   [
                     if (v.tradeCategory != null && v.tradeCategory!.isNotEmpty) v.tradeCategory!,
@@ -57,6 +70,7 @@ class VendorManagementScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
+                    IconButton(icon: const Icon(Icons.percent), tooltip: '業務成案比例', onPressed: () => _showWinRate(context, ref, v)),
                     IconButton(icon: const Icon(Icons.history), tooltip: '配合過案件', onPressed: () => _showHistory(context, ref, v)),
                     IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () => _addOrEdit(context, ref, vendor: v)),
                     IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _delete(context, ref, v)),
@@ -85,6 +99,7 @@ class VendorManagementScreen extends ConsumerWidget {
     final bankBranchController = TextEditingController(text: vendor?.bankBranch ?? '');
     final noteController = TextEditingController(text: vendor?.note ?? '');
     int rating = vendor?.rating ?? 0;
+    bool courtSeizureFlag = vendor?.courtSeizureFlag ?? false;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -111,6 +126,12 @@ class VendorManagementScreen extends ConsumerWidget {
                     ],
                   ),
                   TextField(controller: characteristicsController, decoration: const InputDecoration(labelText: '廠商特性（選填）')),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('法院查封標記'),
+                    value: courtSeizureFlag,
+                    onChanged: (value) => setState(() => courtSeizureFlag = value),
+                  ),
                   const Divider(),
                   TextField(controller: contactPersonController, decoration: const InputDecoration(labelText: '聯絡人')),
                   TextField(controller: contactPhoneController, decoration: const InputDecoration(labelText: '聯絡電話')),
@@ -156,6 +177,7 @@ class VendorManagementScreen extends ConsumerWidget {
           accountHolder: accountHolderController.text.trim(),
           bankBranch: bankBranchController.text.trim(),
           note: noteController.text.trim(),
+          courtSeizureFlag: courtSeizureFlag,
         );
       } else {
         await api.updateVendor(
@@ -173,6 +195,7 @@ class VendorManagementScreen extends ConsumerWidget {
           accountHolder: accountHolderController.text.trim(),
           bankBranch: bankBranchController.text.trim(),
           note: noteController.text.trim(),
+          courtSeizureFlag: courtSeizureFlag,
         );
       }
       ref.invalidate(vendorsProvider(spaceId));
@@ -200,6 +223,24 @@ class VendorManagementScreen extends ConsumerWidget {
     } on ApiException catch (e) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
+  }
+
+  Future<void> _showWinRate(BuildContext context, WidgetRef ref, Vendor vendor) async {
+    final winRate = await ref.read(apiClientProvider).vendorWinRate(spaceId, vendor.id);
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('「${vendor.name}」業務成案比例'),
+        content: Text(
+          winRate.invitedCount == 0
+              ? '這家廠商還沒有被邀請過比價'
+              : '受邀比價 ${winRate.invitedCount} 次，決標 ${winRate.awardedCount} 次\n'
+                    '成案比例：${(winRate.winRate * 100).toStringAsFixed(1)}%',
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉'))],
+      ),
+    );
   }
 
   Future<void> _showHistory(BuildContext context, WidgetRef ref, Vendor vendor) async {

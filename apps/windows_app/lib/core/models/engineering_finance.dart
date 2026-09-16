@@ -24,6 +24,7 @@ class Vendor {
     required this.accountHolder,
     required this.bankBranch,
     required this.note,
+    required this.courtSeizureFlag,
   });
 
   final String id;
@@ -40,6 +41,7 @@ class Vendor {
   final String? accountHolder;
   final String? bankBranch;
   final String? note;
+  final bool courtSeizureFlag;
 
   factory Vendor.fromJson(Map<String, dynamic> json) => Vendor(
     id: json['id'] as String,
@@ -56,6 +58,25 @@ class Vendor {
     accountHolder: json['accountHolder'] as String?,
     bankBranch: json['bankBranch'] as String?,
     note: json['note'] as String?,
+    courtSeizureFlag: json['courtSeizureFlag'] as bool? ?? false,
+  );
+}
+
+class VendorWinRate {
+  const VendorWinRate({
+    required this.invitedCount,
+    required this.awardedCount,
+    required this.winRate,
+  });
+
+  final int invitedCount;
+  final int awardedCount;
+  final double winRate;
+
+  factory VendorWinRate.fromJson(Map<String, dynamic> json) => VendorWinRate(
+    invitedCount: json['invitedCount'] as int,
+    awardedCount: json['awardedCount'] as int,
+    winRate: (json['winRate'] as num).toDouble(),
   );
 }
 
