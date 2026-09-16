@@ -61,6 +61,7 @@ class PaymentRequestPeriodsTab extends ConsumerWidget {
     final amountController = TextEditingController();
     final noteController = TextEditingController();
     DateTime requestDate = DateTime.now();
+    DateTime? dueDate;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -107,6 +108,30 @@ class PaymentRequestPeriodsTab extends ConsumerWidget {
                     ],
                   ),
                   TextField(controller: noteController, decoration: const InputDecoration(labelText: '備註（選填）')),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(dueDate == null ? '付款截止日（選填）：未設定' : '付款截止日：${dueDate!.year}/${dueDate!.month}/${dueDate!.day}'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: dueDate ?? requestDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) setState(() => dueDate = picked);
+                        },
+                        child: const Text('選擇日期'),
+                      ),
+                      if (dueDate != null)
+                        IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => setState(() => dueDate = null),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -135,6 +160,7 @@ class PaymentRequestPeriodsTab extends ConsumerWidget {
         amount: amount,
         requestDate: requestDate,
         note: noteController.text.trim(),
+        dueDate: dueDate,
       );
       ref.invalidate(paymentRequestPeriodsProvider(projectId));
     } on ApiException catch (e) {
@@ -171,6 +197,33 @@ class _PeriodCard extends ConsumerWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             if (period.note != null && period.note!.isNotEmpty) Text(period.note!),
+            Row(
+              children: [
+                if (period.dueDate != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Text(
+                      '付款截止日 ${period.dueDate!.year}/${period.dueDate!.month}/${period.dueDate!.day}',
+                      style: TextStyle(
+                        color: period.paidDate == null && period.dueDate!.isBefore(DateTime.now())
+                            ? Colors.red
+                            : null,
+                      ),
+                    ),
+                  ),
+                if (period.paidDate != null)
+                  const Chip(label: Text('已付款'), visualDensity: VisualDensity.compact)
+                else if (period.dueDate != null)
+                  const Chip(label: Text('未付款'), visualDensity: VisualDensity.compact),
+                const SizedBox(width: 8),
+                Icon(
+                  period.hasInvoiceAttachment ? Icons.receipt_long : Icons.receipt_long_outlined,
+                  size: 16,
+                  color: period.hasInvoiceAttachment ? Colors.green : Colors.orange,
+                ),
+                Text(period.hasInvoiceAttachment ? '已附發票' : '尚未附發票', style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
             const Divider(height: 24),
             if (period.additionalAmount != null)
               Row(
@@ -199,6 +252,23 @@ class _PeriodCard extends ConsumerWidget {
                     onPressed: () => _submit(context, ref),
                     icon: const Icon(Icons.send_outlined),
                     label: const Text('送簽'),
+                  ),
+                if (period.paidDate == null)
+                  OutlinedButton.icon(
+                    onPressed: () => _markPaid(context, ref),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('標記已付款'),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: () => _uploadInvoice(context, ref),
+                  icon: const Icon(Icons.upload_file_outlined),
+                  label: Text(period.hasInvoiceAttachment ? '重新上傳發票' : '上傳發票'),
+                ),
+                if (period.invoiceAttachmentUrl != null)
+                  TextButton.icon(
+                    onPressed: () => launchUrl(Uri.parse(period.invoiceAttachmentUrl!)),
+                    icon: const Icon(Icons.attachment, size: 16),
+                    label: const Text('查看發票'),
                   ),
                 TextButton.icon(
                   onPressed: () => _showHistory(context, ref),
@@ -262,6 +332,30 @@ class _PeriodCard extends ConsumerWidget {
       );
       ref.invalidate(paymentRequestPeriodsProvider(projectId));
       ref.invalidate(costControlRowsProvider(projectId));
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _markPaid(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(apiClientProvider).markPaymentRequestPeriodPaid(projectId: projectId, periodId: period.id);
+      ref.invalidate(paymentRequestPeriodsProvider(projectId));
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _uploadInvoice(BuildContext context, WidgetRef ref) async {
+    final file = await openFile();
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (!context.mounted) return;
+    try {
+      await ref
+          .read(apiClientProvider)
+          .uploadPaymentRequestPeriodInvoice(projectId: projectId, periodId: period.id, fileName: file.name, bytes: bytes);
+      ref.invalidate(paymentRequestPeriodsProvider(projectId));
     } on ApiException catch (e) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }

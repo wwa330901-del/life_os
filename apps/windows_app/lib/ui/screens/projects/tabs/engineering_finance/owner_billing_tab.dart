@@ -186,10 +186,35 @@ class _PeriodCard extends ConsumerWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             if (period.note != null && period.note!.isNotEmpty) Text(period.note!),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (period.collectedDate != null)
+                  const Chip(label: Text('已收款'), visualDensity: VisualDensity.compact)
+                else ...[
+                  const Chip(label: Text('未收款'), visualDensity: VisualDensity.compact),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _markCollected(context, ref),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('標記已收款'),
+                  ),
+                ],
+              ],
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _markCollected(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(apiClientProvider).markOwnerBillingPeriodCollected(projectId: projectId, periodId: period.id);
+      ref.invalidate(ownerBillingPeriodsProvider(projectId));
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> _delete(BuildContext context, WidgetRef ref) async {

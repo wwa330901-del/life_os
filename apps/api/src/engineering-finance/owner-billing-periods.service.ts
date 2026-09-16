@@ -90,6 +90,17 @@ export class OwnerBillingPeriodsService {
     await this.prisma.ownerBillingPeriod.delete({ where: { id: periodId } });
   }
 
+  /** 標記已收款（2026-09，顧問文件財務系統「應收帳款 View」子項）——這張
+   * 表本來就沒有簽核鎖定，可以隨時標記/取消標記。 */
+  async markCollected(userId: string, projectId: string, periodId: string) {
+    await this.getAuthorizedProjectForWrite(userId, projectId);
+    await this.getPeriodOrThrow(projectId, periodId);
+    return this.prisma.ownerBillingPeriod.update({
+      where: { id: periodId },
+      data: { collectedDate: new Date() },
+    });
+  }
+
   /** 目前報價單總金額（業主合約總額），跟這個專案至今所有既有期別金額的
    * 累計占比——跟 PaymentRequestPeriod 建立時算 contractAmountSnapshot/
    * billedPercentBefore 同一個邏輯，只是基準從單一發包的成控列換成整個專

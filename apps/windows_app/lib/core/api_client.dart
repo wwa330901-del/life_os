@@ -2013,6 +2013,7 @@ class ApiClient {
     required double amount,
     required DateTime requestDate,
     String? note,
+    DateTime? dueDate,
   }) async {
     await _post('/projects/$projectId/payment-request-periods', {
       'costControlRowId': costControlRowId,
@@ -2020,7 +2021,28 @@ class ApiClient {
       'amount': amount,
       'requestDate': _dateOnly(requestDate),
       if (note != null && note.isNotEmpty) 'note': note,
+      if (dueDate != null) 'dueDate': _dateOnly(dueDate),
     });
+  }
+
+  Future<void> markPaymentRequestPeriodPaid({required String projectId, required String periodId}) async {
+    await _post('/projects/$projectId/payment-request-periods/$periodId/mark-paid', {});
+  }
+
+  /// 發票附件——純提醒用途，跟追加款不同,不需要跟金額一起送。
+  Future<void> uploadPaymentRequestPeriodInvoice({
+    required String projectId,
+    required String periodId,
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    final uri = Uri.parse('$baseUrl/projects/$projectId/payment-request-periods/$periodId/invoice');
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll({if (_token != null) 'Authorization': 'Bearer $_token'})
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    _checkStatus(res);
   }
 
   /// 追加款——金額＋附件（追加報價單）原子送出。
@@ -2099,6 +2121,15 @@ class ApiClient {
 
   Future<void> deleteOwnerBillingPeriod({required String projectId, required String periodId}) async {
     await _delete('/projects/$projectId/owner-billing-periods/$periodId');
+  }
+
+  Future<void> markOwnerBillingPeriodCollected({required String projectId, required String periodId}) async {
+    await _post('/projects/$projectId/owner-billing-periods/$periodId/mark-collected', {});
+  }
+
+  Future<ReceivablesPayables> receivablesPayables(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/receivables-payables');
+    return ReceivablesPayables.fromJson(body);
   }
 
   Future<void> createFinanceTransaction({

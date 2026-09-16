@@ -66,6 +66,31 @@ export class PaymentRequestPeriodsController {
     );
   }
 
+  @Post(':periodId/mark-paid')
+  markPaid(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('periodId') periodId: string,
+  ) {
+    return this.periodsService.markPaid(user.id, projectId, periodId);
+  }
+
+  @Post(':periodId/invoice')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadInvoice(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('periodId') periodId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.periodsService.uploadInvoice(
+      user.id,
+      projectId,
+      periodId,
+      file,
+    );
+  }
+
   @Post(':periodId/submit')
   submit(
     @CurrentUser() user: AuthenticatedUser,

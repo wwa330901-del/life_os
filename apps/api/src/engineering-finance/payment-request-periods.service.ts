@@ -92,9 +92,53 @@ export class PaymentRequestPeriodsService {
         contractAmountSnapshot: contractAmount,
         billedPercentBefore: billedPercent,
         submittedByUserId: userId,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
       },
     });
     return this.withComputedFields(created);
+  }
+
+  /** 標記已付款（2026-09，顧問文件財務系統子項）——跟簽核鎖定是兩件事，
+   * 已鎖定（簽核通過）的期別照樣可以標記已付款,付款本來就發生在簽核之
+   * 後,不受 getEditablePeriodOrThrow 限制。 */
+  async markPaid(userId: string, projectId: string, periodId: string) {
+    await this.getAuthorizedProjectForWrite(userId, projectId);
+    await this.getPeriodOrThrow(projectId, periodId);
+    await this.prisma.paymentRequestPeriod.update({
+      where: { id: periodId },
+      data: { paidDate: new Date() },
+    });
+    return this.getOne(userId, projectId, periodId);
+  }
+
+  /** 發票附件檢核清單（2026-09，顧問文件財務系統子項）——純提醒用途，不
+   * 影響「送出即凍結」流程,已鎖定的期別一樣可以補附發票。 */
+  async uploadInvoice(
+    userId: string,
+    projectId: string,
+    periodId: string,
+    file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('缺少發票附件檔案');
+    if (!this.storage.configured)
+      throw new BadRequestException('檔案儲存服務尚未設定');
+    await this.getAuthorizedProjectForWrite(userId, projectId);
+    await this.getPeriodOrThrow(projectId, periodId);
+
+    const extension = file.originalname.includes('.')
+      ? file.originalname.split('.').pop()
+      : 'bin';
+    const path = `payment-request-periods/${periodId}/invoice.${extension}`;
+    await this.storage.upload(
+      path,
+      file.buffer,
+      file.mimetype || 'application/octet-stream',
+    );
+    await this.prisma.paymentRequestPeriod.update({
+      where: { id: periodId },
+      data: { invoiceAttachmentPath: path },
+    });
+    return this.getOne(userId, projectId, periodId);
   }
 
   /** 追加款——金額跟「追加報價單」附件一起原子送出，缺一不可（這是使用者
@@ -179,7 +223,16 @@ export class PaymentRequestPeriodsService {
             period.additionalQuotationAttachmentPath,
           )
         : null;
-    return { ...period, locked, additionalQuotationAttachmentUrl };
+    const invoiceAttachmentUrl = period.invoiceAttachmentPath
+      ? await this.storage.getSignedUrl(period.invoiceAttachmentPath)
+      : null;
+    return {
+      ...period,
+      locked,
+      additionalQuotationAttachmentUrl,
+      invoiceAttachmentUrl,
+      hasInvoiceAttachment: !!period.invoiceAttachmentPath,
+    };
   }
 
   private async getAuthorizedProject(userId: string, projectId: string) {
@@ -193,7 +246,10 @@ export class PaymentRequestPeriodsService {
    * above — it's an APPROVE action through the existing
    * DocumentApprovalsService fixed-role chain, not overlaid by this engine
    * (2026-09 使用者決定). */
-  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+  private async getAuthorizedProjectForWrite(
+    userId: string,
+    projectId: string,
+  ) {
     const project = await this.getAuthorizedProject(userId, projectId);
     await this.permissionsService.assertCan(
       userId,

@@ -55,4 +55,13 @@ export class OwnerBillingPeriodsController {
   ) {
     return this.periodsService.remove(user.id, projectId, periodId);
   }
+
+  @Post(':periodId/mark-collected')
+  markCollected(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('periodId') periodId: string,
+  ) {
+    return this.periodsService.markCollected(user.id, projectId, periodId);
+  }
 }

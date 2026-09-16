@@ -506,7 +506,10 @@ export class CostControlService {
    * `DocumentApprovalsService` fixed-role chain, 2026-09 使用者確認新引擎
    * 不疊加在這套既有簽核之上（見 project_life_os_company_space_target_scope
    * 記憶）。 */
-  private async getAuthorizedProjectForWrite(userId: string, projectId: string) {
+  private async getAuthorizedProjectForWrite(
+    userId: string,
+    projectId: string,
+  ) {
     const project = await this.getAuthorizedProject(userId, projectId);
     await this.permissionsService.assertCan(
       userId,

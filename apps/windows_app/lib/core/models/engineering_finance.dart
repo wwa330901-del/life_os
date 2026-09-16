@@ -632,6 +632,11 @@ class PaymentRequestPeriod {
     required this.submittedByUserId,
     required this.createdAt,
     required this.locked,
+    required this.dueDate,
+    required this.paidDate,
+    required this.invoiceAttachmentPath,
+    required this.invoiceAttachmentUrl,
+    required this.hasInvoiceAttachment,
   });
 
   final String id;
@@ -652,6 +657,11 @@ class PaymentRequestPeriod {
   final String submittedByUserId;
   final DateTime createdAt;
   final bool locked;
+  final DateTime? dueDate;
+  final DateTime? paidDate;
+  final String? invoiceAttachmentPath;
+  final String? invoiceAttachmentUrl;
+  final bool hasInvoiceAttachment;
 
   factory PaymentRequestPeriod.fromJson(Map<String, dynamic> json) => PaymentRequestPeriod(
     id: json['id'] as String,
@@ -672,6 +682,11 @@ class PaymentRequestPeriod {
     submittedByUserId: json['submittedByUserId'] as String,
     createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
     locked: json['locked'] as bool,
+    dueDate: json['dueDate'] != null ? DateTime.parse(json['dueDate'] as String) : null,
+    paidDate: json['paidDate'] != null ? DateTime.parse(json['paidDate'] as String) : null,
+    invoiceAttachmentPath: json['invoiceAttachmentPath'] as String?,
+    invoiceAttachmentUrl: json['invoiceAttachmentUrl'] as String?,
+    hasInvoiceAttachment: json['hasInvoiceAttachment'] as bool? ?? false,
   );
 }
 
@@ -693,6 +708,7 @@ class OwnerBillingPeriod {
     required this.billedPercentBefore,
     required this.createdByUserId,
     required this.createdAt,
+    required this.collectedDate,
   });
 
   final String id;
@@ -704,6 +720,7 @@ class OwnerBillingPeriod {
   final double billedPercentBefore;
   final String createdByUserId;
   final DateTime createdAt;
+  final DateTime? collectedDate;
 
   factory OwnerBillingPeriod.fromJson(Map<String, dynamic> json) => OwnerBillingPeriod(
     id: json['id'] as String,
@@ -715,6 +732,68 @@ class OwnerBillingPeriod {
     billedPercentBefore: (json['billedPercentBefore'] as num).toDouble(),
     createdByUserId: json['createdByUserId'] as String,
     createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
+    collectedDate: json['collectedDate'] != null ? DateTime.parse(json['collectedDate'] as String) : null,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 應收應付帳款 View（2026-09，顧問文件財務系統子項，純唯讀彙總）
+// ---------------------------------------------------------------------------
+
+class ReceivablePayableEntry {
+  const ReceivablePayableEntry({
+    required this.projectId,
+    required this.projectName,
+    required this.total,
+    required this.settled,
+    required this.outstanding,
+  });
+
+  final String projectId;
+  final String projectName;
+  final double total;
+  final double settled;
+  final double outstanding;
+}
+
+class ReceivablesPayables {
+  const ReceivablesPayables({
+    required this.receivables,
+    required this.payables,
+    required this.totalReceivableOutstanding,
+    required this.totalPayableOutstanding,
+  });
+
+  final List<ReceivablePayableEntry> receivables;
+  final List<ReceivablePayableEntry> payables;
+  final double totalReceivableOutstanding;
+  final double totalPayableOutstanding;
+
+  factory ReceivablesPayables.fromJson(Map<String, dynamic> json) => ReceivablesPayables(
+    receivables: (json['receivables'] as List<dynamic>)
+        .map(
+          (e) => ReceivablePayableEntry(
+            projectId: (e as Map<String, dynamic>)['projectId'] as String,
+            projectName: e['projectName'] as String,
+            total: (e['billed'] as num).toDouble(),
+            settled: (e['collected'] as num).toDouble(),
+            outstanding: (e['outstanding'] as num).toDouble(),
+          ),
+        )
+        .toList(),
+    payables: (json['payables'] as List<dynamic>)
+        .map(
+          (e) => ReceivablePayableEntry(
+            projectId: (e as Map<String, dynamic>)['projectId'] as String,
+            projectName: e['projectName'] as String,
+            total: (e['requested'] as num).toDouble(),
+            settled: (e['paid'] as num).toDouble(),
+            outstanding: (e['outstanding'] as num).toDouble(),
+          ),
+        )
+        .toList(),
+    totalReceivableOutstanding: (json['totalReceivableOutstanding'] as num).toDouble(),
+    totalPayableOutstanding: (json['totalPayableOutstanding'] as num).toDouble(),
   );
 }
 

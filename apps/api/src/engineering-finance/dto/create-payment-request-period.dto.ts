@@ -27,4 +27,9 @@ export class CreatePaymentRequestPeriodDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  /** 付款排程自動化用——選填，未設定不受 PaymentDueReminderService 影響。 */
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
 }
