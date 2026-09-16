@@ -10,6 +10,7 @@ import '../screens/projects/project_list_screen.dart';
 import '../screens/projects/tabs/engineering_finance/vendor_management_screen.dart';
 import '../screens/space/client_management_screen.dart';
 import '../screens/space/department_permissions_screen.dart';
+import '../screens/space/my_workspace_screen.dart';
 import '../screens/space/petty_cash_screen.dart';
 import '../screens/space/space_properties_screen.dart';
 import 'app_sidebar.dart';
@@ -44,6 +45,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
   bool _showClients = false;
   bool _showPermissions = false;
   bool _showPettyCash = false;
+  bool _showMyWorkspace = false;
 
   // `_RootRouter` reuses this same `SpaceShell` widget instance across
   // every space (it's `const SpaceShell()` regardless of which one is
@@ -63,6 +65,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showClients = false;
     _showPermissions = false;
     _showPettyCash = false;
+    _showMyWorkspace = false;
   });
 
   void _openPropertiesSettings() => setState(() {
@@ -73,6 +76,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showClients = false;
     _showPermissions = false;
     _showPettyCash = false;
+    _showMyWorkspace = false;
   });
 
   void _openApprovals() => setState(() {
@@ -83,6 +87,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showClients = false;
     _showPermissions = false;
     _showPettyCash = false;
+    _showMyWorkspace = false;
   });
 
   void _openVendors() => setState(() {
@@ -93,6 +98,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showClients = false;
     _showPermissions = false;
     _showPettyCash = false;
+    _showMyWorkspace = false;
   });
 
   void _openClients() => setState(() {
@@ -103,6 +109,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showClients = true;
     _showPermissions = false;
     _showPettyCash = false;
+    _showMyWorkspace = false;
   });
 
   void _openPermissions() => setState(() {
@@ -113,6 +120,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showClients = false;
     _showPermissions = true;
     _showPettyCash = false;
+    _showMyWorkspace = false;
   });
 
   void _openPettyCash() => setState(() {
@@ -123,6 +131,18 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
     _showClients = false;
     _showPermissions = false;
     _showPettyCash = true;
+    _showMyWorkspace = false;
+  });
+
+  void _openMyWorkspace() => setState(() {
+    _openProjectId = null;
+    _showPropertiesSettings = false;
+    _showApprovals = false;
+    _showVendors = false;
+    _showClients = false;
+    _showPermissions = false;
+    _showPettyCash = false;
+    _showMyWorkspace = true;
   });
 
   @override
@@ -140,6 +160,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
       _showClients = false;
       _showPermissions = false;
       _showPettyCash = false;
+      _showMyWorkspace = false;
     }
 
     final content = switch (space.type) {
@@ -157,6 +178,7 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
         onBack: _backToList,
       ),
       SpaceType.company when _showPettyCash => PettyCashScreen(spaceId: space.id),
+      SpaceType.company when _showMyWorkspace => MyWorkspaceScreen(spaceId: space.id),
       SpaceType.company when _openProjectId != null => ProjectDetailScreen(
         projectId: _openProjectId!,
         spaceName: space.name,
@@ -187,6 +209,8 @@ class _SpaceShellState extends ConsumerState<SpaceShell> {
             permissionsSelected: _showPermissions,
             onOpenPettyCash: _openPettyCash,
             pettyCashSelected: _showPettyCash,
+            onOpenMyWorkspace: _openMyWorkspace,
+            myWorkspaceSelected: _showMyWorkspace,
           ),
           Expanded(child: content),
         ],

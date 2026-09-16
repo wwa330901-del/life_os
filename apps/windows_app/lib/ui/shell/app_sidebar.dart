@@ -39,6 +39,8 @@ class AppSidebar extends ConsumerStatefulWidget {
     required this.permissionsSelected,
     required this.onOpenPettyCash,
     required this.pettyCashSelected,
+    required this.onOpenMyWorkspace,
+    required this.myWorkspaceSelected,
   });
 
   final SpaceSummary space;
@@ -55,6 +57,8 @@ class AppSidebar extends ConsumerStatefulWidget {
   final bool permissionsSelected;
   final VoidCallback onOpenPettyCash;
   final bool pettyCashSelected;
+  final VoidCallback onOpenMyWorkspace;
+  final bool myWorkspaceSelected;
 
   @override
   ConsumerState<AppSidebar> createState() => _AppSidebarState();
@@ -120,6 +124,8 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                 permissionsSelected: widget.permissionsSelected,
                 onOpenPettyCash: widget.onOpenPettyCash,
                 pettyCashSelected: widget.pettyCashSelected,
+                onOpenMyWorkspace: widget.onOpenMyWorkspace,
+                myWorkspaceSelected: widget.myWorkspaceSelected,
                 collapsed: true,
                 onTogglePin: _pin,
               ),
@@ -153,6 +159,8 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
           permissionsSelected: widget.permissionsSelected,
           onOpenPettyCash: widget.onOpenPettyCash,
           pettyCashSelected: widget.pettyCashSelected,
+          onOpenMyWorkspace: widget.onOpenMyWorkspace,
+          myWorkspaceSelected: widget.myWorkspaceSelected,
           collapsed: false,
           onTogglePin: () => ref.read(sidebarCollapsedProvider.notifier).toggle(),
         ),
@@ -196,6 +204,8 @@ class _SidebarPanel extends ConsumerWidget {
     required this.permissionsSelected,
     required this.onOpenPettyCash,
     required this.pettyCashSelected,
+    required this.onOpenMyWorkspace,
+    required this.myWorkspaceSelected,
     required this.collapsed,
     required this.onTogglePin,
   });
@@ -214,6 +224,8 @@ class _SidebarPanel extends ConsumerWidget {
   final bool permissionsSelected;
   final VoidCallback onOpenPettyCash;
   final bool pettyCashSelected;
+  final VoidCallback onOpenMyWorkspace;
+  final bool myWorkspaceSelected;
 
   /// Whether this panel is currently rendering as the hover flyout (vs.
   /// pinned open in the normal layout) — only changes the pin button's
@@ -295,6 +307,13 @@ class _SidebarPanel extends ConsumerWidget {
                 label: '零用金',
                 selected: pettyCashSelected,
                 onTap: onOpenPettyCash,
+              ),
+            if (space.type == SpaceType.company)
+              _NavItem(
+                icon: Icons.dashboard_customize_outlined,
+                label: '我的工作台',
+                selected: myWorkspaceSelected,
+                onTap: onOpenMyWorkspace,
               ),
             if (space.type == SpaceType.company && (session?.user.isPlatformAdmin ?? false))
               _NavItem(

@@ -12,7 +12,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** 週一 (Asia/Taipei) 的 UTC 午夜——正規化任何落在同一週的日期到同一個
  * key，同 DailyReport 的 reportDate 是曆日 key 的作法。輸入/輸出都跟
  * `taipeiTodayRange().start` 同一種形狀（代表 Taipei 曆日的 UTC 午夜)。 */
-function mondayOfTaipeiWeek(taipeiDateMidnightUtc: Date): Date {
+export function mondayOfTaipeiWeek(taipeiDateMidnightUtc: Date): Date {
   const isoWeekday = taipeiDateMidnightUtc.getUTCDay() || 7; // 1=Mon..7=Sun
   return new Date(taipeiDateMidnightUtc.getTime() - (isoWeekday - 1) * DAY_MS);
 }
