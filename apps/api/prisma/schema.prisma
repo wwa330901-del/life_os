@@ -185,6 +185,7 @@ model User {
   executionPhotosUploaded        ExecutionPhoto[]
   materialSubmissionsSubmitted   MaterialSubmission[]   @relation("MaterialSubmissionSubmitter")
   materialSubmissionsReviewed    MaterialSubmission[]   @relation("MaterialSubmissionReviewer")
+  pettyCashTransactionsCreated   PettyCashTransaction[]
 }
 
 /// 好友 (2026-08-06) — a mutual, symmetric relationship: unlike CalendarShare
@@ -274,6 +275,7 @@ model Space {
   permissionRules              PermissionRule[]
   fieldChangeLogs              FieldChangeLog[]
   clients                      Client[]
+  pettyCashTransactions        PettyCashTransaction[]
 }
 
 /// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
@@ -815,6 +817,19 @@ model PermissionRule {
   rankId String?
   rank   DepartmentRank? @relation(fields: [rankId], references: [id], onDelete: Cascade)
 
+  /// 欄位級唯讀限制（2026-09，顧問文件「敏感表格（成控表）欄位級唯讀限
+  /// 制」）——只在這條規則的 action=WRITE 時有意義：即使這個部門/職級被
+  /// 這條規則放行寫入 resourceType，清單裡列出的欄位名稱仍然靜默拒絕寫
+  /// 入（不拋錯，其餘欄位正常更新），比照 PermissionsService.getReadOnlyFields
+  /// 的呼叫方式。目前只在 QUOTATION（EngineeringQuotationService.updateItem
+  /// 的 quantity/unitPrice/costUnitPrice）跟 PROCUREMENT
+  /// （ProcurementComparisonsService.selectVendor 的 finalAwardedAmount）
+  /// 兩個呼叫點生效——這是顧問文件講的「成控表」在這套系統實際落地成可編
+  /// 輯欄位的地方（CostControlRow 本身沒有存自己的金額欄位，全部現算或
+  /// 透過 CostControlAdjustment，沒有可以攔的寫入點），跟 FieldChangeLog
+  /// 異動留痕機制覆蓋的是同兩個呼叫點，設計上刻意對齊。
+  readOnlyFields String[] @default([])
+
   createdAt DateTime @default(now())
 }
 
@@ -963,6 +978,7 @@ model Project {
   contactRecords          ProjectContactRecord[]
   executionPhotos         ExecutionPhoto[]
   materialSubmissions     MaterialSubmission[]
+  pettyCashTransactions   PettyCashTransaction[]
 }
 
 /// 工程日報表（2026-09，顧問文件「工程執行紀錄系統」第一項）。設計確認
@@ -1980,6 +1996,10 @@ model Vendor {
   bankBranch    String?
   note          String?
 
+  /// 法院查封標記（2026-09，顧問文件「協力商資料庫」子項）——單純一個手動
+  /// 開關，沒有自動查詢機制，使用者自己知道了就標記。
+  courtSeizureFlag Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2309,6 +2329,21 @@ model PaymentRequestPeriod {
   requestDate DateTime @db.Date
   note        String?
 
+  /// 付款排程自動化（2026-09，顧問文件財務系統子項）——選填，未設定的既
+  /// 有/新期別不受影響。PaymentDueReminderService 每天掃 dueDate 已到/已
+  /// 過期且 paidDate 還是空的期別，LINE 通知該專案 PM；使用者透過
+  /// mark-paid 端點填 paidDate 停止催辦。同時也是「應付帳款 View」判斷
+  /// 已付/未付的依據。
+  dueDate  DateTime?
+  paidDate DateTime?
+
+  /// 發票附件檢核清單（2026-09，顧問文件財務系統子項）——選填，只做提
+  /// 醒不做阻擋：沒附發票不影響請款單既有「送出即凍結」流程,只在 App
+  /// 端用視覺標示提醒使用者記得補附件。實際檔案存在共用的
+  /// SupabaseStorageService（同 additionalQuotationAttachmentPath 的
+  /// bucket，路徑前綴 payment-request-periods/{periodId}/invoice.*）。
+  invoiceAttachmentPath String?
+
   additionalAmount                  Float?
   additionalQuotationAttachmentPath String?
 
@@ -2351,6 +2386,11 @@ model OwnerBillingPeriod {
   requestDate DateTime @db.Date
   note        String?
 
+  /// 應收帳款 View 判斷已收/未收的依據（2026-09，顧問文件財務系統子
+  /// 項）——選填，未設定代表還沒收到這筆款項。跟 PaymentRequestPeriod.paidDate
+  /// 是同一組「應收應付」設計的兩邊。
+  collectedDate DateTime?
+
   /// 建立當下自動帶入的快照（報價單當時的合約總金額、建立前的累計已估驗
   /// 百分比）——純紀錄用途，之後報價單金額若再變動，這裡仍保留當時的值，
   /// 跟 PaymentRequestPeriod 的 contractAmountSnapshot/billedPercentBefore
@@ -2364,4 +2404,36 @@ model OwnerBillingPeriod {
   createdAt DateTime @default(now())
 
   @@index([projectId])
+}
+
+/// 零用金規則（2026-09，顧問文件財務系統子項）——掛在公司空間底下（不是
+/// 專案底下），全空間共用同一本零用金帳。projectId 選填，只是「這筆支出
+/// 花在哪個專案」的標記，不影響餘額計算範圍（餘額永遠是整個空間的存入減
+/// 支出）。權限沿用既有 PAYMENT_REQUEST resourceType——零用金屬於財務性
+/// 質的操作，沒必要為此新開一個 resourceType。
+enum PettyCashType {
+  DEPOSIT
+  EXPENSE
+}
+
+model PettyCashTransaction {
+  id String @id @default(uuid())
+
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  transactionDate DateTime      @db.Date
+  type            PettyCashType
+  amount          Float
+  purpose         String
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  createdByUserId String
+  createdBy       User   @relation(fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([spaceId, transactionDate])
 }
