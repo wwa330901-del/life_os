@@ -1,0 +1,65 @@
+name: Release Windows installer
+
+# Triggered by pushing a tag like v2.10.1 — builds straight from that tagged
+# commit and takes the version number from the tag itself (not from
+# pubspec.yaml/life_os.iss), so there's no manual "did I remember to bump
+# the version file" step left to forget. See docs/問題排除紀錄.md for the
+# 2026-09-29 incident this replaces (a locally hand-built installer got
+# installed under a version number that didn't actually change, so the
+# in-app updater couldn't tell it apart from the next real fix).
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/windows_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set pubspec/installer version to match tag
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          (Get-Content pubspec.yaml) -replace '^version: .*$', "version: $version+1" | Set-Content pubspec.yaml
+          (Get-Content installer/life_os.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`"" | Set-Content installer/life_os.iss
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: flutter pub get
+      - run: flutter analyze --fatal-infos=false
+      - run: flutter test
+      - run: flutter build windows --release
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\life_os.iss
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "installer/Output/life_os_setup.exe" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
