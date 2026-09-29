@@ -42,10 +42,8 @@ class HomeWidgetConfig {
 String homeWidgetLabel(String type) => switch (type) {
   'personalFinance' => '個人財務狀況',
   'todayFinance' => '本日支出及收入',
-  'projectSummary' => '專案總表',
   'todayTodos' => '本日代辦事項',
   'stockSummary' => '投資/持股總覽',
-  'pendingApprovals' => '待我簽核',
   'ongoingTodos' => '持續性任務',
   'recentKnowledgeItems' => '知識庫最新入庫',
   _ => type,
@@ -67,56 +65,14 @@ class HomePersonalFinance {
   );
 }
 
-class HomeWorkItemRef {
-  const HomeWorkItemRef({required this.id, required this.name});
-
-  final String id;
-  final String name;
-
-  factory HomeWorkItemRef.fromJson(Map<String, dynamic> json) =>
-      HomeWorkItemRef(id: json['id'] as String, name: json['name'] as String);
-}
-
-class HomeProjectSummary {
-  const HomeProjectSummary({
-    required this.projectId,
-    required this.projectName,
-    required this.spaceName,
-    required this.plannedToday,
-    required this.actualToday,
-  });
-
-  final String projectId;
-  final String projectName;
-  final String spaceName;
-  final List<HomeWorkItemRef> plannedToday;
-  final List<HomeWorkItemRef> actualToday;
-
-  factory HomeProjectSummary.fromJson(Map<String, dynamic> json) => HomeProjectSummary(
-    projectId: json['projectId'] as String,
-    projectName: json['projectName'] as String,
-    spaceName: json['spaceName'] as String,
-    plannedToday: (json['plannedToday'] as List<dynamic>)
-        .map((e) => HomeWorkItemRef.fromJson(e as Map<String, dynamic>))
-        .toList(),
-    actualToday: (json['actualToday'] as List<dynamic>)
-        .map((e) => HomeWorkItemRef.fromJson(e as Map<String, dynamic>))
-        .toList(),
-  );
-}
-
 class HomeTodoRef {
-  const HomeTodoRef({required this.id, required this.title, required this.projectName});
+  const HomeTodoRef({required this.id, required this.title});
 
   final String id;
   final String title;
-  final String projectName;
 
-  factory HomeTodoRef.fromJson(Map<String, dynamic> json) => HomeTodoRef(
-    id: json['id'] as String,
-    title: json['title'] as String,
-    projectName: json['projectName'] as String,
-  );
+  factory HomeTodoRef.fromJson(Map<String, dynamic> json) =>
+      HomeTodoRef(id: json['id'] as String, title: json['title'] as String);
 }
 
 class HomeTodosToday {
@@ -175,36 +131,6 @@ class HomeStockSummary {
   );
 }
 
-class HomePendingApproval {
-  const HomePendingApproval({
-    required this.stepId,
-    required this.sequence,
-    required this.totalSteps,
-    required this.roleLabel,
-    required this.targetDisplayName,
-    required this.projectId,
-    required this.submittedByName,
-  });
-
-  final String stepId;
-  final int sequence;
-  final int totalSteps;
-  final String? roleLabel;
-  final String targetDisplayName;
-  final String projectId;
-  final String submittedByName;
-
-  factory HomePendingApproval.fromJson(Map<String, dynamic> json) => HomePendingApproval(
-    stepId: json['stepId'] as String,
-    sequence: json['sequence'] as int,
-    totalSteps: json['totalSteps'] as int,
-    roleLabel: json['roleLabel'] as String?,
-    targetDisplayName: json['targetDisplayName'] as String,
-    projectId: json['projectId'] as String,
-    submittedByName: json['submittedByName'] as String,
-  );
-}
-
 class HomeKnowledgeItemPreview {
   const HomeKnowledgeItemPreview({
     required this.id,
@@ -229,19 +155,15 @@ class HomeKnowledgeItemPreview {
 class HomeDashboard {
   const HomeDashboard({
     required this.personalFinance,
-    required this.projectSummary,
     required this.todosToday,
     required this.stockSummary,
-    required this.pendingApprovals,
     required this.ongoingTodos,
     required this.recentKnowledgeItems,
   });
 
   final HomePersonalFinance? personalFinance;
-  final List<HomeProjectSummary> projectSummary;
   final HomeTodosToday todosToday;
   final HomeStockSummary? stockSummary;
-  final List<HomePendingApproval> pendingApprovals;
   final List<HomeTodoRef> ongoingTodos;
   final List<HomeKnowledgeItemPreview> recentKnowledgeItems;
 
@@ -249,16 +171,10 @@ class HomeDashboard {
     personalFinance: json['personalFinance'] == null
         ? null
         : HomePersonalFinance.fromJson(json['personalFinance'] as Map<String, dynamic>),
-    projectSummary: (json['projectSummary'] as List<dynamic>)
-        .map((e) => HomeProjectSummary.fromJson(e as Map<String, dynamic>))
-        .toList(),
     todosToday: HomeTodosToday.fromJson(json['todosToday'] as Map<String, dynamic>),
     stockSummary: json['stockSummary'] == null
         ? null
         : HomeStockSummary.fromJson(json['stockSummary'] as Map<String, dynamic>),
-    pendingApprovals: (json['pendingApprovals'] as List<dynamic>)
-        .map((e) => HomePendingApproval.fromJson(e as Map<String, dynamic>))
-        .toList(),
     ongoingTodos: (json['ongoingTodos'] as List<dynamic>)
         .map((e) => HomeTodoRef.fromJson(e as Map<String, dynamic>))
         .toList(),

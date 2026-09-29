@@ -16,14 +16,10 @@ Widget? buildHomeWidget(BuildContext context, String type, HomeDashboard dashboa
       return _PersonalFinanceCard(data: dashboard.personalFinance);
     case 'todayFinance':
       return _TodayFinanceCard(data: dashboard.personalFinance);
-    case 'projectSummary':
-      return _ProjectSummaryCard(projects: dashboard.projectSummary);
     case 'todayTodos':
       return _TodayTodosCard(data: dashboard.todosToday);
     case 'stockSummary':
       return _StockSummaryCard(data: dashboard.stockSummary);
-    case 'pendingApprovals':
-      return _PendingApprovalsCard(data: dashboard.pendingApprovals);
     case 'ongoingTodos':
       return _OngoingTodosCard(data: dashboard.ongoingTodos);
     case 'recentKnowledgeItems':
@@ -120,46 +116,6 @@ class _TodayFinanceCard extends StatelessWidget {
   }
 }
 
-class _ProjectSummaryCard extends StatelessWidget {
-  const _ProjectSummaryCard({required this.projects});
-
-  final List<HomeProjectSummary> projects;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return _DashboardCard(
-      title: '專案總表（今日）',
-      child: projects.isEmpty
-          ? const Text('今天沒有任何專案有預計或實際進行中的工項')
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final p in projects) ...[
-                  Text('${p.projectName}（${p.spaceName}）', style: const TextStyle(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  if (p.plannedToday.isEmpty)
-                    Text('　計畫今日應執行：（無）', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)))
-                  else
-                    for (final item in p.plannedToday)
-                      Text(
-                        p.actualToday.any((a) => a.id == item.id)
-                            ? '　計畫今日應執行：${item.name} ✓'
-                            : '　計畫今日應執行：${item.name}（尚無實際紀錄，可能落後）',
-                        style: TextStyle(
-                          color: p.actualToday.any((a) => a.id == item.id) ? null : scheme.error,
-                        ),
-                      ),
-                  for (final item in p.actualToday.where((a) => !p.plannedToday.any((pl) => pl.id == a.id)))
-                    Text('　實際今日進行中：${item.name}（非計畫項目）'),
-                  const SizedBox(height: 12),
-                ],
-              ],
-            ),
-    );
-  }
-}
-
 class _TodayTodosCard extends StatelessWidget {
   const _TodayTodosCard({required this.data});
 
@@ -176,13 +132,13 @@ class _TodayTodosCard extends StatelessWidget {
           if (data.completedToday.isEmpty)
             const Text('（無）')
           else
-            for (final t in data.completedToday) Text('・${t.title}（${t.projectName}）'),
+            for (final t in data.completedToday) Text('・${t.title}'),
           const SizedBox(height: 8),
           Text('今日到期未完成（${data.dueTodayIncomplete.length}）', style: const TextStyle(fontWeight: FontWeight.w600)),
           if (data.dueTodayIncomplete.isEmpty)
             const Text('（無）')
           else
-            for (final t in data.dueTodayIncomplete) Text('・${t.title}（${t.projectName}）'),
+            for (final t in data.dueTodayIncomplete) Text('・${t.title}'),
         ],
       ),
     );
@@ -239,32 +195,6 @@ class _StockSummaryCard extends StatelessWidget {
   }
 }
 
-class _PendingApprovalsCard extends StatelessWidget {
-  const _PendingApprovalsCard({required this.data});
-
-  final List<HomePendingApproval> data;
-
-  @override
-  Widget build(BuildContext context) {
-    return _DashboardCard(
-      title: '待我簽核（${data.length}）',
-      child: data.isEmpty
-          ? const Text('目前沒有待你簽核的文件')
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final a in data)
-                  Text(
-                    '・${a.targetDisplayName}'
-                    '（第 ${a.sequence}/${a.totalSteps} 關${a.roleLabel != null ? '・${a.roleLabel}' : ''}，'
-                    '${a.submittedByName} 送簽）',
-                  ),
-              ],
-            ),
-    );
-  }
-}
-
 class _OngoingTodosCard extends StatelessWidget {
   const _OngoingTodosCard({required this.data});
 
@@ -278,7 +208,7 @@ class _OngoingTodosCard extends StatelessWidget {
           ? const Text('目前沒有任何持續性任務')
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [for (final t in data) Text('・${t.title}（${t.projectName}）')],
+              children: [for (final t in data) Text('・${t.title}')],
             ),
     );
   }
