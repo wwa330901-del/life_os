@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -23,6 +24,9 @@ import { FinanceReportModule } from './finance/finance-report.module';
 
 @Module({
   imports: [
+    // Must come first among imports (Sentry's own requirement) — no-ops
+    // when SENTRY_DSN isn't set, see instrument.ts.
+    SentryModule.forRoot(),
     ScheduleModule.forRoot(),
     // 全域預設速率限制（2026-09-29，密碼暴力破解防護）——每個 IP 每分鐘
     // 100 次請求，一般正常使用不會碰到；/auth 底下幾個帳號相關端點另外用
@@ -46,6 +50,13 @@ import { FinanceReportModule } from './finance/finance-report.module';
     FinanceReportModule,
   ],
   controllers: [AppController],
-  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    AppService,
+    // Must be the first APP_FILTER provider (Sentry's own requirement) so
+    // it sees every unhandled exception before any other filter can
+    // swallow it.
+    { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

@@ -50,7 +50,10 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
-      - run: flutter build windows --release
+      # SENTRY_DSN_FLUTTER is optional — unset (empty) leaves error
+      # tracking off, see lib/main.dart. Add it as a repo secret once
+      # there's a Sentry project to point it at.
+      - run: flutter build windows --release --dart-define=SENTRY_DSN=${{ secrets.SENTRY_DSN_FLUTTER }}
 
       - name: Install Inno Setup
         shell: pwsh

@@ -47,6 +47,19 @@ flutter pub get
 flutter run -d windows
 ```
 
+## CI / 自動發版
+
+- `.github/workflows/ci.yml`：每次 push/PR 到 master，自動跑後端 `tsc`+`build`+`jest`、前端 `flutter analyze`+`test`。
+- `.github/workflows/release.yml`：push `vX.Y.Z` 格式的 tag（例如 `git tag v2.11.0 && git push origin v2.11.0`）就會自動 build＋打包安裝檔＋建立 GitHub Release，版本號直接從 tag 帶入——不需要、也不應該手動改 `pubspec.yaml`／`installer/life_os.iss` 裡的版本號（那兩個檔案裡的版本號只是本機開發用的預設值，實際發版時會被 CI 覆蓋）。
+
+### 選用：錯誤追蹤（Sentry）
+
+後端／前端都已經接好 Sentry SDK，但**預設關閉**（沒有 DSN 就完全不會初始化、不會送出任何資料）。要打開：
+
+1. 去 [sentry.io](https://sentry.io) 建立帳號＋一個 Node/NestJS 專案、一個 Flutter 專案（各自會給一組 DSN）。
+2. 後端：把 Node 專案的 DSN 填進 Render 後台 `life-os-api` 服務的環境變數 `SENTRY_DSN`，儲存並重新部署。
+3. 前端：把 Flutter 專案的 DSN 加進這個 repo 的 GitHub Secrets，名稱 `SENTRY_DSN_FLUTTER`（Settings → Secrets and variables → Actions）——下一次 push tag 觸發的自動發版就會把它編進安裝檔裡。
+
 ## 目前已完成
 
 - 帳號註冊 / 登入（JWT、Google 登入）

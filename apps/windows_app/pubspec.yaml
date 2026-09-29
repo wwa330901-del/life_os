@@ -41,6 +41,13 @@ dependencies:
   package_info_plus: ^10.2.1
   url_launcher: ^6.3.2
   fl_chart: ^0.69.0
+  # Plain `sentry`, not `sentry_flutter` — `sentry_flutter` pulls in `jni`
+  # (its Android native crash-capture bridge), whose CMakeLists.txt does an
+  # unconditional `find_package(JNI REQUIRED)` that breaks the Windows
+  # desktop build even though this app never runs on Android. `sentry`
+  # alone has no native/platform-channel dependencies; main.dart wires up
+  # Flutter/zone error capture by hand instead of getting it for free.
+  sentry: ^9.0.0
   table_calendar: ^3.1.2
 
 dev_dependencies:
