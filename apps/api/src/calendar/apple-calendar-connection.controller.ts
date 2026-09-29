@@ -29,6 +29,7 @@ export class AppleCalendarConnectionController {
       connected: Boolean(connection),
       appleId: connection?.appleId ?? null,
       selectedCalendarUrls: connection?.selectedCalendarUrls ?? [],
+      writeCalendarUrl: connection ? (connection.writeCalendarUrl ?? connection.selectedCalendarUrls[0] ?? null) : null,
       lastSyncedAt: connection?.lastSyncedAt ?? null,
     };
   }
@@ -53,6 +54,11 @@ export class AppleCalendarConnectionController {
     @Body() dto: ConnectAppleCalendarDto,
   ) {
     await this.access.assertCalendarSpace(user.id, spaceId);
+    // 寫入用的日曆一定要是同步中的其中一個，不然寫進去的行程讀不回來。
+    const writeCalendarUrl =
+      dto.writeCalendarUrl && dto.selectedCalendarUrls.includes(dto.writeCalendarUrl)
+        ? dto.writeCalendarUrl
+        : (dto.selectedCalendarUrls[0] ?? null);
     await this.prisma.appleCalendarConnection.upsert({
       where: { spaceId },
       create: {
@@ -60,12 +66,14 @@ export class AppleCalendarConnectionController {
         appleId: dto.appleId,
         appPassword: dto.appPassword,
         selectedCalendarUrls: dto.selectedCalendarUrls,
+        writeCalendarUrl,
         connectedByUserId: user.id,
       },
       update: {
         appleId: dto.appleId,
         appPassword: dto.appPassword,
         selectedCalendarUrls: dto.selectedCalendarUrls,
+        writeCalendarUrl,
         connectedByUserId: user.id,
       },
     });

@@ -380,17 +380,40 @@ Future<void> _handleAction(BuildContext context, WidgetRef ref, LifeGoal goal, _
 
 Future<void> _openEditor(BuildContext context, WidgetRef ref, LifeGoal? existing) async {
   final allGoals = ref.read(lifeGoalsProvider).value ?? const <LifeGoal>[];
-  final input = await showLifeGoalEditor(context, existing: existing, allGoals: allGoals);
-  if (input == null || !context.mounted) return;
+  final edited = await showLifeGoalEditor(context, existing: existing, allGoals: allGoals);
+  if (edited == null || !context.mounted) return;
+  var input = edited;
+
+  final api = ref.read(apiClientProvider);
+  // AI 自動分類（2026-09-30）：沒選分類、或自己打了一個新的，就讓 AI 對照
+  // 已有的分類——同一種事情歸到已有的（「閱讀」→「看書」），不同的才開新的。
+  // 點選既有分類／預設分類的就尊重使用者的選擇，不動它。
+  final existingCategories = allGoals.map((g) => g.category).whereType<String>().toSet();
+  final typed = input.category;
+  String? aiCategory;
+  if (typed == null || (!existingCategories.contains(typed) && !lifeGoalPresetCategories.contains(typed))) {
+    try {
+      final suggested = await api.suggestLifeGoalCategory(title: input.title, category: typed);
+      if (suggested != null && suggested != typed) {
+        input = input.withCategory(suggested);
+        aiCategory = suggested;
+      }
+    } on ApiException {
+      // 分類只是加分功能，失敗就照使用者原本填的存。
+    }
+    if (!context.mounted) return;
+  }
 
   try {
-    final api = ref.read(apiClientProvider);
     if (existing == null) {
       await api.createLifeGoal(input);
     } else {
       await api.updateLifeGoal(id: existing.id, input: input);
     }
     ref.invalidate(lifeGoalsProvider);
+    if (aiCategory != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('AI 已分類到「$aiCategory」，想改可以再編輯')));
+    }
   } on ApiException catch (e) {
     if (context.mounted) _showError(context, e);
   }

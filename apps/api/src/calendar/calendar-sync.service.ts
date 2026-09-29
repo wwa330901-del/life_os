@@ -54,7 +54,13 @@ export class CalendarSyncService {
     // devices see directly, so re-creating them on Google duplicates the
     // event wherever both calendars are visible together (e.g. iPhone).
     const unpushed = await this.prisma.calendarEvent.findMany({
-      where: { spaceId, googleEventId: null, recurrenceFrequency: 'NONE', appleEventUid: null },
+      where: {
+        spaceId,
+        googleEventId: null,
+        recurrenceFrequency: 'NONE',
+        appleEventUid: null,
+        OR: [{ syncTarget: null }, { syncTarget: 'GOOGLE' }],
+      },
     });
     for (const local of unpushed) {
       try {
@@ -105,7 +111,7 @@ export class CalendarSyncService {
     if (existing) {
       await this.prisma.calendarEvent.update({ where: { id: existing.id }, data });
     } else {
-      await this.prisma.calendarEvent.create({ data: { ...data, spaceId, googleEventId: remote.id } });
+      await this.prisma.calendarEvent.create({ data: { ...data, spaceId, googleEventId: remote.id, syncTarget: 'GOOGLE' } });
     }
   }
 }

@@ -181,6 +181,7 @@ export class AiQueryToolsService {
     };
 
     return personal.filter(matches).map((t) => ({
+      id: t.id,
       title: t.title,
       dueDate: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
       isOngoing: t.isOngoing,

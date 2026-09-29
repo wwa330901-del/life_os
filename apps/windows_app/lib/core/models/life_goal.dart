@@ -246,6 +246,22 @@ class LifeGoalInput {
   final LifeGoalPeriod checkInPeriod;
   final bool requireCheckInNote;
 
+  LifeGoalInput withCategory(String? value) => LifeGoalInput(
+    title: title,
+    notes: notes,
+    category: value,
+    targetValue: targetValue,
+    currentValue: currentValue,
+    startValue: startValue,
+    unit: unit,
+    targetDate: targetDate,
+    trackingType: trackingType,
+    trackingAccountId: trackingAccountId,
+    trackingKeyword: trackingKeyword,
+    checkInPeriod: checkInPeriod,
+    requireCheckInNote: requireCheckInNote,
+  );
+
   Map<String, dynamic> toJson() => {
     'title': title,
     'notes': notes,

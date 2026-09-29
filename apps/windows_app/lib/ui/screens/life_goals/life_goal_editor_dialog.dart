@@ -78,7 +78,7 @@ const _templates = [
   _Template(label: '🌱 不用數字的目標', title: '', category: '生活', mode: _Mode.none),
 ];
 
-const _presetCategories = ['財務', '健康', '學習', '工作', '人際', '生活'];
+const lifeGoalPresetCategories = ['財務', '健康', '學習', '工作', '人際', '生活'];
 
 /// Opens the 新增／編輯目標 dialog. [allGoals] (including ended ones) feeds
 /// the 「以前填過的」 suggestions and the category chips, so anything typed
@@ -138,7 +138,7 @@ class _LifeGoalEditorDialogState extends ConsumerState<_LifeGoalEditorDialog> {
 
   List<String> get _categories {
     final used = widget.allGoals.map((g) => g.category).whereType<String>();
-    return {..._presetCategories, ...used, ?_category}.toList();
+    return {...lifeGoalPresetCategories, ...used, ?_category}.toList();
   }
 
   /// Distinct past titles, newest-edited first isn't tracked, so list order.

@@ -1,3 +1,4 @@
+import 'calendar_event.dart';
 enum TodoPriority { low, medium, high }
 
 extension TodoPriorityJson on TodoPriority {
@@ -39,6 +40,7 @@ class ProjectTodo {
     required this.priority,
     required this.notes,
     required this.sortOrder,
+    this.calendarSyncTarget,
   });
 
   final String id;
@@ -56,6 +58,9 @@ class ProjectTodo {
   final String? notes;
   final int sortOrder;
 
+  /// 有日期時自動產生的行程存到哪（2026-09-30）。
+  final CalendarSyncTarget? calendarSyncTarget;
+
   factory ProjectTodo.fromJson(Map<String, dynamic> json) => ProjectTodo(
     id: json['id'] as String,
     title: json['title'] as String,
@@ -67,6 +72,7 @@ class ProjectTodo {
     priority: TodoPriorityJson.fromJson(json['priority'] as String),
     notes: json['notes'] as String?,
     sortOrder: json['sortOrder'] as int,
+    calendarSyncTarget: CalendarSyncTargetJson.fromJson(json['calendarSyncTarget'] as String?),
   );
 }
 

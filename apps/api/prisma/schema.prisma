@@ -224,6 +224,18 @@ model CalendarEvent {
   /// 更可靠、也更容易在 iCloud 那邊改掉單一次時偵測到差異。
   appleEventUid String?
 
+  /// 使用者在元序新增時選的「要存到哪」(2026-09-30：一定要選 Google 或
+  /// iPhone，不選不能新增)。null＝這個功能之前的舊資料，維持舊行為（Google
+  /// 有連就推過去，iCloud 匯入的不推）。從 Google/iCloud 同步進來的事件也會
+  /// 記上各自的來源，之後在元序改它就改回原本那一邊。
+  syncTarget CalendarSyncTarget?
+
+  /// iCloud 那邊這則事件的 CalDAV 物件網址＋etag——改/刪要回寫 iCloud 用。
+  /// 只有單一事件有；iCloud 重複行程展開出來的每一次（uid 含 "::"）沒有，
+  /// 那種只能到 iPhone 上改。
+  appleEventHref String?
+  appleEventEtag String?
+
   /// Set only for an event TodosService auto-created from a todo's due
   /// date/time (one-way 代辦事項→行事曆 sync, 2026-08-05 — the reverse
   /// direction is deliberately not a thing, editing this event directly
@@ -348,6 +360,8 @@ model AppleCalendarConnection {
   appleId              String
   appPassword          String
   selectedCalendarUrls String[]
+  /// 元序新增「存到 iPhone」的行程寫進哪一個 iCloud 日曆。null＝selectedCalendarUrls 的第一個。
+  writeCalendarUrl     String?
   lastSyncedAt         DateTime?
 
   connectedByUserId String
@@ -355,6 +369,12 @@ model AppleCalendarConnection {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// See CalendarEvent.syncTarget.
+enum CalendarSyncTarget {
+  GOOGLE
+  ICLOUD
 }
 
 enum CalendarShareDetailLevel {
@@ -882,10 +902,17 @@ model LineAccountLink {
   /// which then creates the CalendarEvent + ProjectTodo for this item.
   pendingExhibitionScheduleItemId String?
 
-  /// 人生目標 LINE AI 對話的上一輪 interaction id + 時間——AI 反問（例如
-  /// 「這本書最喜歡哪一句？」）時，下一則訊息接著同一段對話，10 分鐘後失效。
-  lifeGoalAiInteractionId String?
-  lifeGoalAiInteractionAt DateTime?
+  /// LINE 萬用 AI（2026-09-30）的上一輪 interaction id + 時間——AI 反問
+  /// （「存到 Google 還是 iPhone？」「記在哪個帳戶？」）時，下一則訊息接著同
+  /// 一段對話，10 分鐘後失效。
+  aiInteractionId String?
+  aiInteractionAt DateTime?
+
+  /// AI 提議、等使用者確認才執行的動作（猜的記帳帳戶、自動排的行程）。
+  /// `pendingAiActionTurn` 記下提議時是哪一則訊息——確認一定要來自之後的
+  /// 另一則訊息，AI 不能自己提議又自己確認。
+  pendingAiAction     Json?
+  pendingAiActionTurn String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -920,11 +947,14 @@ model ProjectTodo {
   /// every pre-existing row's actual "no time" reality) is the
   /// CalendarEvent.allDay equivalent that says whether the time component
   /// means anything.
-  dueDate       DateTime?
-  dueDateAllDay Boolean      @default(true)
-  isOngoing     Boolean      @default(false)
-  priority      TodoPriority @default(MEDIUM)
-  notes         String?
+  dueDate            DateTime?
+  dueDateAllDay      Boolean             @default(true)
+  isOngoing          Boolean             @default(false)
+  /// 有日期的代辦會自動在行事曆產生一筆——那筆要存到 Google 還是 iPhone
+  /// （2026-09-30：跟代辦一起選，規則同 CalendarEvent.syncTarget）。
+  calendarSyncTarget CalendarSyncTarget?
+  priority           TodoPriority        @default(MEDIUM)
+  notes              String?
 
   /// The auto-created 行事曆 event mirroring this todo's due date/time, if
   /// any — see CalendarEvent.sourceTodoId for the full sync explanation.

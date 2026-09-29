@@ -11,6 +11,7 @@ import '../../../services/auth/google_oauth_service.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/calendar_provider.dart';
 import '../../../state/calendar_share_provider.dart';
+import '../../widgets/calendar_target_picker.dart';
 import 'calendar_share_dialog.dart';
 
 /// Month-grid view for a 行事曆空間 — CalendarEvents only (see module doc in
@@ -766,6 +767,21 @@ class _DayAgenda extends ConsumerWidget {
     CalendarEvent? existing, {
     CalendarOccurrenceScope? scope,
   }) async {
+    if (existing?.isICloudRecurringCopy ?? false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('這是 iPhone 上的重複行程，請直接在 iPhone 上修改')),
+      );
+      return;
+    }
+    // 「存到 Google／iPhone」必選（2026-09-30）——先把有連結哪幾個查好。
+    var targets = const <CalendarSyncTarget>[];
+    try {
+      targets = await ref.read(connectedCalendarTargetsProvider(spaceId).future);
+    } catch (_) {
+      // 查不到連結狀態就當作沒連結，行程照樣能存在元序。
+    }
+    if (!context.mounted) return;
+    var target = existing?.effectiveSyncTarget;
     final titleController = TextEditingController(text: existing?.title ?? '');
     final locationController = TextEditingController(text: existing?.location ?? '');
     final notesController = TextEditingController(text: existing?.notes ?? '');
@@ -805,6 +821,18 @@ class _DayAgenda extends ConsumerWidget {
                     autofocus: true,
                     decoration: const InputDecoration(labelText: '標題'),
                   ),
+                  const SizedBox(height: 12),
+                  if (recurrence == CalendarRecurrenceFrequency.none && existing?.isRecurring != true)
+                    CalendarTargetPicker(
+                      targets: targets,
+                      selected: target,
+                      onChanged: (t) => setState(() => target = t),
+                    )
+                  else if (targets.isNotEmpty)
+                    Text(
+                      '重複行程目前只存在元序，不會同步到 Google 或 iPhone。',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   const SizedBox(height: 12),
                   InkWell(
                     onTap: () async {
@@ -930,7 +958,15 @@ class _DayAgenda extends ConsumerWidget {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('儲存')),
+            FilledButton(
+              onPressed:
+                  recurrence != CalendarRecurrenceFrequency.none ||
+                      existing?.isRecurring == true ||
+                      CalendarTargetPicker.isSatisfied(targets, target)
+                  ? () => Navigator.of(context).pop(true)
+                  : null,
+              child: const Text('儲存'),
+            ),
           ],
         ),
       ),
@@ -938,6 +974,7 @@ class _DayAgenda extends ConsumerWidget {
     if (saved != true || !context.mounted) return;
 
     final title = titleController.text.trim();
+    final chosenTarget = recurrence == CalendarRecurrenceFrequency.none ? target : null;
     if (title.isEmpty) return;
     final location = locationController.text.trim();
     final notes = notesController.text.trim();
@@ -980,6 +1017,7 @@ class _DayAgenda extends ConsumerWidget {
           notes: notes.isEmpty ? null : notes,
           recurrenceFrequency: recurrence,
           recurrenceUntil: recurrenceUntil,
+          syncTarget: chosenTarget,
         );
       } else {
         await api.updateCalendarEvent(
@@ -997,6 +1035,8 @@ class _DayAgenda extends ConsumerWidget {
           recurrenceFrequency: recurrence,
           recurrenceUntil: recurrenceUntil,
           clearRecurrenceUntil: recurrenceUntil == null,
+          // 只有真的換邊才送——換邊時後端會把舊那一邊的刪掉、搬到新的那一邊。
+          syncTarget: chosenTarget != existing.effectiveSyncTarget ? chosenTarget : null,
         );
       }
       ref.invalidate(calendarEventsProvider(monthKey));

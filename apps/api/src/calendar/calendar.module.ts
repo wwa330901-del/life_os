@@ -9,11 +9,13 @@ import { CalendarSyncService } from './calendar-sync.service';
 import { AppleCalendarConnectionController } from './apple-calendar-connection.controller';
 import { AppleCalendarService } from './apple-calendar.service';
 import { AppleCalendarSyncService } from './apple-calendar-sync.service';
+import { CalendarPushService } from './calendar-push.service';
 
 @Module({
   imports: [SpacesModule],
   controllers: [CalendarEventsController, CalendarConnectionController, AppleCalendarConnectionController],
   providers: [
+    CalendarPushService,
     CalendarAccessService,
     CalendarEventsService,
     GoogleCalendarService,

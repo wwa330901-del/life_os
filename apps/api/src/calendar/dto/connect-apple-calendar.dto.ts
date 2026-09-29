@@ -1,4 +1,4 @@
-import { ArrayMinSize, IsArray, IsEmail, IsString, MinLength } from 'class-validator';
+import { ArrayMinSize, IsArray, IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
 
 export class ConnectAppleCalendarDto {
   @IsEmail()
@@ -13,4 +13,9 @@ export class ConnectAppleCalendarDto {
   @ArrayMinSize(1)
   @IsString({ each: true })
   selectedCalendarUrls: string[];
+
+  /// 元序新增「存到 iPhone」的行程要寫進哪一個日曆；不填＝勾選的第一個。
+  @IsOptional()
+  @IsString()
+  writeCalendarUrl?: string;
 }

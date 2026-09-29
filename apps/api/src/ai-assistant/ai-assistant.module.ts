@@ -12,6 +12,7 @@ import { AiAssistantController } from './ai-assistant.controller';
   imports: [FinanceModule, CalendarModule, TodosModule, KnowledgeModule, UsersModule],
   controllers: [AiAssistantController],
   providers: [AiQueryToolsService, AiAssistantService],
-  exports: [AiAssistantService],
+  // AiQueryToolsService's read-only tools are also composed into the LINE 萬用 AI.
+  exports: [AiAssistantService, AiQueryToolsService],
 })
 export class AiAssistantModule {}

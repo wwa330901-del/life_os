@@ -7,11 +7,16 @@ import { LifeGoalStatus } from '../../generated/prisma/client.js';
 import { CreateLifeGoalDto } from './dto/create-life-goal.dto';
 import { UpdateLifeGoalDto } from './dto/update-life-goal.dto';
 import { CreateLifeGoalCheckInDto } from './dto/create-life-goal-check-in.dto';
+import { SuggestLifeGoalCategoryDto } from './dto/suggest-life-goal-category.dto';
+import { LifeGoalCategoryService } from './life-goal-category.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('life-goals')
 export class LifeGoalsController {
-  constructor(private readonly service: LifeGoalsService) {}
+  constructor(
+    private readonly service: LifeGoalsService,
+    private readonly categories: LifeGoalCategoryService,
+  ) {}
 
   @Get()
   listAll(@CurrentUser() user: AuthenticatedUser, @Query('status') status?: LifeGoalStatus) {
@@ -21,6 +26,12 @@ export class LifeGoalsController {
   @Get('tracking-options')
   trackingOptions(@CurrentUser() user: AuthenticatedUser) {
     return this.service.trackingOptions(user.id);
+  }
+
+  /** AI 自動分類 — see LifeGoalCategoryService. */
+  @Post('suggest-category')
+  suggestCategory(@CurrentUser() user: AuthenticatedUser, @Body() dto: SuggestLifeGoalCategoryDto) {
+    return this.categories.suggest(user.id, dto.title, dto.category);
   }
 
   @Get(':id/check-ins')

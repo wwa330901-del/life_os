@@ -60,6 +60,7 @@ class CalendarEvent {
     required this.notes,
     required this.googleEventId,
     required this.appleEventUid,
+    this.syncTarget,
     required this.recurrenceFrequency,
     required this.recurrenceUntil,
     required this.seriesId,
@@ -75,9 +76,23 @@ class CalendarEvent {
   final String? notes;
   final String? googleEventId;
 
-  /// 從 iCloud 匯入的事件才有值——見 apple-calendar-sync.service.ts。單向
-  /// 匯入，跟 googleEventId 不同的是這裡沒有對應的「推回去」邏輯。
+  /// iCloud 那邊的 UID——從 iPhone 匯入、或在元序選「存到 iPhone」的都有。
   final String? appleEventUid;
+
+  /// 這則行程存在 Google 還是 iPhone（2026-09-30 起新增時必選）。舊資料是
+  /// null，用 [effectiveSyncTarget] 從 googleEventId/appleEventUid 推回來。
+  final CalendarSyncTarget? syncTarget;
+
+  CalendarSyncTarget? get effectiveSyncTarget =>
+      syncTarget ??
+      (googleEventId != null
+          ? CalendarSyncTarget.google
+          : appleEventUid != null
+          ? CalendarSyncTarget.icloud
+          : null);
+
+  /// iPhone 上的重複行程匯入時會拆成一筆一筆，這種只能回 iPhone 改。
+  bool get isICloudRecurringCopy => appleEventUid?.contains('::') ?? false;
   final CalendarRecurrenceFrequency recurrenceFrequency;
   final DateTime? recurrenceUntil;
 
@@ -99,6 +114,7 @@ class CalendarEvent {
     notes: json['notes'] as String?,
     googleEventId: json['googleEventId'] as String?,
     appleEventUid: json['appleEventUid'] as String?,
+    syncTarget: CalendarSyncTargetJson.fromJson(json['syncTarget'] as String?),
     recurrenceFrequency: CalendarRecurrenceFrequencyJson.fromJson(
       json['recurrenceFrequency'] as String? ?? 'NONE',
     ),
@@ -157,4 +173,25 @@ class AppleCalendarConnectionStatus {
             ? null
             : DateTime.parse(json['lastSyncedAt'] as String).toLocal(),
       );
+}
+
+/// 行程要存到哪個外部行事曆——在元序新增時一定要選（2026-09-30 使用者規則）。
+enum CalendarSyncTarget { google, icloud }
+
+extension CalendarSyncTargetJson on CalendarSyncTarget {
+  String toJson() => switch (this) {
+    CalendarSyncTarget.google => 'GOOGLE',
+    CalendarSyncTarget.icloud => 'ICLOUD',
+  };
+
+  String get label => switch (this) {
+    CalendarSyncTarget.google => 'Google',
+    CalendarSyncTarget.icloud => 'iPhone',
+  };
+
+  static CalendarSyncTarget? fromJson(String? value) => switch (value) {
+    'GOOGLE' => CalendarSyncTarget.google,
+    'ICLOUD' => CalendarSyncTarget.icloud,
+    _ => null,
+  };
 }

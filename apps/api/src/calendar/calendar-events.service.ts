@@ -1,13 +1,14 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalendarAccessService } from './calendar-access.service';
-import { GoogleCalendarService } from './google-calendar.service';
+import { CalendarPushService, assertEditableInYuanxu, newICloudUid } from './calendar-push.service';
+import { randomUUID } from 'crypto';
 import { CreateCalendarEventDto } from './dto/create-calendar-event.dto';
 import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto';
 import { UpdateCalendarEventOccurrenceDto } from './dto/update-calendar-event-occurrence.dto';
 import { taipeiDateKey, taipeiDateKeyToUtcMidnight, utcDateKey } from '../common/taipei-date';
 import { dateKeyBefore, expandSeriesOccurrences } from './calendar-recurrence';
-import { CalendarRecurrenceFrequency } from '../../generated/prisma/client.js';
+import { CalendarRecurrenceFrequency, CalendarSyncTarget } from '../../generated/prisma/client.js';
 import type { CalendarEvent } from '../../generated/prisma/client.js';
 
 @Injectable()
@@ -17,7 +18,7 @@ export class CalendarEventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CalendarAccessService,
-    private readonly google: GoogleCalendarService,
+    private readonly push: CalendarPushService,
   ) {}
 
   /** Plain (non-recurring) events in range, plus every recurring series'
@@ -115,9 +116,15 @@ export class CalendarEventsService {
    * alongside `sourceTodoId`). */
   async create(userId: string, spaceId: string, dto: CreateCalendarEventDto, sourceTodoId?: string) {
     await this.access.assertCalendarSpace(userId, spaceId);
+    // iCloud UID is fixed up front (not after the CalDAV PUT) so the 5-minute
+    // import sync recognizes this row even if it runs mid-push.
+    const id = randomUUID();
     const event = await this.prisma.calendarEvent.create({
       data: {
+        id,
         spaceId,
+        ...(dto.syncTarget && { syncTarget: dto.syncTarget }),
+        ...(dto.syncTarget === CalendarSyncTarget.ICLOUD && { appleEventUid: newICloudUid(id) }),
         title: dto.title,
         startAt: new Date(dto.startAt),
         endAt: dto.endAt ? new Date(dto.endAt) : null,
@@ -129,7 +136,7 @@ export class CalendarEventsService {
         ...(sourceTodoId && { sourceTodoId }),
       },
     });
-    this.pushToGoogleInBackground(spaceId, event);
+    this.push.pushInBackground(event);
     return event;
   }
 
@@ -139,11 +146,25 @@ export class CalendarEventsService {
    * deviations against the — possibly now different — base pattern). */
   async update(userId: string, spaceId: string, id: string, dto: UpdateCalendarEventDto) {
     await this.access.assertCalendarSpace(userId, spaceId);
-    await this.getOrThrow(spaceId, id);
+    const existing = await this.getOrThrow(spaceId, id);
+    assertEditableInYuanxu(existing);
+
+    // Moving an event to the other calendar (Google ↔ iPhone): remove the old
+    // remote copy and forget its ids, then the push below creates it anew.
+    const retargeted =
+      dto.syncTarget !== undefined && dto.syncTarget !== this.push.effectiveTarget(existing);
+    if (retargeted) await this.push.removeRemote(existing);
 
     const event = await this.prisma.calendarEvent.update({
       where: { id },
       data: {
+        ...(retargeted && {
+          syncTarget: dto.syncTarget,
+          googleEventId: null,
+          appleEventHref: null,
+          appleEventEtag: null,
+          appleEventUid: dto.syncTarget === CalendarSyncTarget.ICLOUD ? newICloudUid(id) : null,
+        }),
         ...(dto.title !== undefined && { title: dto.title }),
         ...(dto.startAt !== undefined && { startAt: new Date(dto.startAt) }),
         ...(dto.endAt !== undefined && { endAt: dto.endAt ? new Date(dto.endAt) : null }),
@@ -156,23 +177,16 @@ export class CalendarEventsService {
         }),
       },
     });
-    this.pushToGoogleInBackground(spaceId, event);
+    this.push.pushInBackground(event);
     return event;
   }
 
   async remove(userId: string, spaceId: string, id: string) {
     await this.access.assertCalendarSpace(userId, spaceId);
     const existing = await this.getOrThrow(spaceId, id);
+    assertEditableInYuanxu(existing);
     await this.prisma.calendarEvent.delete({ where: { id } });
-
-    if (existing.googleEventId) {
-      const connection = await this.prisma.googleCalendarConnection.findUnique({ where: { spaceId } });
-      if (connection) {
-        this.google.deleteEvent(connection, existing.googleEventId).catch((error) => {
-          this.logger.warn(`推送刪除到 Google Calendar 失敗（本機已刪除）：${error}`);
-        });
-      }
-    }
+    void this.push.removeRemote(existing);
   }
 
   /** Google Calendar-style 只改這次／這次以後／全部 edit scope for one
@@ -375,42 +389,6 @@ export class CalendarEventsService {
       throw new NotFoundException('Calendar event not found');
     }
     return event;
-  }
-
-  /** Pushes a create/update to Google if this space is connected — not
-   * awaited by the caller, so a slow (or down) Google API never adds
-   * latency to the response the user is waiting on for their own edit
-   * (this app already had one real "every edit takes seconds" bug from
-   * synchronous round-trips before — see 工期表 schedule-save fix). A
-   * failure here just leaves `googleEventId` unset (or stale); the
-   * periodic sync reconciles it on the next pass. A recurring series
-   * (`recurrenceFrequency !== NONE`) never gets pushed — Google's own
-   * RRULE/per-occurrence-exception model isn't wired up on this side, out
-   * of scope for this round; it stays purely a local, App-only feature. */
-  private pushToGoogleInBackground(spaceId: string, event: CalendarEvent): void {
-    if (event.recurrenceFrequency !== CalendarRecurrenceFrequency.NONE) return;
-    this.prisma.googleCalendarConnection
-      .findUnique({ where: { spaceId } })
-      .then(async (connection) => {
-        if (!connection) return;
-        const input = {
-          title: event.title,
-          location: event.location,
-          notes: event.notes,
-          startAt: event.startAt,
-          endAt: event.endAt,
-          allDay: event.allDay,
-        };
-        if (event.googleEventId) {
-          await this.google.updateEvent(connection, event.googleEventId, input);
-          return;
-        }
-        const googleEventId = await this.google.insertEvent(connection, input);
-        await this.prisma.calendarEvent.update({ where: { id: event.id }, data: { googleEventId } });
-      })
-      .catch((error) => {
-        this.logger.warn(`推送到 Google Calendar 失敗（本機已儲存，等待下次同步重試）：${error}`);
-      });
   }
 }
 

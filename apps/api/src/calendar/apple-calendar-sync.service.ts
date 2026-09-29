@@ -4,6 +4,8 @@ import * as ical from 'node-ical';
 import type { ParameterValue } from 'node-ical';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppleCalendarService } from './apple-calendar.service';
+import { CalendarPushService } from './calendar-push.service';
+import { CalendarRecurrenceFrequency, CalendarSyncTarget } from '../../generated/prisma/client.js';
 
 const LOOKBACK_DAYS = 7;
 const LOOKAHEAD_DAYS = 90;
@@ -14,11 +16,15 @@ interface ParsedInstance {
   startAt: Date;
   endAt: Date | null;
   allDay: boolean;
+  /** Only for a plain (non-recurring) event — the CalDAV object to write back to. */
+  href: string | null;
+  etag: string | null;
 }
 
 /**
- * iCloud → 元序行事曆的單向匯入 (2026-08-11)——只拉取，永遠不會把元序的
- * 行程推回 iCloud（跟 CalendarSyncService 的 Google 雙向同步不同）。每次
+ * iCloud ↔ 元序行事曆同步。原本 (2026-08-11) 只有 iCloud → 元序的單向匯入；
+ * 2026-09-30 起改成雙向：元序新增時選「存到 iPhone」的行程由
+ * CalendarPushService 寫進 iCloud，這裡則負責匯入＋重試沒推成功的。每次
  * 同步都用同一個固定的時間窗（過去 7 天～未來 90 天）重新抓一次、整批
  * 比對現存的 CalendarEvent（用 appleEventUid 辨識），窗外的舊事件不去動它
  * ——不是「這次窗口沒看到就當作被刪除」，而是「這次窗口內沒看到的，才當
@@ -36,6 +42,7 @@ export class AppleCalendarSyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly appleCalendar: AppleCalendarService,
+    private readonly push: CalendarPushService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -58,16 +65,18 @@ export class AppleCalendarSyncService {
     const rangeStart = new Date(now.getTime() - LOOKBACK_DAYS * 86400000);
     const rangeEnd = new Date(now.getTime() + LOOKAHEAD_DAYS * 86400000);
 
-    const icsBlobs = await this.appleCalendar.fetchEventIcsData(
-      connection.appleId,
-      connection.appPassword,
-      connection.selectedCalendarUrls,
-      { start: rangeStart, end: rangeEnd },
-    );
+    // 寫入用的日曆也要一起讀回來，不然元序寫進去的行程在下次同步會被當成「iCloud 刪掉了」。
+    const calendarUrls = [
+      ...new Set([...connection.selectedCalendarUrls, ...(connection.writeCalendarUrl ? [connection.writeCalendarUrl] : [])]),
+    ];
+    const objects = await this.appleCalendar.fetchEventObjects(connection.appleId, connection.appPassword, calendarUrls, {
+      start: rangeStart,
+      end: rangeEnd,
+    });
 
     const instances: ParsedInstance[] = [];
-    for (const ics of icsBlobs) {
-      instances.push(...this.parseIcsIntoInstances(ics, rangeStart, rangeEnd));
+    for (const obj of objects) {
+      instances.push(...this.parseIcsIntoInstances(obj.data, rangeStart, rangeEnd, obj.url, obj.etag));
     }
 
     const seenUids = new Set(instances.map((i) => i.uid));
@@ -77,12 +86,18 @@ export class AppleCalendarSyncService {
         create: {
           spaceId,
           appleEventUid: instance.uid,
+          syncTarget: CalendarSyncTarget.ICLOUD,
+          appleEventHref: instance.href,
+          appleEventEtag: instance.etag,
           title: instance.title,
           startAt: instance.startAt,
           endAt: instance.endAt,
           allDay: instance.allDay,
         },
         update: {
+          syncTarget: CalendarSyncTarget.ICLOUD,
+          appleEventHref: instance.href,
+          appleEventEtag: instance.etag,
           title: instance.title,
           startAt: instance.startAt,
           endAt: instance.endAt,
@@ -93,13 +108,31 @@ export class AppleCalendarSyncService {
 
     // 這個時間窗內、上次同步有但這次沒再看到的（代表在 iCloud 那邊被刪除
     // 或改到窗外去了）——只刪窗內範圍的，避免動到窗外還有效的舊資料。
+    // 元序剛新增、還沒成功寫進 iCloud 的（有 syncTarget 但沒有 href）不能刪，
+    // 那是「還沒推上去」不是「被刪了」。
     await this.prisma.calendarEvent.deleteMany({
       where: {
         spaceId,
         appleEventUid: { not: null, notIn: [...seenUids] },
         startAt: { gte: rangeStart, lte: rangeEnd },
+        OR: [{ appleEventHref: { not: null } }, { syncTarget: null }, { appleEventUid: { contains: '::' } }],
       },
     });
+
+    // 重試：選了存到 iPhone、但還沒寫進 iCloud 的。
+    const unpushed = await this.prisma.calendarEvent.findMany({
+      where: {
+        spaceId,
+        syncTarget: CalendarSyncTarget.ICLOUD,
+        appleEventHref: null,
+        recurrenceFrequency: CalendarRecurrenceFrequency.NONE,
+      },
+    });
+    for (const event of unpushed) {
+      await this.push.push(event).catch((error) => {
+        this.logger.warn(`重試寫入 iCloud 失敗（event=${event.id}）：${error}`);
+      });
+    }
 
     await this.prisma.appleCalendarConnection.update({
       where: { spaceId },
@@ -107,7 +140,13 @@ export class AppleCalendarSyncService {
     });
   }
 
-  private parseIcsIntoInstances(ics: string, rangeStart: Date, rangeEnd: Date): ParsedInstance[] {
+  private parseIcsIntoInstances(
+    ics: string,
+    rangeStart: Date,
+    rangeEnd: Date,
+    href: string | null,
+    etag: string | null,
+  ): ParsedInstance[] {
     let parsed: ical.CalendarResponse;
     try {
       parsed = ical.sync.parseICS(ics);
@@ -131,6 +170,8 @@ export class AppleCalendarSyncService {
             startAt: occurrence.start,
             endAt: occurrence.end,
             allDay: occurrence.isFullDay,
+            href: null,
+            etag: null,
           });
         }
       } else {
@@ -140,6 +181,8 @@ export class AppleCalendarSyncService {
           startAt: vevent.start,
           endAt: vevent.end ?? null,
           allDay: vevent.datetype === 'date',
+          href,
+          etag,
         });
       }
     }

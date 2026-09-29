@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
+import { CalendarSyncTarget } from '../../generated/prisma/client.js';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
 
@@ -11,6 +12,7 @@ interface SyncableTodo {
   dueDateAllDay: boolean;
   isOngoing: boolean;
   personalOwnerUserId: string | null;
+  calendarSyncTarget: CalendarSyncTarget | null;
 }
 
 /** 代辦事項 has no upper bound otherwise — completed items just kept
@@ -87,6 +89,7 @@ export class TodosService {
         isOngoing: dto.isOngoing ?? false,
         priority: dto.priority,
         notes: dto.notes,
+        calendarSyncTarget: dto.calendarSyncTarget,
         sortOrder: await this.nextSortOrder(userId),
       },
     });
@@ -122,12 +125,18 @@ export class TodosService {
         ...(dto.isOngoing !== undefined && { isOngoing: dto.isOngoing }),
         ...(dto.priority !== undefined && { priority: dto.priority }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
+        ...(dto.calendarSyncTarget !== undefined && { calendarSyncTarget: dto.calendarSyncTarget }),
       },
     });
-    // 完成/取消完成、標題、優先順序、備註都不影響行事曆那筆——只有真的會改變
-    // 「這件事什麼時候」的欄位才需要重新同步，其餘情況跳過這次多餘的資料庫
-    // 查詢。
-    if (dto.dueDate !== undefined || dto.dueDateAllDay !== undefined || dto.isOngoing !== undefined) {
+    // 完成/取消完成、優先順序、備註都不影響行事曆那筆——只有會改變行事曆上
+    // 看到的內容（時間、標題、存到哪個行事曆）才需要重新同步。
+    if (
+      dto.dueDate !== undefined ||
+      dto.dueDateAllDay !== undefined ||
+      dto.isOngoing !== undefined ||
+      dto.title !== undefined ||
+      dto.calendarSyncTarget !== undefined
+    ) {
       await this.syncCalendarEvent(todo);
     }
     return todo;
@@ -197,6 +206,7 @@ export class TodosService {
         startAt: todo.dueDate.toISOString(),
         allDay: todo.dueDateAllDay,
         notes: '同步自代辦事項，直接編輯這裡不會回寫代辦事項。',
+        ...(todo.calendarSyncTarget && { syncTarget: todo.calendarSyncTarget }),
       };
 
       if (!existing) {

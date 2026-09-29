@@ -10,6 +10,7 @@ import { LifeGoalsModule } from '../life-goals/life-goals.module';
 import { LineWebhookController } from './line-webhook.controller';
 import { LineLinkController } from './line-link.controller';
 import { LineService } from './line.service';
+import { LineAiAgentService } from './agent/line-ai-agent.service';
 
 @Module({
   imports: [
@@ -23,6 +24,6 @@ import { LineService } from './line.service';
     LifeGoalsModule,
   ],
   controllers: [LineWebhookController, LineLinkController],
-  providers: [LineService],
+  providers: [LineService, LineAiAgentService],
 })
 export class LineModule {}

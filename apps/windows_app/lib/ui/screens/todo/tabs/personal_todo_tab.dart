@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api_client.dart';
 import '../../../../core/models/project_todo.dart';
 import '../../../../state/auth_provider.dart';
+import '../../../../core/models/calendar_event.dart';
+import '../../../../state/calendar_provider.dart';
 import '../../../../state/todo_provider.dart';
+import '../../../widgets/calendar_target_picker.dart';
 import '../todo_tile.dart';
 
 /// 個人事項 — deliberately kept simple per the user's own spec: just a
@@ -86,6 +89,14 @@ class PersonalTodoTab extends ConsumerWidget {
   }
 
   Future<void> _openEditor(BuildContext context, WidgetRef ref, ProjectTodo? existing) async {
+    // 有日期的代辦會自動在行事曆產生一筆，那筆要存到 Google 還是 iPhone
+    // 一樣必選（2026-09-30）。
+    var targets = const <CalendarSyncTarget>[];
+    try {
+      targets = await ref.read(myCalendarTargetsProvider.future);
+    } catch (_) {}
+    if (!context.mounted) return;
+    var calendarTarget = existing?.calendarSyncTarget;
     final titleController = TextEditingController(text: existing?.title ?? '');
     var dueDate = existing?.dueDate;
     // 每一筆代辦事項都必須是「有日期」或「持續性任務」二選一——沒有第三種
@@ -163,6 +174,12 @@ class PersonalTodoTab extends ConsumerWidget {
                         child: Text(time.format(context)),
                       ),
                     ),
+                  const SizedBox(height: 12),
+                  CalendarTargetPicker(
+                    targets: targets,
+                    selected: calendarTarget,
+                    onChanged: (t) => setState(() => calendarTarget = t),
+                  ),
                 ],
               ],
             ),
@@ -170,7 +187,11 @@ class PersonalTodoTab extends ConsumerWidget {
           actions: [
             TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
             FilledButton(
-              onPressed: !isOngoing && dueDate == null ? null : () => Navigator.of(context).pop(true),
+              onPressed:
+                  (!isOngoing && dueDate == null) ||
+                      (!isOngoing && !CalendarTargetPicker.isSatisfied(targets, calendarTarget))
+                  ? null
+                  : () => Navigator.of(context).pop(true),
               child: const Text('儲存'),
             ),
           ],
@@ -195,6 +216,7 @@ class PersonalTodoTab extends ConsumerWidget {
           dueDate: effectiveDueDate,
           dueDateAllDay: allDay,
           isOngoing: isOngoing,
+          calendarSyncTarget: isOngoing ? null : calendarTarget,
         );
       } else {
         await api.updateTodo(
@@ -204,6 +226,7 @@ class PersonalTodoTab extends ConsumerWidget {
           dueDateAllDay: allDay,
           clearDueDate: effectiveDueDate == null,
           isOngoing: isOngoing,
+          calendarSyncTarget: !isOngoing && calendarTarget != existing.calendarSyncTarget ? calendarTarget : null,
         );
       }
       ref.invalidate(todoOverviewProvider);

@@ -157,8 +157,10 @@ class ApiClient {
     String? notes,
     CalendarRecurrenceFrequency recurrenceFrequency = CalendarRecurrenceFrequency.none,
     DateTime? recurrenceUntil,
+    CalendarSyncTarget? syncTarget,
   }) async {
     final body = await _post('/spaces/$spaceId/calendar/events', {
+      if (syncTarget != null) 'syncTarget': syncTarget.toJson(),
       'title': title,
       'startAt': allDay ? _dateOnlyIso(startAt) : startAt.toUtc().toIso8601String(),
       if (endAt != null) 'endAt': allDay ? _dateOnlyIso(endAt) : endAt.toUtc().toIso8601String(),
@@ -187,9 +189,11 @@ class ApiClient {
     CalendarRecurrenceFrequency? recurrenceFrequency,
     DateTime? recurrenceUntil,
     bool clearRecurrenceUntil = false,
+    CalendarSyncTarget? syncTarget,
   }) async {
     final effectiveAllDay = allDay ?? false;
     final body = await _patch('/spaces/$spaceId/calendar/events/$eventId', {
+      if (syncTarget != null) 'syncTarget': syncTarget.toJson(),
       if (title != null) 'title': title,
       if (startAt != null) 'startAt': effectiveAllDay ? _dateOnlyIso(startAt) : startAt.toUtc().toIso8601String(),
       if (endAt != null)
@@ -1163,8 +1167,10 @@ class ApiClient {
     bool isOngoing = false,
     TodoPriority? priority,
     String? notes,
+    CalendarSyncTarget? calendarSyncTarget,
   }) async {
     await _post('/todos', {
+      if (calendarSyncTarget != null) 'calendarSyncTarget': calendarSyncTarget.toJson(),
       'title': title,
       if (dueDate != null)
         'dueDate': dueDateAllDay ? _dateOnly(dueDate) : dueDate.toUtc().toIso8601String(),
@@ -1186,8 +1192,10 @@ class ApiClient {
     TodoPriority? priority,
     String? notes,
     bool clearNotes = false,
+    CalendarSyncTarget? calendarSyncTarget,
   }) async {
     await _patchIgnoreBody('/todos/$todoId', {
+      if (calendarSyncTarget != null) 'calendarSyncTarget': calendarSyncTarget.toJson(),
       if (title != null) 'title': title,
       if (done != null) 'done': done,
       if (clearDueDate)
@@ -1255,6 +1263,15 @@ class ApiClient {
 
   Future<void> updateLifeGoalProgress({required String id, required double currentValue}) async {
     await _patchIgnoreBody('/life-goals/$id', {'currentValue': currentValue});
+  }
+
+  /// AI 自動分類 — null when the user has no Gemini key or it failed.
+  Future<String?> suggestLifeGoalCategory({required String title, String? category}) async {
+    final body = await _post('/life-goals/suggest-category', {
+      'title': title,
+      if (category != null) 'category': category,
+    });
+    return body['category'] as String?;
   }
 
   Future<void> deleteLifeGoal(String id) async {

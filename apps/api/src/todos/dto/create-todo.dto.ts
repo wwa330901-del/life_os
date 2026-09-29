@@ -1,5 +1,5 @@
 import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
-import { TodoPriority } from '../../../generated/prisma/client.js';
+import { TodoPriority, CalendarSyncTarget } from '../../../generated/prisma/client.js';
 
 // Exactly one of dueDate/isOngoing is required (validated in
 // TodosService, not here — class-validator's per-field decorators can't
@@ -31,4 +31,9 @@ export class CreateTodoDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  /// 有日期時自動產生的那筆行事曆要存到 Google 還是 iPhone（2026-09-30）。
+  @IsOptional()
+  @IsEnum(CalendarSyncTarget)
+  calendarSyncTarget?: CalendarSyncTarget;
 }
