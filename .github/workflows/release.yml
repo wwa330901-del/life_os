@@ -30,11 +30,18 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set pubspec/installer version to match tag
+        # Both files are plain UTF-8, no BOM (life_os.iss's Chinese Start
+        # Menu/uninstall strings depend on that — see its own leading
+        # `#pragma code page 65001`). PowerShell's Get-Content/Set-Content
+        # default encoding differs by version/locale, so pin it explicitly
+        # rather than relying on the runner's default — a silent mojibake
+        # corruption here wouldn't fail the build, it'd just ship a
+        # installer with garbled Chinese text.
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          (Get-Content pubspec.yaml) -replace '^version: .*$', "version: $version+1" | Set-Content pubspec.yaml
-          (Get-Content installer/life_os.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`"" | Set-Content installer/life_os.iss
+          (Get-Content -Encoding utf8 pubspec.yaml) -replace '^version: .*$', "version: $version+1" | Set-Content -Encoding utf8NoBOM pubspec.yaml
+          (Get-Content -Encoding utf8 installer/life_os.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`"" | Set-Content -Encoding utf8NoBOM installer/life_os.iss
 
       - uses: subosito/flutter-action@v2
         with:
