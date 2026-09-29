@@ -6,8 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/models/app_user.dart';
 import '../../state/auth_provider.dart';
-import '../../state/department_provider.dart';
-import '../../state/space_provider.dart';
 import '../../state/ui_prefs_provider.dart';
 import '../widgets/ai_settings_dialog.dart';
 import '../screens/friends/friends_dialog.dart';
@@ -24,46 +22,9 @@ const _railWidth = 14.0;
 /// content pane instead of being squeezed into the rail's own layout box)
 /// without re-pinning it open.
 class AppSidebar extends ConsumerStatefulWidget {
-  const AppSidebar({
-    super.key,
-    required this.space,
-    required this.onGoToProjects,
-    required this.onOpenPropertiesSettings,
-    required this.propertiesSettingsSelected,
-    required this.onOpenApprovals,
-    required this.approvalsSelected,
-    required this.onOpenVendors,
-    required this.vendorsSelected,
-    required this.onOpenClients,
-    required this.clientsSelected,
-    required this.onOpenPermissions,
-    required this.permissionsSelected,
-    required this.onOpenPettyCash,
-    required this.pettyCashSelected,
-    required this.onOpenMyWorkspace,
-    required this.myWorkspaceSelected,
-    required this.onOpenDashboard,
-    required this.dashboardSelected,
-  });
+  const AppSidebar({super.key, required this.space});
 
   final SpaceSummary space;
-  final VoidCallback onGoToProjects;
-  final VoidCallback onOpenPropertiesSettings;
-  final bool propertiesSettingsSelected;
-  final VoidCallback onOpenApprovals;
-  final bool approvalsSelected;
-  final VoidCallback onOpenVendors;
-  final bool vendorsSelected;
-  final VoidCallback onOpenClients;
-  final bool clientsSelected;
-  final VoidCallback onOpenPermissions;
-  final bool permissionsSelected;
-  final VoidCallback onOpenPettyCash;
-  final bool pettyCashSelected;
-  final VoidCallback onOpenMyWorkspace;
-  final bool myWorkspaceSelected;
-  final VoidCallback onOpenDashboard;
-  final bool dashboardSelected;
 
   @override
   ConsumerState<AppSidebar> createState() => _AppSidebarState();
@@ -114,28 +75,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
             height: screenHeight,
             child: Material(
               elevation: 8,
-              child: _SidebarPanel(
-                space: widget.space,
-                onGoToProjects: widget.onGoToProjects,
-                onOpenPropertiesSettings: widget.onOpenPropertiesSettings,
-                propertiesSettingsSelected: widget.propertiesSettingsSelected,
-                onOpenApprovals: widget.onOpenApprovals,
-                approvalsSelected: widget.approvalsSelected,
-                onOpenVendors: widget.onOpenVendors,
-                vendorsSelected: widget.vendorsSelected,
-                onOpenClients: widget.onOpenClients,
-                clientsSelected: widget.clientsSelected,
-                onOpenPermissions: widget.onOpenPermissions,
-                permissionsSelected: widget.permissionsSelected,
-                onOpenPettyCash: widget.onOpenPettyCash,
-                pettyCashSelected: widget.pettyCashSelected,
-                onOpenMyWorkspace: widget.onOpenMyWorkspace,
-                myWorkspaceSelected: widget.myWorkspaceSelected,
-                onOpenDashboard: widget.onOpenDashboard,
-                dashboardSelected: widget.dashboardSelected,
-                collapsed: true,
-                onTogglePin: _pin,
-              ),
+              child: _SidebarPanel(space: widget.space, collapsed: true, onTogglePin: _pin),
             ),
           ),
         ),
@@ -153,23 +93,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
         width: _sidebarWidth,
         child: _SidebarPanel(
           space: widget.space,
-          onGoToProjects: widget.onGoToProjects,
-          onOpenPropertiesSettings: widget.onOpenPropertiesSettings,
-          propertiesSettingsSelected: widget.propertiesSettingsSelected,
-          onOpenApprovals: widget.onOpenApprovals,
-          approvalsSelected: widget.approvalsSelected,
-          onOpenVendors: widget.onOpenVendors,
-          vendorsSelected: widget.vendorsSelected,
-          onOpenClients: widget.onOpenClients,
-          clientsSelected: widget.clientsSelected,
-          onOpenPermissions: widget.onOpenPermissions,
-          permissionsSelected: widget.permissionsSelected,
-          onOpenPettyCash: widget.onOpenPettyCash,
-          pettyCashSelected: widget.pettyCashSelected,
-          onOpenMyWorkspace: widget.onOpenMyWorkspace,
-          myWorkspaceSelected: widget.myWorkspaceSelected,
-          onOpenDashboard: widget.onOpenDashboard,
-          dashboardSelected: widget.dashboardSelected,
           collapsed: false,
           onTogglePin: () => ref.read(sidebarCollapsedProvider.notifier).toggle(),
         ),
@@ -198,47 +121,9 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
 }
 
 class _SidebarPanel extends ConsumerWidget {
-  const _SidebarPanel({
-    required this.space,
-    required this.onGoToProjects,
-    required this.onOpenPropertiesSettings,
-    required this.propertiesSettingsSelected,
-    required this.onOpenApprovals,
-    required this.approvalsSelected,
-    required this.onOpenVendors,
-    required this.vendorsSelected,
-    required this.onOpenClients,
-    required this.clientsSelected,
-    required this.onOpenPermissions,
-    required this.permissionsSelected,
-    required this.onOpenPettyCash,
-    required this.pettyCashSelected,
-    required this.onOpenMyWorkspace,
-    required this.myWorkspaceSelected,
-    required this.onOpenDashboard,
-    required this.dashboardSelected,
-    required this.collapsed,
-    required this.onTogglePin,
-  });
+  const _SidebarPanel({required this.space, required this.collapsed, required this.onTogglePin});
 
   final SpaceSummary space;
-  final VoidCallback onGoToProjects;
-  final VoidCallback onOpenPropertiesSettings;
-  final bool propertiesSettingsSelected;
-  final VoidCallback onOpenApprovals;
-  final bool approvalsSelected;
-  final VoidCallback onOpenVendors;
-  final bool vendorsSelected;
-  final VoidCallback onOpenClients;
-  final bool clientsSelected;
-  final VoidCallback onOpenPermissions;
-  final bool permissionsSelected;
-  final VoidCallback onOpenPettyCash;
-  final bool pettyCashSelected;
-  final VoidCallback onOpenMyWorkspace;
-  final bool myWorkspaceSelected;
-  final VoidCallback onOpenDashboard;
-  final bool dashboardSelected;
 
   /// Whether this panel is currently rendering as the hover flyout (vs.
   /// pinned open in the normal layout) — only changes the pin button's
@@ -250,11 +135,6 @@ class _SidebarPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final session = ref.watch(authControllerProvider).value;
-    final generalManagerUserId = space.type == SpaceType.company
-        ? ref.watch(generalManagerProvider(space.id)).value
-        : null;
-    final isGeneralManager =
-        generalManagerUserId != null && generalManagerUserId == session?.user.id;
 
     return Container(
       decoration: BoxDecoration(
@@ -291,78 +171,6 @@ class _SidebarPanel extends ConsumerWidget {
               child: SpaceSwitcherList(selectedSpaceId: space.id),
             ),
             const SizedBox(height: 8),
-            if (space.type == SpaceType.company)
-              _NavItem(
-                icon: Icons.view_timeline_outlined,
-                label: '專案管理',
-                selected: !propertiesSettingsSelected && !approvalsSelected,
-                onTap: onGoToProjects,
-              ),
-            if (space.type == SpaceType.company)
-              _NavItem(
-                icon: Icons.fact_check_outlined,
-                label: '簽核',
-                selected: approvalsSelected,
-                onTap: onOpenApprovals,
-              ),
-            if (space.type == SpaceType.company)
-              _NavItem(
-                icon: Icons.store_outlined,
-                label: '廠商管理',
-                selected: vendorsSelected,
-                onTap: onOpenVendors,
-              ),
-            if (space.type == SpaceType.company)
-              _NavItem(
-                icon: Icons.groups_outlined,
-                label: '客戶管理',
-                selected: clientsSelected,
-                onTap: onOpenClients,
-              ),
-            if (space.type == SpaceType.company)
-              _NavItem(
-                icon: Icons.savings_outlined,
-                label: '零用金',
-                selected: pettyCashSelected,
-                onTap: onOpenPettyCash,
-              ),
-            if (space.type == SpaceType.company)
-              _NavItem(
-                icon: Icons.dashboard_customize_outlined,
-                label: '我的工作台',
-                selected: myWorkspaceSelected,
-                onTap: onOpenMyWorkspace,
-              ),
-            if (space.type == SpaceType.company &&
-                (space.role == 'OWNER' || space.role == 'ADMIN' || isGeneralManager))
-              _NavItem(
-                icon: Icons.query_stats_outlined,
-                label: '監控儀表板',
-                selected: dashboardSelected,
-                onTap: onOpenDashboard,
-              ),
-            if (space.type == SpaceType.company && (session?.user.isPlatformAdmin ?? false))
-              _NavItem(
-                icon: Icons.tune,
-                label: '專案設定',
-                selected: propertiesSettingsSelected,
-                onTap: onOpenPropertiesSettings,
-              ),
-            if (space.type == SpaceType.company && space.role == 'OWNER')
-              _NavItem(
-                icon: Icons.admin_panel_settings_outlined,
-                label: '部門與權限',
-                selected: permissionsSelected,
-                onTap: onOpenPermissions,
-              ),
-            if (space.type == SpaceType.company && space.role == 'OWNER')
-              _NavItem(
-                icon: Icons.delete_forever_outlined,
-                label: '刪除空間',
-                selected: false,
-                destructive: true,
-                onTap: () => _deleteSpace(context, ref, space),
-              ),
             const Spacer(),
             Divider(height: 1, color: scheme.outline.withValues(alpha: 0.25)),
             _NavItem(
@@ -426,60 +234,6 @@ class _SidebarPanel extends ConsumerWidget {
       }
     }
   }
-
-  /// OWNER-only (server also enforces this) — requires typing the space's
-  /// exact name to confirm, since this cascades every project/work item/
-  /// todo/document/approval inside it and can't be undone.
-  Future<void> _deleteSpace(BuildContext context, WidgetRef ref, SpaceSummary space) async {
-    final controller = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('刪除空間'),
-          content: SizedBox(
-            width: 360,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('這會永久刪除「${space.name}」裡的所有專案、工項、代辦事項、文件與簽核紀錄，且無法復原。'),
-                const SizedBox(height: 12),
-                Text('請輸入空間名稱「${space.name}」以確認：'),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  onChanged: (_) => setState(() {}),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
-              onPressed: controller.text.trim() == space.name
-                  ? () => Navigator.of(context).pop(true)
-                  : null,
-              child: const Text('永久刪除'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-
-    try {
-      await ref.read(apiClientProvider).deleteSpace(space.id);
-      ref.invalidate(mySpacesProvider);
-      ref.read(selectedSpaceProvider.notifier).clear();
-    } on ApiException catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
-  }
 }
 
 class _NavItem extends StatelessWidget {
@@ -488,19 +242,17 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
-    this.destructive = false,
   });
 
   final IconData icon;
   final String label;
   final bool selected;
-  final bool destructive;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = destructive ? scheme.error : (selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.7));
+    final color = selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.7);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Material(
@@ -522,9 +274,7 @@ class _NavItem extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      color: destructive
-                          ? scheme.error
-                          : (selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.85)),
+                      color: selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.85),
                     ),
                   ),
                 ),
@@ -536,4 +286,3 @@ class _NavItem extends StatelessWidget {
     );
   }
 }
-

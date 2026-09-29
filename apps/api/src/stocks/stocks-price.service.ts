@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
-import { isTaiwanHoliday } from '../projects/scheduling/taiwan-holiday-calendar';
+import { isTaiwanHoliday } from '../common/scheduling/taiwan-holiday-calendar';
 
 interface TwseStockDayRow {
   Code: string;

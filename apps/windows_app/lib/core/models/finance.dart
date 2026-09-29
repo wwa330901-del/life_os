@@ -453,10 +453,9 @@ class FinanceLoan {
   }
 }
 
-/// 工作上先幫忙出錢，之後公司/專案還你 — same shape as [FinanceLoan] (see its
-/// doc comment for why this is a separate model despite the similarity),
-/// minus `direction` (always one-directional: advance out, reimbursed
-/// in), plus an optional [projectId]/[projectName] link.
+/// 工作上先幫忙出錢，之後還你 — same shape as [FinanceLoan] (see its doc
+/// comment for why this is a separate model despite the similarity), minus
+/// `direction` (always one-directional: advance out, reimbursed in).
 class FinanceAdvance {
   const FinanceAdvance({
     required this.id,
@@ -468,8 +467,6 @@ class FinanceAdvance {
     required this.settled,
     required this.repayments,
     this.note,
-    this.projectId,
-    this.projectName,
   });
 
   final String id;
@@ -481,12 +478,9 @@ class FinanceAdvance {
   final bool settled;
   final List<FinanceSettlementEntry> repayments;
   final String? note;
-  final String? projectId;
-  final String? projectName;
 
   factory FinanceAdvance.fromJson(Map<String, dynamic> json) {
     final initial = json['initialTransaction'] as Map<String, dynamic>;
-    final project = json['project'] as Map<String, dynamic>?;
     return FinanceAdvance(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -499,8 +493,6 @@ class FinanceAdvance {
       repayments: (json['repayments'] as List<dynamic>? ?? const [])
           .map((e) => FinanceSettlementEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
-      projectId: json['projectId'] as String?,
-      projectName: project?['name'] as String?,
     );
   }
 }

@@ -7,9 +7,9 @@ import '../../../../state/auth_provider.dart';
 import '../../../../state/todo_provider.dart';
 import '../todo_tile.dart';
 
-/// 已完成代辦事項 — full history, 個人＋工作合併，因為那兩個分頁只會保留完成當天
-/// 的項目（見 `TodosService.listAll`），這裡才是完成過的東西真正找得到的地方：
-/// 依完成時間新到舊分頁（10 筆一頁）、可搜尋標題。
+/// 已完成代辦事項 — full history（進行中分頁只會保留完成當天的項目，見
+/// `TodosService.listAll`），這裡才是完成過的東西真正找得到的地方：依完成
+/// 時間新到舊分頁（10 筆一頁）、可搜尋標題。
 class CompletedTodoTab extends ConsumerStatefulWidget {
   const CompletedTodoTab({super.key});
 
@@ -77,13 +77,12 @@ class _CompletedTodoTabState extends ConsumerState<CompletedTodoTab> {
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  final entry = page.items[index];
+                  final todo = page.items[index];
                   return TodoTile(
-                    todo: entry.todo,
-                    contextLabel: entry.projectName != null ? '${entry.projectName}（${entry.spaceName}）' : '個人',
-                    onToggleDone: (done) => _toggleDone(context, ref, entry.todo, done),
+                    todo: todo,
+                    onToggleDone: (done) => _toggleDone(context, ref, todo, done),
                     onEdit: null,
-                    onDelete: () => _delete(context, ref, entry.todo),
+                    onDelete: () => _delete(context, ref, todo),
                   );
                 },
               );

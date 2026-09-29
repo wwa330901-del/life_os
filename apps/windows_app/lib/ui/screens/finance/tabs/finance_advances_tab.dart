@@ -3,16 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api_client.dart';
 import '../../../../core/models/finance.dart';
-import '../../../../core/models/project.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/date_range_filter.dart';
 import '../widgets/finance_format.dart';
 
-/// 工作上先幫忙出錢，之後公司/專案還你 — same shape/mechanic as `FinanceLoansTab`
-/// (see the backend's `FinanceAdvance` doc comment for why this is a
-/// separate feature), plus an optional project link so a project's own
-/// screen can eventually surface "還沒收回的代墊".
+/// 工作上先幫忙出錢，之後還你 — same shape/mechanic as `FinanceLoansTab` (see
+/// the backend's `FinanceAdvance` doc comment for why this is a separate
+/// feature).
 class FinanceAdvancesTab extends ConsumerStatefulWidget {
   const FinanceAdvancesTab({super.key, required this.spaceId});
 
@@ -53,16 +51,14 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
   Widget build(BuildContext context) {
     final advancesAsync = ref.watch(financeAdvancesProvider(_query));
     final accountsAsync = ref.watch(financeAccountsProvider(widget.spaceId));
-    final projectsAsync = ref.watch(myProjectsProvider);
     final accounts = accountsAsync.value ?? const [];
-    final projects = projectsAsync.value ?? const [];
     final accountNameOf = {for (final a in accounts) a.id: a.name};
 
     return Scaffold(
       floatingActionButton: accounts.isEmpty
           ? null
           : FloatingActionButton.extended(
-              onPressed: () => _openCreateDialog(context, accounts, projects),
+              onPressed: () => _openCreateDialog(context, accounts),
               icon: const Icon(Icons.add),
               label: const Text('新增代墊'),
             ),
@@ -117,7 +113,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
                                   onRepay: advance.settled
                                       ? null
                                       : () => _openRepayDialog(context, accounts, advance),
-                                  onEdit: () => _openEditDialog(context, accounts, projects, advance),
+                                  onEdit: () => _openEditDialog(context, accounts, advance),
                                   onDelete: () => _delete(context, advance),
                                   onEditRepayment: (r) =>
                                       _openRepaymentEditDialog(context, accounts, advance, r),
@@ -169,14 +165,10 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
     }
   }
 
-  Future<void> _openCreateDialog(
-    BuildContext context,
-    List<FinanceAccount> accounts,
-    List<MyProjectSummary> projects,
-  ) async {
+  Future<void> _openCreateDialog(BuildContext context, List<FinanceAccount> accounts) async {
     final result = await showDialog<_AdvanceCreateResult>(
       context: context,
-      builder: (_) => _AdvanceCreateDialog(accounts: accounts, projects: projects),
+      builder: (_) => _AdvanceCreateDialog(accounts: accounts),
     );
     if (result == null || !context.mounted) return;
 
@@ -190,7 +182,6 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
             accountId: result.accountId,
             date: result.date,
             note: result.note,
-            projectId: result.projectId,
           );
       _invalidate();
     } on ApiException catch (e) {
@@ -203,12 +194,11 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
   Future<void> _openEditDialog(
     BuildContext context,
     List<FinanceAccount> accounts,
-    List<MyProjectSummary> projects,
     FinanceAdvance advance,
   ) async {
     final result = await showDialog<_AdvanceCreateResult>(
       context: context,
-      builder: (_) => _AdvanceCreateDialog(accounts: accounts, projects: projects, existing: advance),
+      builder: (_) => _AdvanceCreateDialog(accounts: accounts, existing: advance),
     );
     if (result == null || !context.mounted) return;
 
@@ -223,8 +213,6 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
             accountId: result.accountId,
             date: result.date,
             note: result.note ?? '',
-            projectId: result.projectId,
-            clearProjectId: result.projectId == null,
           );
       _invalidate();
     } on ApiException catch (e) {
@@ -342,8 +330,7 @@ class _AdvanceCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '代墊 ${formatAmount(advance.amount)}（${accountNameOf[advance.accountId] ?? '?'}）'
-              '${advance.settled ? '' : ' · 還剩 ${formatAmount(advance.outstanding)}'}'
-              '${advance.projectName != null ? ' · ${advance.projectName}' : ''}',
+              '${advance.settled ? '' : ' · 還剩 ${formatAmount(advance.outstanding)}'}',
               style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
             ),
             if (advance.note != null && advance.note!.isNotEmpty)
@@ -400,7 +387,6 @@ class _AdvanceCreateResult {
     required this.accountId,
     required this.date,
     this.note,
-    this.projectId,
   });
 
   final String title;
@@ -408,14 +394,12 @@ class _AdvanceCreateResult {
   final String accountId;
   final DateTime date;
   final String? note;
-  final String? projectId;
 }
 
 class _AdvanceCreateDialog extends StatefulWidget {
-  const _AdvanceCreateDialog({required this.accounts, required this.projects, this.existing});
+  const _AdvanceCreateDialog({required this.accounts, this.existing});
 
   final List<FinanceAccount> accounts;
-  final List<MyProjectSummary> projects;
   final FinanceAdvance? existing;
 
   @override
@@ -424,7 +408,6 @@ class _AdvanceCreateDialog extends StatefulWidget {
 
 class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
   late String? _accountId = widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
-  late String? _projectId = widget.existing?.projectId;
   late final _titleController = TextEditingController(text: widget.existing?.title ?? '');
   late final _amountController = TextEditingController(
     text: widget.existing == null ? '' : widget.existing!.amount.toStringAsFixed(0),
@@ -463,7 +446,6 @@ class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
         accountId: accountId,
         date: _date,
         note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
-        projectId: _projectId,
       ),
     );
   }
@@ -508,17 +490,6 @@ class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
                   ),
                   child: Text('${_date.year}/${_date.month}/${_date.day}'),
                 ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String?>(
-                initialValue: _projectId,
-                decoration: const InputDecoration(labelText: '掛勾專案（選填）'),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('不掛勾任何專案')),
-                  for (final p in widget.projects)
-                    DropdownMenuItem(value: p.id, child: Text('${p.name}（${p.spaceName}）')),
-                ],
-                onChanged: (value) => setState(() => _projectId = value),
               ),
               const SizedBox(height: 12),
               TextField(

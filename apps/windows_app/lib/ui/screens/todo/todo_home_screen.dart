@@ -2,11 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'tabs/completed_todo_tab.dart';
 import 'tabs/personal_todo_tab.dart';
-import 'tabs/work_todo_tab.dart';
 
-/// 代辦事項 — account-level module, independent of any Space. 個人 (owned
-/// directly by the caller, no project) and 工作 (belongs to a company-space
-/// project the caller is a member of).
+/// 代辦事項 — account-level module, independent of any Space.
 class TodoHomeScreen extends StatefulWidget {
   const TodoHomeScreen({super.key});
 
@@ -15,7 +12,7 @@ class TodoHomeScreen extends StatefulWidget {
 }
 
 class _TodoHomeScreenState extends State<TodoHomeScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 3, vsync: this);
+  late final TabController _tabController = TabController(length: 2, vsync: this);
 
   @override
   void dispose() {
@@ -31,19 +28,14 @@ class _TodoHomeScreenState extends State<TodoHomeScreen> with SingleTickerProvid
         TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: '個人'),
-            Tab(text: '工作'),
+            Tab(text: '進行中'),
             Tab(text: '已完成'),
           ],
         ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
-            children: const [
-              PersonalTodoTab(),
-              WorkTodoTab(),
-              CompletedTodoTab(),
-            ],
+            children: const [PersonalTodoTab(), CompletedTodoTab()],
           ),
         ),
       ],

@@ -16,13 +16,13 @@ typedef CompletedTodosQuery = ({String? search});
 class CompletedTodosPageState {
   const CompletedTodosPageState({required this.items, required this.cursor, this.isLoadingMore = false});
 
-  final List<CompletedTodoEntry> items;
+  final List<ProjectTodo> items;
   final String? cursor;
   final bool isLoadingMore;
 
   bool get hasMore => cursor != null;
 
-  CompletedTodosPageState copyWith({List<CompletedTodoEntry>? items, String? cursor, bool? isLoadingMore}) =>
+  CompletedTodosPageState copyWith({List<ProjectTodo>? items, String? cursor, bool? isLoadingMore}) =>
       CompletedTodosPageState(
         items: items ?? this.items,
         cursor: cursor ?? this.cursor,

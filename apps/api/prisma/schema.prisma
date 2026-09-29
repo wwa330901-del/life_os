@@ -13,42 +13,7 @@ datasource db {
 
 enum SpaceType {
   PERSONAL
-  COMPANY
   CALENDAR
-}
-
-enum MembershipRole {
-  OWNER
-  ADMIN
-  MEMBER
-}
-
-/// 公司空間權限引擎（2026-08-31 設計）覆蓋的既有模組——一個模組一條，不細
-/// 拆到個別資料表。行事曆刻意不在這份清單：`SpaceType.CALENDAR` 是每人 1
-/// 對 1 的個人空間，不是公司空間底下的東西，沒有部門/職級可套用。
-enum PermissionResourceType {
-  PROJECT
-  TODOS
-  DOCUMENTS
-  VENDOR
-  QUOTATION
-  COST_CONTROL
-  PROCUREMENT
-  PAYMENT_REQUEST
-  CLIENT
-}
-
-/// 「讀」永遠允許給空間內任何成員，不受這套規則管——只有下面三種動作才會
-/// 被 PermissionRule 檔控。詳見 PermissionsService.assertCan。
-enum PermissionAction {
-  WRITE
-  APPROVE
-  EXPORT
-}
-
-enum ProjectRole {
-  PM
-  MEMBER
 }
 
 enum PropertyType {
@@ -128,9 +93,7 @@ model User {
   // Null unless the account is linked to (or was created via) Google sign-in.
   googleId String? @unique
 
-  // Platform-wide admin: can manage all accounts and all spaces' membership.
-  // Distinct from CompanyMembership roles, which only grant access within
-  // one company space.
+  // Platform-wide admin: can manage all accounts.
   isPlatformAdmin Boolean @default(false)
 
   /// This user's own Gemini API key (aistudio.google.com), used for their
@@ -153,22 +116,13 @@ model User {
   homeLayoutConfig Json?
 
   personalSpace              Space?                     @relation("PersonalSpaceOwner")
-  calendarSpace              Space?                     @relation("CalendarSpaceOwner")
-  generalManagerOfSpaces     Space[]                    @relation("SpaceGeneralManager")
-  fieldChangeLogsMade        FieldChangeLog[]
-  memberships                CompanyMembership[]
-  projectMemberships         ProjectMember[]
-  generatedDocuments         GeneratedDocument[]
+  calendarSpace               Space?                    @relation("CalendarSpaceOwner")
   lineAccountLink            LineAccountLink?
-  assignedTodos              ProjectTodo[]              @relation("TodoAssignee")
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
   googleCalendarConnections  GoogleCalendarConnection[]
   appleCalendarConnections   AppleCalendarConnection[]
-  documentApprovalsSubmitted DocumentApproval[]
-  documentApprovalSteps      DocumentApprovalStep[]
-  documentApprovalStepNotes  DocumentApprovalStepNote[]
   knowledgeCategories        KnowledgeCategory[]
-  knowledgeItems             KnowledgeItem[]
+  knowledgeItems              KnowledgeItem[]
   aiUsageLogs                AiUsageLog[]
   calendarSharesGiven        CalendarShare[]            @relation("CalendarShareOwner")
   calendarSharesReceived     CalendarShare[]            @relation("CalendarShareViewer")
@@ -176,16 +130,6 @@ model User {
   financeLoanInvitesReceived FinanceLoanInvite[]        @relation("LoanInviteTo")
   friendshipsRequested       Friendship[]               @relation("FriendshipRequester")
   friendshipsReceived        Friendship[]               @relation("FriendshipAddressee")
-
-  paymentRequestPeriodsSubmitted PaymentRequestPeriod[]
-  ownerBillingPeriodsCreated     OwnerBillingPeriod[]
-  dailyReportsSubmitted          DailyReport[]
-  weeklyReportsSubmitted         WeeklyReport[]
-  contactRecordsCreated          ProjectContactRecord[]
-  executionPhotosUploaded        ExecutionPhoto[]
-  materialSubmissionsSubmitted   MaterialSubmission[]   @relation("MaterialSubmissionSubmitter")
-  materialSubmissionsReviewed    MaterialSubmission[]   @relation("MaterialSubmissionReviewer")
-  pettyCashTransactionsCreated   PettyCashTransaction[]
 }
 
 /// 好友 (2026-08-06) — a mutual, symmetric relationship: unlike CalendarShare
@@ -226,14 +170,6 @@ model Space {
   name      String
   createdAt DateTime  @default(now())
 
-  /// { propertyNames: string[], separator: string } — this company space's
-  /// own rule for suggesting a new project's 案名 by joining the named
-  /// properties' values (in this order) with this separator. Null means no
-  /// suggestion (使用者手動輸入), same as before this feature existed.
-  /// Applied once at project-creation time only (`CreateProjectDialog`) —
-  /// never retroactively re-applied when a property value changes later.
-  projectNameTemplate Json?
-
   // Only set when type = PERSONAL. Each user has exactly one personal space.
   ownerUserId String? @unique
   owner       User?   @relation("PersonalSpaceOwner", fields: [ownerUserId], references: [id])
@@ -244,19 +180,6 @@ model Space {
   calendarOwnerUserId String? @unique
   calendarOwner       User?   @relation("CalendarSpaceOwner", fields: [calendarOwnerUserId], references: [id])
 
-  /// 「總經理」（2026-09 異動留痕通知對象，見 FieldChangeLog）——使用者在
-  /// 部門/職級畫面裡指定該空間的哪一位成員扮演這個角色,不是綁死 OWNER 或
-  /// 任何固定職級名稱。Nullable：沒指定就不發通知（FieldChangeLogService
-  /// 靜默跳過，同 LineNotifierService 對未綁定 LINE 帳號的處理慣例）。
-  generalManagerUserId String?
-  generalManager       User?   @relation("SpaceGeneralManager", fields: [generalManagerUserId], references: [id])
-
-  memberships                  CompanyMembership[]
-  projects                     Project[]
-  propertyDefinitions          ProjectPropertyDefinition[]
-  documentTemplates            DocumentTemplate[]
-  generatedDocuments           GeneratedDocument[]
-  vendors                      Vendor[]
   financeAccounts              FinanceAccount[]
   financeCategories            FinanceCategory[]
   financeTransactions          FinanceTransaction[]
@@ -271,17 +194,9 @@ model Space {
   stockRecurringInvestments    StockRecurringInvestment[]
   stockHoldings                StockHolding[]
   financeNetWorthSnapshots     FinanceNetWorthSnapshot[]
-  departments                  Department[]
-  permissionRules              PermissionRule[]
-  fieldChangeLogs              FieldChangeLog[]
-  clients                      Client[]
-  pettyCashTransactions        PettyCashTransaction[]
 }
 
-/// One event on a CALENDAR space's calendar. Independent of ProjectTodo —
-/// the calendar screen additionally overlays project todos' due dates
-/// read-only alongside these, but editing a todo still happens on its
-/// project's 代辦事項 tab, not here.
+/// One event on a CALENDAR space's calendar.
 model CalendarEvent {
   id      String @id @default(uuid())
   spaceId String
@@ -482,742 +397,6 @@ model CalendarShare {
   @@unique([ownerUserId, viewerUserId])
 }
 
-/// One document template a space can generate for its projects — a
-/// pre-tagged `.docx` (`{{fieldKey}}` placeholders in place of the original
-/// blanks) that gets filled with a project's data via docxtemplater and
-/// handed back byte-identical to the source layout. Ingested by hand (see
-/// 大系統 doc) rather than through a self-service upload UI — the tagging
-/// step needs a human (well, an AI) to actually read the document and
-/// figure out where the blanks are.
-model DocumentTemplate {
-  id      String @id @default(uuid())
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  code     String // e.g. "JWD-3-1" — this space's own code, per its own numbering scheme
-  name     String // e.g. "裝修工程承攬合約書"
-  category String // human label for the code's category digit, e.g. "合約" — display only
-
-  docxData Bytes // the tagged .docx, ready for docxtemplater
-
-  /// [{ key, label, type?, source?, writesTo? }] — `type` is `"text"`
-  /// (default) or `"date"`. `source` is one of `null` (always manual),
-  /// `"project.name"` / `"project.startDate"` (the project's own fixed
-  /// fields), or `"property:<name>"` (look up by name in the project's own
-  /// propertyValues) — see ProjectPropertyDefinition/Value. `writesTo` is
-  /// the reverse: for a `date` field, `"project.endDate"` means the value
-  /// picked when filling this template is written back onto the project's
-  /// own `projectEndDate` (e.g. a contract's 完工日 setting 預計結案日).
-  fields Json
-
-  /// ProjectPropertyOption ids under this space's "類型" property — which
-  /// project types this template is offered for.
-  allowedTypeOptionIds String[] @default([])
-
-  /// Whether a document generated from this template can be 送簽 (submitted
-  /// into the DocumentApproval workflow below). Set by hand by whoever
-  /// manages this space's templates — deliberately NOT derived from the
-  /// `code` numbering convention (e.g. this space's own "01=對外/02=對內"
-  /// scheme), since that's a human convention the system never parses.
-  requiresApproval Boolean @default(false)
-
-  createdAt DateTime @default(now())
-
-  generatedDocuments GeneratedDocument[]
-
-  @@unique([spaceId, code])
-}
-
-/// A document actually generated from a DocumentTemplate for a specific
-/// project — the persisted result of filling in a template's fields, kept
-/// as a record inside the app (not just a one-time download) so it can be
-/// referenced later and, eventually, routed through a company approval/
-/// sign-off workflow once that exists. `templateId` is nullable with
-/// onDelete: SetNull so a generated document survives its template being
-/// edited or removed — it already carries its own rendered `docxData` and
-/// a snapshot of the values that were filled in, so it doesn't depend on
-/// the template still existing unchanged.
-model GeneratedDocument {
-  id String @id @default(uuid())
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  templateId String?
-  template   DocumentTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-
-  name String // defaults to the template's name at generation time
-
-  /// The exact field values used to fill the template ({key: value}),
-  /// kept for display/audit even after the template itself changes.
-  values Json
-
-  docxData Bytes // the rendered result — re-download doesn't re-run docxtemplater
-
-  createdAt DateTime @default(now())
-
-  createdByUserId String?
-  createdBy       User?   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
-
-  approvals DocumentApproval[]
-
-  @@index([projectId])
-}
-
-enum DocumentApprovalStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum DocumentApprovalStepNoteType {
-  REQUEST_INFO
-  REPLY
-}
-
-/// One 送簽 attempt for exactly one target — a target can have several of
-/// these over time (a REJECTED one is terminal; the creator revises and
-/// submits a fresh one), but only ever one PENDING at a time (enforced in
-/// the service, not the schema). Once one reaches APPROVED, the target is
-/// locked (see each target's own isLocked/removeGenerated-style guard).
-///
-/// 2026-08-14: generalized from "always a GeneratedDocument" to "exactly one
-/// of four possible targets" (nullable FKs, app-layer XOR — same convention
-/// as ProjectTodo's personal/work split) so 工程財務四表's ①初始管制表／採發
-/// 比價表／請款單期數 can reuse this entire approve/reject/request-info/
-/// reply/lock pipeline instead of three duplicated copies. GeneratedDocument
-/// stays the only target with a free-form, non-fixed-length step chain (no
-/// roleLabel); the three new target types always create a fixed number of
-/// steps with a roleLabel each (see DocumentApprovalStep), only the
-/// approverUserId per step is chosen at submit time.
-model DocumentApproval {
-  id String @id @default(uuid())
-
-  generatedDocumentId String?
-  generatedDocument   GeneratedDocument? @relation(fields: [generatedDocumentId], references: [id], onDelete: Cascade)
-
-  costControlInitialSheetId String?
-  costControlInitialSheet   CostControlInitialSheet? @relation(fields: [costControlInitialSheetId], references: [id], onDelete: Cascade)
-
-  procurementComparisonId String?
-  procurementComparison   ProcurementComparison? @relation(fields: [procurementComparisonId], references: [id], onDelete: Cascade)
-
-  paymentRequestPeriodId String?
-  paymentRequestPeriod   PaymentRequestPeriod? @relation(fields: [paymentRequestPeriodId], references: [id], onDelete: Cascade)
-
-  submittedByUserId String
-  submittedBy       User   @relation(fields: [submittedByUserId], references: [id])
-
-  status DocumentApprovalStatus @default(PENDING)
-
-  createdAt DateTime @default(now())
-
-  steps DocumentApprovalStep[]
-
-  @@index([generatedDocumentId])
-  @@index([costControlInitialSheetId])
-  @@index([procurementComparisonId])
-  @@index([paymentRequestPeriodId])
-}
-
-/// One ordered checkpoint in a DocumentApproval's chain. The "current" step
-/// is the lowest-`sequence` one still PENDING while every lower-sequence
-/// step in the same approval is APPROVED — computed in application code,
-/// not stored. A REJECTED step immediately flips the parent
-/// DocumentApproval to REJECTED and ends the chain (no "resume from here"
-/// — see 大系統 doc for why: the user explicitly chose the simpler
-/// reject-and-resubmit flow over a resumable one).
-model DocumentApprovalStep {
-  id String @id @default(uuid())
-
-  approvalId String
-  approval   DocumentApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
-
-  sequence Int
-
-  /// Fixed關卡職稱 for the three 工程財務 target types (e.g. "業務主管"／"成
-  /// 控"／"財務初審") — set at submission time from each target's fixed step
-  /// template, purely for display. Null for GeneratedDocument's free-form
-  /// chain, which has no named roles.
-  roleLabel String?
-
-  approverUserId String
-  approver       User   @relation(fields: [approverUserId], references: [id])
-
-  status DocumentApprovalStatus @default(PENDING)
-
-  /// Optional on an APPROVE, required (enforced in the service) on a REJECT.
-  decisionComment String?
-  decidedAt       DateTime?
-
-  notes DocumentApprovalStepNote[]
-
-  @@unique([approvalId, sequence])
-  @@index([approverUserId, status])
-}
-
-/// A back-and-forth thread attached to one step, for "審核人有疑問但還不到
-/// 退回的地步" — a REQUEST_INFO note doesn't change the step's status; the
-/// submitter's REPLY doesn't either. The step only ever resolves via a real
-/// APPROVE or REJECT decision on DocumentApprovalStep itself.
-model DocumentApprovalStepNote {
-  id String @id @default(uuid())
-
-  stepId String
-  step   DocumentApprovalStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
-
-  authorUserId String
-  author       User   @relation(fields: [authorUserId], references: [id])
-
-  type DocumentApprovalStepNoteType
-  text String
-
-  createdAt DateTime @default(now())
-
-  @@index([stepId])
-}
-
-/// One property a space has defined for its projects — the "columns" of
-/// that space's own project-info shape, each space customizes this itself
-/// (not platform-wide, unlike the ProjectTypeOption/ProjectStatusOption
-/// this is replacing — see schema.prisma history / 大系統 doc for why).
-model ProjectPropertyDefinition {
-  id        String       @id @default(uuid())
-  name      String
-  type      PropertyType
-  sortOrder Int          @default(0)
-  createdAt DateTime     @default(now())
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  options ProjectPropertyOption[]
-  values  ProjectPropertyValue[]
-}
-
-/// The choices for one SELECT-type property definition.
-model ProjectPropertyOption {
-  id        String   @id @default(uuid())
-  label     String
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-
-  definitionId String
-  definition   ProjectPropertyDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
-
-  values ProjectPropertyValue[]
-}
-
-/// One project's value for one property definition. Exactly one of
-/// textValue/numberValue/dateValue/optionId is populated, chosen by
-/// `definition.type` — a single table with a nullable column per type
-/// rather than a true polymorphic split, the practical default for a
-/// small fixed set of value shapes.
-model ProjectPropertyValue {
-  id String @id @default(uuid())
-
-  textValue   String?
-  numberValue Float?
-  dateValue   DateTime?
-
-  optionId String?
-  option   ProjectPropertyOption? @relation(fields: [optionId], references: [id], onDelete: SetNull)
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  definitionId String
-  definition   ProjectPropertyDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
-
-  @@unique([projectId, definitionId])
-}
-
-model CompanyMembership {
-  id        String         @id @default(uuid())
-  role      MembershipRole
-  createdAt DateTime       @default(now())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id])
-
-  /// 部門/職級都可為空（尚未指派）——沒部門/職級的人只吃 PermissionRule
-  /// 裡「department=空 且 rank=空」那種通用規則，見 PermissionsService。
-  /// 不用 DB 層強制 rank 必屬於 department（那要跨兩張表驗證），app 層在
-  /// 指派時檢查，同一套「不確定的一致性交給 app 層」慣例見 ProjectTodo 的
-  /// dueDate/isOngoing XOR。
-  departmentId String?
-  department   Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  rankId       String?
-  rank         DepartmentRank? @relation(fields: [rankId], references: [id], onDelete: SetNull)
-
-  @@unique([userId, spaceId])
-}
-
-/// 公司空間的部門，OWNER 自建/排序（跟 ProjectTypeOption 一樣的自訂選項模
-/// 式）。只有公司空間會有部門——一個空間一份部門清單，不跨空間共用。
-model Department {
-  id        String   @id @default(uuid())
-  name      String
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  ranks       DepartmentRank[]
-  memberships CompanyMembership[]
-  rules       PermissionRule[]
-}
-
-/// 職級/業務性質——2026-08-31 使用者選擇「每個部門自己定義自己的職級清
-/// 單」，所以掛在 Department 底下而不是 Space 底下，不同部門的職級名稱可
-/// 以完全不一樣（例如工務部有「工地主任」，財務部有「出納」）。
-model DepartmentRank {
-  id        String   @id @default(uuid())
-  name      String
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-
-  departmentId String
-  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-
-  memberships CompanyMembership[]
-  rules       PermissionRule[]
-}
-
-/// 公司空間權限規則——一條規則＝「這個資源類型的這個動作，開放給這個部門
-/// ＋這個職級的人」。department/rank 都可留空代表「不限」，但**兩者要同時
-/// 符合才算命中（AND，不是 OR）**——2026-08-31 使用者明確選的組合邏輯，對
-/// 齊規劃書「部門×業務性質」的字面意思。找不到符合的規則＝該動作一律拒
-/// 絕（含「無部門/無職級」的人只吃 department=null 且 rank=null 的規則），
-/// 這是 2026-08-31 使用者選的「預設鎖死」語意，只管 WRITE/APPROVE/EXPORT
-/// 三種動作，READ 永遠放行不受這張表影響。
-///
-/// 沒有 @@unique：department/rank 都可為 null，Postgres 的唯一約束對多個
-/// null 不會擋重複，硬加只會製造假的安全感——重複規則交給
-/// PermissionsService 在新增時自己查重擋掉，不靠 DB 層。
-model PermissionRule {
-  id     String           @id @default(uuid())
-  action PermissionAction
-
-  resourceType PermissionResourceType
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-
-  rankId String?
-  rank   DepartmentRank? @relation(fields: [rankId], references: [id], onDelete: Cascade)
-
-  /// 欄位級唯讀限制（2026-09，顧問文件「敏感表格（成控表）欄位級唯讀限
-  /// 制」）——只在這條規則的 action=WRITE 時有意義：即使這個部門/職級被
-  /// 這條規則放行寫入 resourceType，清單裡列出的欄位名稱仍然靜默拒絕寫
-  /// 入（不拋錯，其餘欄位正常更新），比照 PermissionsService.getReadOnlyFields
-  /// 的呼叫方式。目前只在 QUOTATION（EngineeringQuotationService.updateItem
-  /// 的 quantity/unitPrice/costUnitPrice）跟 PROCUREMENT
-  /// （ProcurementComparisonsService.selectVendor 的 finalAwardedAmount）
-  /// 兩個呼叫點生效——這是顧問文件講的「成控表」在這套系統實際落地成可編
-  /// 輯欄位的地方（CostControlRow 本身沒有存自己的金額欄位，全部現算或
-  /// 透過 CostControlAdjustment，沒有可以攔的寫入點），跟 FieldChangeLog
-  /// 異動留痕機制覆蓋的是同兩個呼叫點，設計上刻意對齊。
-  readOnlyFields String[] @default([])
-
-  createdAt DateTime @default(now())
-}
-
-/// 異動留痕機制（2026-09，顧問文件「數值變更留痕與回報」）——目前只覆蓋兩個
-/// 真的有「使用者可以把既有值改成別的值」這種編輯動作的欄位：報價單細項的
-/// 單價/成本單價/數量（EngineeringQuotationService.updateItem），跟採發比
-/// 價表的決標金額（ProcurementComparisonsService.selectVendor）。成控表①
-/// 初始管制表核准後鎖定、只用一次性快照，沒有可編輯欄位；③執行中成控表本
-/// 身沒有存自己的金額欄位（全部現算或透過已有的 CostControlAdjustment 追
-/// 加減紀錄）；工程請款單一期送出後不能修改，只能新增下一期——這三個地方
-/// 結構上就不存在「改掉既有數值」的動作，故不需要這套機制。之後若新增其他
-/// 真的可編輯的金額欄位，比照這兩個呼叫點的模式擴充 FieldChangeEntityType
-/// 即可，不需要改這張表的結構。
-enum FieldChangeEntityType {
-  QUOTATION_LINE_ITEM
-  PROCUREMENT_COMPARISON
-}
-
-model FieldChangeLog {
-  id String @id @default(uuid())
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  entityType FieldChangeEntityType
-  entityId   String
-
-  fieldName  String // 例如 "unitPrice"，App 端不需要知道 schema 欄位名，只顯示 fieldLabel
-  fieldLabel String // 給使用者看的中文欄位名，例如「單價」
-
-  // 統一存成字串（不論原始型別是不是數字）——純顯示用途，不在這張表上做任
-  // 何數值運算。null 代表改之前/改之後是空值。
-  oldValue String?
-  newValue String?
-
-  changedByUserId String
-  changedByUser   User   @relation(fields: [changedByUserId], references: [id])
-
-  changedAt DateTime @default(now())
-
-  @@index([spaceId, entityType, entityId])
-}
-
-/// 案件類型（2026-09 案件類型分流＋九大階段狀態機設計）——重用原本死掉沒人
-/// 用的 Project.typeId 欄位位置，改成固定三值（顧問文件的設計案/工程案二分
-/// 法之外，正式環境查證後確認沒有既有資料受影響，但本機測試資料庫發現「設
-/// 計工程」混合型是刻意設的既有分類，一併保留）。
-enum ProjectCaseType {
-  DESIGN
-  ENGINEERING
-  DESIGN_ENGINEERING
-}
-
-/// 全案九大階段（2026-09 設計），重用原本死掉沒人用的 Project.statusId 欄
-/// 位位置。固定順序，見顧問文件三、八大系統模組第 1 項：業務接洽→設計簽約
-/// →設計階段→工程估價→工程簽約→前置作業→發包作業→施工作業→完工驗收・結
-/// 算保固。只能手動「前進下一階段」推進，不支援自動推進或跳階倒退。
-enum ProjectStage {
-  BUSINESS_CONTACT
-  DESIGN_CONTRACT
-  DESIGN_PHASE
-  ENGINEERING_QUOTATION
-  ENGINEERING_CONTRACT
-  PREPARATION
-  PROCUREMENT
-  CONSTRUCTION
-  COMPLETION_SETTLEMENT
-}
-
-model Project {
-  id   String @id @default(uuid())
-  name String
-
-  /// clientName/siteAddress/caseNumber below are the old fixed fields, now
-  /// superseded by the per-space ProjectPropertyValue system — loosened to
-  /// nullable (not removed) since new projects go through the new system
-  /// and never populate these. Left in place as a stage-1 safety net;
-  /// stage 2 (once the new system is verified) drops them for real.
-  clientName  String?
-  siteAddress String?
-  caseNumber  String?
-
-  /// Nullable — existing projects have no case type until the user
-  /// assigns one; new projects can be created without picking it up front.
-  caseType ProjectCaseType?
-
-  /// Not nullable — every project starts at the natural first stage even
-  /// if nobody has touched this field yet.
-  stage ProjectStage @default(BUSINESS_CONTACT)
-
-  /// Independent manual toggle, unrelated to caseType (2026-09 user
-  /// decision) — when true, advanceStage() skips straight over
-  /// DESIGN_PHASE only; DESIGN_CONTRACT still happens either way.
-  skipDesignPhase Boolean @default(false)
-
-  /// 客戶資料庫連結（2026-09）——不是上面 clientName 那個舊的自由文字欄位
-  /// （那個已經死了，被 ProjectPropertyValue 系統取代，這裡沒有要復活
-  /// 它）。Nullable 在 DB 層（既有專案沒有客戶），但 CreateProjectDto 要求
-  /// 新建專案一定要選，使用者決定：一致性交給 app 層，同一套慣例見
-  /// ProjectTodo 的 dueDate/isOngoing XOR。
-  clientId String?
-  client   Client? @relation(fields: [clientId], references: [id])
-
-  // Baseline anchor date: items with no predecessors start here. Date-only —
-  // no time-of-day, no timezone (see WorkItem's date fields for the same rule).
-  projectStartDate DateTime @db.Date
-
-  // Contract-committed completion date (預計結案日) — nullable since it's
-  // usually unset until a 完工日-bearing contract (e.g. the 裝修工程承攬合約書
-  // template) is actually filled and signed; see DocumentField's `writesTo`
-  // for how filling a contract writes here. Once set, the schedule engine
-  // compares the computed finish date against it and raises a
-  // SchedulingIssue if the forecast has slipped past it.
-  projectEndDate DateTime? @db.Date
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id])
-
-  // Holiday calendar, flattened onto Project rather than a separate model or a
-  // Json column: it's always 1:1 with a Project, never queried independently,
-  // and flattened scalar columns let PATCH /projects/:id/calendar validate
-  // each sub-field individually with ordinary class-validator decorators.
-  weeklyOffDays               Int[]      @default([7]) // Dart DateTime.monday..sunday (1..7); default {Sunday=7}
-  useTaiwanGovernmentCalendar Boolean    @default(true)
-  adHocHolidays               DateTime[] @default([]) @db.Date
-  adHocWorkdays               DateTime[] @default([]) @db.Date
-
-  items              WorkItem[]
-  members            ProjectMember[]
-  propertyValues     ProjectPropertyValue[]
-  generatedDocuments GeneratedDocument[]
-  todos              ProjectTodo[]
-  lineActiveFor      LineAccountLink[]
-  financeAdvances    FinanceAdvance[]
-
-  engineeringQuotation    EngineeringQuotation?
-  costControlInitialSheet CostControlInitialSheet?
-  procurementComparisons  ProcurementComparison[]
-  costControlRows         CostControlRow[]
-  ownerBillingPeriods     OwnerBillingPeriod[]
-  dailyReports            DailyReport[]
-  weeklyReports           WeeklyReport[]
-  contactRecords          ProjectContactRecord[]
-  executionPhotos         ExecutionPhoto[]
-  materialSubmissions     MaterialSubmission[]
-  pettyCashTransactions   PettyCashTransaction[]
-}
-
-/// 工程日報表（2026-09，顧問文件「工程執行紀錄系統」第一項）。設計確認
-/// （三方案二選一問過）：(1) 任何專案成員都能填，不限定 PM——「未交日
-/// 報」因此是「這個專案今天有沒有人交」，不是指名道姓；(2) 這輪先不做
-/// 照片上傳（顧問文件另列的「執行紀錄留存」項），純文字：工作內容/人力
-/// /問題記錄；(3) 「未交」判斷會跳過這個專案自己的公休日曆
-/// （isWorkingDay，跟工期表排程引擎同一套邏輯，見 DailyReportsService），
-/// 公休日不要求交報。一個專案一天只有一筆——同一天重複送出視為覆蓋（見
-/// DailyReportsService.submit 的 upsert by [projectId, reportDate]），不
-/// 是新增多筆，submittedByUserId 永遠是最後編輯的人。
-model DailyReport {
-  id String @id @default(uuid())
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  reportDate DateTime @db.Date
-
-  workContent String // 今日工作內容
-  manpower    Int? // 今日人力（選填）
-  issues      String? // 問題記錄（選填）
-
-  submittedByUserId String
-  submittedBy       User   @relation(fields: [submittedByUserId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([projectId, reportDate])
-}
-
-/// 工程週報表（2026-09，顧問文件「工程執行紀錄系統」第二項）——跟 DailyReport
-/// 同一套 upsert 慣例，一個專案一週只有一筆，key 是該週週一（Asia/Taipei，
-/// 見 WeeklyReportsService 的 mondayOfTaipeiWeek），同一週重複送出視為覆
-/// 蓋。不像日報表要逐日檢查公休日，週報只看「這週有沒有交」。
-model WeeklyReport {
-  id String @id @default(uuid())
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  weekStartDate DateTime @db.Date // 該週週一
-
-  summary      String // 本週工作摘要
-  nextWeekPlan String? // 下週計畫（選填）
-  issues       String? // 問題記錄（選填）
-
-  submittedByUserId String
-  submittedBy       User   @relation(fields: [submittedByUserId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([projectId, weekStartDate])
-}
-
-/// 聯絡單與會議記錄（2026-09，顧問文件「工程執行紀錄系統」第三項）——純
-/// CRUD 隨手記錄，不是週期性繳交，不需要 reminder service。
-enum ContactRecordType {
-  CONTACT_SHEET
-  MEETING_MINUTES
-}
-
-model ProjectContactRecord {
-  id String @id @default(uuid())
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  type       ContactRecordType
-  recordDate DateTime          @db.Date
-  title      String
-  content    String
-  attendees  String? // 自由文字，逗號分隔即可，不另建關聯表
-
-  createdByUserId String
-  createdBy       User   @relation(fields: [createdByUserId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([projectId, recordDate])
-}
-
-/// 執行照片（2026-09，顧問文件「工程執行紀錄系統」第四項，即日報表當初刻
-/// 意排除的「執行紀錄留存」）。實際檔案存在共用的 Supabase Storage
-/// （knowledge-media bucket，見 SupabaseStorageService），這裡只存
-/// storagePath，顯示時現簽 URL，不落地任何永久公開連結。獨立於
-/// DailyReport，不建關聯——日報表當初排除照片是刻意的設計，這裡是另一
-/// 個獨立功能，不回頭改日報表。
-model ExecutionPhoto {
-  id String @id @default(uuid())
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  photoDate   DateTime @db.Date
-  caption     String? // 選填文字說明
-  storagePath String // Supabase Storage 內的路徑
-
-  uploadedByUserId String
-  uploadedBy       User   @relation(fields: [uploadedByUserId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@index([projectId, photoDate])
-}
-
-/// 材料送審（2026-09，顧問文件「工程執行紀錄系統」第五項，也是最後一
-/// 項）。跟 DocumentApproval 那套多關卡簽核鏈刻意分開——這裡只是單一
-/// 送審人→單一審核結果的輕量流程，不需要固定角色關卡；審核權限比照既
-/// 有工程財務模組的慣例，用 PROJECT/WRITE 權限（assertCanWrite），不另
-/// 外定義新的審核者角色概念。
-enum MaterialSubmissionStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-model MaterialSubmission {
-  id String @id @default(uuid())
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  materialName String
-  spec         String? // 規格說明（選填）
-
-  vendorId String?
-  vendor   Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-
-  status MaterialSubmissionStatus @default(PENDING)
-
-  submittedDate DateTime  @db.Date
-  reviewedDate  DateTime?
-  reviewComment String?
-
-  submittedByUserId String
-  submittedBy       User   @relation("MaterialSubmissionSubmitter", fields: [submittedByUserId], references: [id])
-
-  reviewedByUserId String?
-  reviewedBy       User?   @relation("MaterialSubmissionReviewer", fields: [reviewedByUserId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([projectId, status])
-}
-
-model ProjectMember {
-  id        String      @id @default(uuid())
-  role      ProjectRole
-  createdAt DateTime    @default(now())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, projectId])
-}
-
-model WorkItem {
-  id           String @id @default(uuid())
-  name         String
-  durationDays Int
-
-  // 實際開始日期／實際工期 — when this item actually started and how many
-  // days it actually took, filled in separately from (and independently
-  // of) startDate（scheduler-computed）/durationDays/預計工期, which stay
-  // the planned estimate the schedule engine anchors off. Both null until
-  // the user records them — either can be set alone (e.g. "started but
-  // still running" only has actualStartDate). Deliberately excluded from
-  // every export (Gantt image/PDF etc. only ever render the planned
-  // schedule) — this is a private, after-the-fact tracking field, not part
-  // of the shareable schedule.
-  actualStartDate    DateTime? @db.Date
-  actualDurationDays Int?
-
-  // IDs of work items that must finish before this one can start. A plain
-  // array column (not a join table / FK) on purpose: the scheduler already
-  // tolerates dangling references as a non-fatal SchedulingIssue rather than
-  // erroring, which a real FK constraint would fight against for no benefit
-  // at this scale (tens to low hundreds of items per project).
-  predecessorIds String[] @default([])
-
-  tradeCategory   String?
-  colorValue      Int?
-  progressPercent Float   @default(0)
-  notes           String?
-
-  // If set (with isManuallyPinned), the scheduler anchors this item's start
-  // date here instead of computing it from predecessors.
-  manualStartDate  DateTime? @db.Date
-  isManuallyPinned Boolean   @default(false)
-
-  sortOrder Int @default(0)
-
-  // Parent work item, or null for a top-level item. Whether an item is a
-  // summary/parent row is derived dynamically (something else points at it
-  // via parentId) — not a stored flag. No DB-level cascade on this
-  // self-relation (Postgres rejects multiple cascade paths into the same
-  // table) — descendant cleanup on delete is handled in application code.
-  parentId String?
-  parent   WorkItem?  @relation("WorkItemChildren", fields: [parentId], references: [id])
-  children WorkItem[] @relation("WorkItemChildren")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  vendors WorkItemVendor[]
-}
-
-/// WorkItem ↔ Vendor 多對多（2026-09 多工項對多廠商結構，顧問文件：「專案、
-/// 工程工項與協力廠商之間為多對多關聯」）——純排程/甘特圖用途，標記「這個
-/// 工項實際上是哪些廠商在做」，跟成控表/採發比價表已經選定的廠商資料
-/// （ProcurementVendorQuote）完全分開存、不互相同步（設計確認：不透過
-/// QuotationLineItem/CostControlRow 反推，因為兩邊的工項樹狀結構是各自獨立
-/// 建立的，沒有天然對應關係）。
-model WorkItemVendor {
-  id String @id @default(uuid())
-
-  workItemId String
-  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
-
-  vendorId String
-  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@unique([workItemId, vendorId])
-  @@index([vendorId])
-}
-
 /// First 個人功能 module: a personal-space money container (現金/銀行/信用卡/
 /// 其他), 記帳系統's "帳戶". Balance is derived (initialBalance plus every
 /// transaction against it, including transfers in/out) rather than stored,
@@ -1294,8 +473,7 @@ model FinanceTransaction {
   categoryId String?
   category   FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
-  // Date-only, no time-of-day — same convention as Project/WorkItem's own
-  // date fields.
+  // Date-only, no time-of-day.
   date      DateTime @db.Date
   note      String?
   createdAt DateTime @default(now())
@@ -1402,22 +580,18 @@ model FinanceLoanRepayment {
   transaction FinanceTransaction?
 }
 
-/// 工作上先幫忙出錢，之後公司/專案還你 — see FinanceLoan's doc comment for why
+/// 工作上先幫忙出錢，之後還你 — see FinanceLoan's doc comment for why
 /// this is a separate model rather than sharing one with a "purpose" field.
 /// Always one-directional (advance out, then reimbursed in — there's no
 /// "borrow" equivalent), so unlike FinanceLoan there's no direction field:
 /// the initial transaction is always ADVANCE_OUT, every repayment is
-/// always ADVANCE_IN. `projectId` is optional — set only when the user
-/// chooses to tie this advance to a specific project's cost tracking.
+/// always ADVANCE_IN.
 model FinanceAdvance {
   id        String   @id @default(uuid())
   spaceId   String
   space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  // 說明/事由，例如「材料款」— not a reference to any DocumentTemplate/etc.,
-  // just a free-text label for what this advance was for.
+  // 說明/事由，例如「材料款」— just a free-text label for what this advance was for.
   title     String
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   /// See `FinanceLoan.settled`'s doc comment — same reasoning/sync pattern,
@@ -1689,19 +863,6 @@ model LineAccountLink {
   lastLoanListIds    String[] @default([])
   lastAdvanceListIds String[] @default([])
 
-  /// Which project "新增/完成/代辦" commands apply to — unlike 記帳 (always
-  /// the user's own 1:1 personal space), a company-space project is
-  /// ambiguous when the user belongs to more than one, so this has to be
-  /// picked once via a LINE quick-reply and remembered here until changed.
-  activeProjectId String?
-  activeProject   Project? @relation(fields: [activeProjectId], references: [id], onDelete: SetNull)
-
-  /// Set when the user picked "個人" (not a project) as their 代辦事項
-  /// target — takes priority over activeProjectId when true. Mutually
-  /// exclusive with a meaningful activeProjectId by construction (picking
-  /// one always clears the other), never both true/set at once.
-  activeTodoPersonal Boolean @default(false)
-
   /// Set while a KnowledgeItem is AWAITING_CATEGORY_DECISION and this user
   /// has just been asked "建議新增 XX 分類" — their next plain-text reply
   /// ("新增" or an existing category name) resolves this specific item,
@@ -1722,19 +883,12 @@ model LineAccountLink {
   updatedAt DateTime @updatedAt
 }
 
-/// A to-do item — distinct from 工項 (WorkItem, which is schedule/duration-
-/// bearing and feeds the Gantt engine); a todo is a plain task with no
-/// duration. Exactly one of projectId/personalOwnerUserId is set (enforced
-/// by a DB check constraint in the migration, not just app code) — a 工作
-/// todo belongs to a company-space project (optionally assigned to a
-/// project member), a 個人 todo belongs directly to its owner with no
-/// project at all. Model name kept as ProjectTodo (not renamed) even after
-/// this split to avoid a wider rename across services/app for a cosmetic
-/// gain — see 大系統V1.31.0.md.
+/// A personal to-do item, owned directly by its creator. Model name kept as
+/// ProjectTodo (not renamed) — this table used to also carry company-space
+/// project todos (`projectId`) before the company-space split; that column
+/// is gone, only the personal-owner path remains.
 model ProjectTodo {
-  id        String   @id @default(uuid())
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id String @id @default(uuid())
 
   personalOwnerUserId String?
   personalOwner       User?   @relation("TodoPersonalOwner", fields: [personalOwnerUserId], references: [id], onDelete: Cascade)
@@ -1764,9 +918,6 @@ model ProjectTodo {
   priority      TodoPriority @default(MEDIUM)
   notes         String?
 
-  assigneeUserId String?
-  assignee       User?   @relation("TodoAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
-
   /// The auto-created 行事曆 event mirroring this todo's due date/time, if
   /// any — see CalendarEvent.sourceTodoId for the full sync explanation.
   syncedCalendarEvent CalendarEvent? @relation("TodoSyncedEvent")
@@ -1775,7 +926,6 @@ model ProjectTodo {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([projectId])
   @@index([personalOwnerUserId])
 }
 
@@ -1801,7 +951,7 @@ enum KnowledgeExhibitionDecisionStatus {
 
 /// One knowledge-collection category a user has defined for themselves —
 /// e.g. 美食/景點/展覽資訊 — independent module, not scoped to any Space
-/// (see 大系統 doc: 知識庫 is account-level, not personal/company/calendar).
+/// (見 大系統 doc: 知識庫 is account-level, not personal/calendar).
 /// Sharing is at this granularity (a whole category, not per-item): making
 /// a category public exposes every item under it — present and future — to
 /// every other account on the platform except whoever's in `blacklistedUserIds`.
@@ -1823,11 +973,10 @@ model KnowledgeCategory {
 }
 
 /// One custom field a category's owner has defined for it (e.g. 美食's
-/// 店名/地址/評價) — same "each owner defines their own columns" pattern as
-/// ProjectPropertyDefinition, just scoped to a KnowledgeCategory instead of
-/// a Space. The AI content-analysis service is given the current category's
-/// field list and asked to fill in a value per field when it analyzes new
-/// content for that category.
+/// 店名/地址/評價) — each owner defines their own columns, scoped to a
+/// KnowledgeCategory. The AI content-analysis service is given the current
+/// category's field list and asked to fill in a value per field when it
+/// analyzes new content for that category.
 model KnowledgeFieldDefinition {
   id        String       @id @default(uuid())
   name      String
@@ -1910,8 +1059,7 @@ model KnowledgeItem {
 
 /// One item's value for one field definition. Exactly one of
 /// textValue/numberValue/dateValue/booleanValue/optionId is populated,
-/// chosen by `definition.type` — same single-table-per-type-column shape as
-/// ProjectPropertyValue.
+/// chosen by `definition.type`.
 model KnowledgeFieldValue {
   id String @id @default(uuid())
 
@@ -1962,478 +1110,4 @@ model AiUsageLog {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
-}
-
-// ---------------------------------------------------------------------------
-// 工程財務四表 (2026-08-14 全面重新設計，取代 2026-08-06 版本) — 工程報價單／
-// 成控管制表（內含①初始管制表／②拆項表／③執行中成控表三張子表）／採發比價
-// 表／工程請款單，全部掛在 Project 底下，順序 報價單→成控表→採發比價表→
-// 請款單。詳見記憶 project_life_os_engineering_finance_module（含使用者原話
-// 逐輪確認紀錄）。簽核統一透過泛化後的 DocumentApproval／DocumentApprovalStep
-// 掛勾（見上面 DocumentApproval 的說明），這裡不再有獨立的簽核欄位/邏輯。
-// ---------------------------------------------------------------------------
-
-/// 廠商主檔，掛在公司空間（Space）底下、跨專案共用——同一家廠商在不同案子的
-/// 請款單可以重複帶用收款帳戶資料，不用每次手動重填。
-model Vendor {
-  id String @id @default(uuid())
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  name String
-
-  taxId           String? // 統一編號/稅籍資料
-  contactPerson   String?
-  contactPhone    String?
-  address         String?
-  tradeCategory   String? // 廠商分類/工種標籤，跟 WorkItem.tradeCategory 同樣是自由文字，不開獨立分類表
-  rating          Int? // 廠商評選等級，1~5，沒評過就是 null
-  characteristics String? // 廠商特性簡短描述（跟 note 分開——這裡是「這家廠商的特點」，note 是自由備註）
-
-  bankAccount   String?
-  accountHolder String?
-  bankBranch    String?
-  note          String?
-
-  /// 法院查封標記（2026-09，顧問文件「協力商資料庫」子項）——單純一個手動
-  /// 開關，沒有自動查詢機制，使用者自己知道了就標記。
-  courtSeizureFlag Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  procurementVendorQuotes ProcurementVendorQuote[]
-  workItemAssignments     WorkItemVendor[]
-  materialSubmissions     MaterialSubmission[]
-
-  @@index([spaceId])
-}
-
-/// 客戶資料庫（2026-09，顧問文件「CRM：客戶與協力廠商雙軌管理」的客戶端那
-/// 一半——Vendor 是協力商那一半，本來就已經存在）。掛在公司空間底下，該空
-/// 間所有成員共用同一份清單，跟 Vendor 同一個信任邊界慣例。設計確認：這輪
-/// 只做「基本資料」＋「關聯專案」，顧問文件原本還提到的「聯繫紀錄」「業務
-/// 成案比例分析」使用者這輪明確要求跳過，之後如果要做要另外設計。
-model Client {
-  id String @id @default(uuid())
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  name String
-
-  contactPerson String?
-  contactPhone  String?
-  contactEmail  String?
-  address       String?
-  note          String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  projects Project[]
-
-  @@index([spaceId])
-}
-
-/// 工程報價單表頭，跟 Project 1:1。lastTargetMarginPercent/
-/// lastNegotiatedTotalAmount 只是最近一次執行 A/B 批次操作的輸入值快照，純
-/// 顯示用途，不是「常駐設定」——實際結果已經寫進每個工項自己的
-/// marginAdjustedUnitPrice/negotiatedUnitPrice。
-model EngineeringQuotation {
-  id String @id @default(uuid())
-
-  projectId String  @unique
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  lastTargetMarginPercent   Float?
-  lastNegotiatedTotalAmount Float?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  lineItems      QuotationLineItem[]
-  surchargeItems QuotationSurchargeItem[]
-}
-
-/// 報價單工項——大項/中項/細項三層自由樹狀結構，使用者自訂新增/刪除/搬動
-/// （20 大類只是預設可刪改的範本，不是固定清單）。self-relation 不開 DB
-/// cascade（Postgres 不允許同一張表多重 cascade path），子孫刪除由
-/// EngineeringQuotationService 處理，跟 WorkItem 的親子結構同一套慣例。
-///
-/// 業主報價(單價/數量→複價) 跟 成本(成本單價→成本複價) 並列在同一列，兩者
-/// 永遠一起被看（利潤/毛利率就是兩者的差）。複價/成本複價/毛利率，以及往上
-/// 彙總到大項/中項的總額，都是衍生值，不落地存欄位，由
-/// EngineeringQuotationService 現算。
-///
-/// 兩組批次調整結果各自獨立、平行存在、互不覆蓋 unitPrice 本身：
-/// - marginAdjustedUnitPrice：「A. 設定目標毛利率」批次回推的建議單價，使用
-///   者填 unitPrice 時的參考值。
-/// - negotiatedUnitPrice：「B. 議價後總金額」批次算出的議價比例套用結果。
-model QuotationLineItem {
-  id String @id @default(uuid())
-
-  quotationId String
-  quotation   EngineeringQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-
-  parentId String?
-  parent   QuotationLineItem?  @relation("QuotationLineItemTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children QuotationLineItem[] @relation("QuotationLineItemTree")
-
-  name      String
-  unit      String?
-  sortOrder Int     @default(0)
-
-  quantity      Float?
-  unitPrice     Float? // 給業主看的單價，使用者自己輸入
-  costUnitPrice Float? // 成本單價，輸入基礎
-
-  marginAdjustedUnitPrice Float?
-  negotiatedUnitPrice     Float?
-
-  note String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  costControlRowLinks    CostControlRowQuotationItem[]
-  procurementComparisons ProcurementComparison[]
-
-  @@index([quotationId])
-  @@index([parentId])
-}
-
-/// 報價單總表的「附加費用」清單，使用者自由新增刪減（不限保險費/稅金）。
-/// 每項＝工程總金額×percent，只有 isTaxLike=true 那項例外：金額基礎是「前面
-/// 全部金額（工程總金額＋其他附加費用）加總後」才乘 percent——這個例外由
-/// EngineeringQuotationService 現算時特判，不落地存計算結果。
-model QuotationSurchargeItem {
-  id String @id @default(uuid())
-
-  quotationId String
-  quotation   EngineeringQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-
-  name      String
-  percent   Float
-  isTaxLike Boolean @default(false)
-  sortOrder Int     @default(0)
-
-  createdAt DateTime @default(now())
-}
-
-/// ①初始管制表——成控管制表三張子表裡唯一要簽核的一張，跟 Project 1:1。項目
-/// 對齊報價單大項、業主報價=報價單B方案金額總和、預估成本=報價單成本複價
-/// 總和，全部是即時從 EngineeringQuotation 算出來的（沒有自己的列資料表），
-/// 直到簽核全部通過的那一刻才把當下算出的內容凍結進
-/// lockedSnapshotJson（{items:[{name,ownerQuoteAmount,estimatedCostAmount,
-/// marginPercent}]}），之後即使報價單再被改，這份已核准的紀錄也不會跟著變。
-model CostControlInitialSheet {
-  id String @id @default(uuid())
-
-  projectId String  @unique
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  lockedSnapshotJson Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  approvals DocumentApproval[]
-}
-
-/// 採發比價表——一個專案可以有多張，每一張對應報價單裡的「一個大項」（工項
-/// 只能從報價單大項清單選，不能自由輸入），跟成控列（CostControlRow）是
-/// 1:1（②拆項表定案那一刻，一列＝一個發包＝一張比價表）。
-model ProcurementComparison {
-  id String @id @default(uuid())
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  quotationLineItemId String // 對應報價單的哪個大項
-  quotationLineItem   QuotationLineItem @relation(fields: [quotationLineItemId], references: [id])
-
-  /// 業主報價／發包預算：從對應③執行中成控表那一列的「業主報價」/「預估
-  /// 成本」自動帶入，不是手填，這裡不重複存——由 ProcurementComparisonService
-  /// 透過 costControlRow 現查。
-
-  /// 估驗方式／付款方式：勾選制，"其他" 時 otherNote 為必填。
-  inspectionMethod    ProcurementInspectionMethod
-  inspectionOtherNote String?
-  paymentMethod       ProcurementPaymentMethod
-  paymentOtherNote    String?
-
-  /// 決標金額——可能跟被選中廠商原始報價不同（議價後金額）；null 表示還沒
-  /// 決標。決標後回填③執行中成控表對應列的「實際發包」。
-  finalAwardedAmount Float?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  vendorQuotes ProcurementVendorQuote[]
-
-  selectedVendorQuoteId String?                 @unique
-  selectedVendorQuote   ProcurementVendorQuote? @relation("SelectedVendor", fields: [selectedVendorQuoteId], references: [id])
-
-  costControlRow CostControlRow?
-
-  approvals DocumentApproval[]
-
-  @@index([projectId])
-}
-
-enum ProcurementInspectionMethod {
-  MONTHLY // 月估驗
-  MILESTONE // 階段完工
-  OTHER
-}
-
-enum ProcurementPaymentMethod {
-  MONTHLY_50_50 // 月付50%次月50%
-  FULL_100 // 月付100%
-  OTHER
-}
-
-/// 一家廠商在一張比價表裡的報價——預設 A/B/C 三家，可自由新增更多。廠商從
-/// Vendor 主檔選，不是自由輸入文字，之後請款單才能自動撈帳戶資料。
-/// attachmentFilePath 沿用知識庫已經在用的 SupabaseStorageService（同一個
-/// bucket 機制，路徑另外用 `procurement/{comparisonId}/{vendorQuoteId}` 前綴
-/// 區分）。
-model ProcurementVendorQuote {
-  id String @id @default(uuid())
-
-  comparisonId String
-  comparison   ProcurementComparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
-
-  vendorId String
-  vendor   Vendor @relation(fields: [vendorId], references: [id])
-
-  quotedAmount       Float // 報價(未稅)
-  negotiatedAmount   Float? // 議價(未稅)
-  awardedAmount      Float? // 發包價(未稅)
-  note               String?
-  attachmentFilePath String? // 廠商報價明細，必要附件
-
-  createdAt DateTime @default(now())
-
-  selectedFor ProcurementComparison? @relation("SelectedVendor")
-}
-
-/// 成控管制表的②拆項表／③執行中成控表——這兩張子表是「完全連動」的同一份
-/// 分組結構，不是各自維護的兩份拷貝：②是「這一列勾選了報價單哪些工項」這個
-/// 分組本身，③則是②再加上實際發包/期數金額/追加減這些持續更新的財務欄位；
-/// 一列＝一個實際發包，跟報價單工項是多對多——實際發包不一定 1:1 對應報價單
-/// 分項（例如報價時的 A/B/C/D 四項，實際可能發成 AB 一包、CD 一包）。業主
-/// 報價/預估成本由勾選的工項複價/成本複價加總算出（不落地存，CostControlService
-/// 算）；實際發包直接讀 procurementComparison.finalAwardedAmount，不重複存。
-/// 一列的身分（對應一份採發比價表）在②定案那一刻固定住，之後採發比價表跟
-/// 請款單都是把資料灌進同一列，不是重新配對——procurementComparisonId 建立
-/// 後不應再改指到別的比價表。
-model CostControlRow {
-  id String @id @default(uuid())
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  name      String // 這一列的名稱，例如「AB 發包」
-  sortOrder Int    @default(0)
-
-  procurementComparisonId String?                @unique
-  procurementComparison   ProcurementComparison? @relation(fields: [procurementComparisonId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  quotationItems        CostControlRowQuotationItem[]
-  adjustments           CostControlAdjustment[]
-  paymentRequestPeriods PaymentRequestPeriod[]
-}
-
-/// CostControlRow ↔ QuotationLineItem 多對多 join——同時是②拆項表的資料
-/// 來源：一列底下有哪些 join 記錄，就是那張拆項表要列出的工項。跟原報價單
-/// （EngineeringQuotationService 算出的「原始」分組)比較，join 記錄的新增/
-/// 刪除就是業主端追加/追減的觸發點（CostControlService 偵測異動時建立對應
-/// side=OWNER 的 CostControlAdjustment）。
-model CostControlRowQuotationItem {
-  id String @id @default(uuid())
-
-  rowId String
-  row   CostControlRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
-
-  quotationLineItemId String
-  quotationLineItem   QuotationLineItem @relation(fields: [quotationLineItemId], references: [id], onDelete: Cascade)
-
-  @@unique([rowId, quotationLineItemId])
-}
-
-enum CostControlAdjustmentType {
-  ADD // 追加
-  DEDUCT // 追減
-}
-
-/// side=OWNER：業主端的錢，來自②拆項表跟原報價單分組的差異（新增細項/刪除
-/// 細項）。side=VENDOR：廠商/發包端的錢，來自請款單的「追加款」欄位。這是
-/// 使用者明確要求的「兩件獨立的事」——各自累加進③執行中成控表對應的
-/// 業主報價/追加/追減 或 實際發包/追加/追減 兩組欄位，互不影響。多筆歷史都
-/// 保留（不是覆蓋成一個總數欄位），列表要看異動歷程時才有東西可看。
-enum CostControlAdjustmentSide {
-  OWNER
-  VENDOR
-}
-
-model CostControlAdjustment {
-  id String @id @default(uuid())
-
-  rowId String
-  row   CostControlRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
-
-  side   CostControlAdjustmentSide
-  type   CostControlAdjustmentType
-  amount Float // 恆為正數，正負由 type 決定
-  note   String?
-
-  createdAt DateTime @default(now())
-}
-
-/// 工程請款單的「一期」——廠商向我們請款（不是我們跟業主請款），對應唯一
-/// 一列③執行中成控表（一個發包/合約）。期數自由新增，不是固定「第一次~第
-/// 五次＋追加款/保留款」；periodLabel 是使用者自訂的期別名稱。
-///
-/// vendorId/vendorBankAccount 等收款資訊在建立時從
-/// costControlRow.procurementComparison.selectedVendorQuote.vendor 自動帶入
-/// 並快照（vendorNameSnapshot/vendorBankAccountSnapshot...）——之所以快照
-/// 而不是即時關聯讀取，是因為 Vendor 主檔資料之後可能被編輯，但已送出的
-/// 請款單收款資訊必須維持送出當下那一版，跟 contractAmountSnapshot 同一個
-/// 「送出即凍結」的理由。
-///
-/// additionalAmount（追加款）：填了金額，CostControlService 自動在
-/// 這一列產生 side=VENDOR 的 CostControlAdjustment；且只要填了就必須有
-/// additionalQuotationAttachmentPath（廠商另外提供、手動上傳的「追加報價
-/// 單」，PaymentRequestPeriodsService 建立/更新時檢查這個 xor 關係，跟
-/// ②拆項表因結構調整自動產生的「追加減報價單」是兩件不同的事，一個業主端
-/// 自動產生、一個廠商端手動上傳）。
-///
-/// 鎖定粒度跟①初始管制表/採發比價表不同——不是「整張請款單簽過一次就整體
-/// 鎖死」，是每一期各自獨立走完六關簽核、只鎖那一期（isLocked 查這一期自己
-/// 有沒有 APPROVED 的 DocumentApproval，整張請款單本身沒有「鎖定」狀態，
-/// 隨時可以繼續新增下一期）。
-model PaymentRequestPeriod {
-  id String @id @default(uuid())
-
-  costControlRowId String
-  costControlRow   CostControlRow @relation(fields: [costControlRowId], references: [id])
-
-  periodLabel String // 使用者自訂，例如「第一期」「保留款」
-  amount      Float
-  requestDate DateTime @db.Date
-  note        String?
-
-  /// 付款排程自動化（2026-09，顧問文件財務系統子項）——選填，未設定的既
-  /// 有/新期別不受影響。PaymentDueReminderService 每天掃 dueDate 已到/已
-  /// 過期且 paidDate 還是空的期別，LINE 通知該專案 PM；使用者透過
-  /// mark-paid 端點填 paidDate 停止催辦。同時也是「應付帳款 View」判斷
-  /// 已付/未付的依據。
-  dueDate  DateTime?
-  paidDate DateTime?
-
-  /// 發票附件檢核清單（2026-09，顧問文件財務系統子項）——選填，只做提
-  /// 醒不做阻擋：沒附發票不影響請款單既有「送出即凍結」流程,只在 App
-  /// 端用視覺標示提醒使用者記得補附件。實際檔案存在共用的
-  /// SupabaseStorageService（同 additionalQuotationAttachmentPath 的
-  /// bucket，路徑前綴 payment-request-periods/{periodId}/invoice.*）。
-  invoiceAttachmentPath String?
-
-  additionalAmount                  Float?
-  additionalQuotationAttachmentPath String?
-
-  vendorNameSnapshot          String
-  vendorBankAccountSnapshot   String?
-  vendorAccountHolderSnapshot String?
-  vendorBankBranchSnapshot    String?
-
-  /// 送出當下自動帶入的快照（合約金額、送出前的累計已請款百分比），純紀錄
-  /// 用途——之後合約金額若被追加/追減修改，已送出的請款單快照仍保留當時的值。
-  contractAmountSnapshot Float
-  billedPercentBefore    Float
-
-  submittedByUserId String
-  submittedBy       User   @relation(fields: [submittedByUserId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  approvals DocumentApproval[]
-
-  @@index([costControlRowId])
-}
-
-/// 業主端估驗計價（2026-09，顧問文件「對業主（估驗計價）＋對廠商兩類請款
-/// 單」的業主端那一半——PaymentRequestPeriod 只做對廠商付款，這裡補上對
-/// 業主收款）。設計確認（兩方案二選一）：(1) 掛在 Project 底下，不綁定任
-/// 何一個 CostControlRow/發包——業主的估驗計價針對整個工程進度，不是特定
-/// 一個發包合約；(2) 金額由使用者依實際估驗進度手動輸入，不自動試算；(3)
-/// 純記錄與匯出用途，不走簽核（業主端對外文件，跟對廠商的請款簽核流程不
-/// 同）。期數自由新增，沒有「鎖定」狀態——create/update/delete 都能做，跟
-/// PaymentRequestPeriod（create-only，鎖定靠簽核）不同。
-model OwnerBillingPeriod {
-  id String @id @default(uuid())
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  periodLabel String // 使用者自訂，例如「第一期估驗」
-  amount      Float
-  requestDate DateTime @db.Date
-  note        String?
-
-  /// 應收帳款 View 判斷已收/未收的依據（2026-09，顧問文件財務系統子
-  /// 項）——選填，未設定代表還沒收到這筆款項。跟 PaymentRequestPeriod.paidDate
-  /// 是同一組「應收應付」設計的兩邊。
-  collectedDate DateTime?
-
-  /// 建立當下自動帶入的快照（報價單當時的合約總金額、建立前的累計已估驗
-  /// 百分比）——純紀錄用途，之後報價單金額若再變動，這裡仍保留當時的值，
-  /// 跟 PaymentRequestPeriod 的 contractAmountSnapshot/billedPercentBefore
-  /// 同一個理由。只在 create 時算一次，update 不重新計算。
-  contractAmountSnapshot Float
-  billedPercentBefore    Float
-
-  createdByUserId String
-  createdBy       User   @relation(fields: [createdByUserId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@index([projectId])
-}
-
-/// 零用金規則（2026-09，顧問文件財務系統子項）——掛在公司空間底下（不是
-/// 專案底下），全空間共用同一本零用金帳。projectId 選填，只是「這筆支出
-/// 花在哪個專案」的標記，不影響餘額計算範圍（餘額永遠是整個空間的存入減
-/// 支出）。權限沿用既有 PAYMENT_REQUEST resourceType——零用金屬於財務性
-/// 質的操作，沒必要為此新開一個 resourceType。
-enum PettyCashType {
-  DEPOSIT
-  EXPENSE
-}
-
-model PettyCashTransaction {
-  id String @id @default(uuid())
-
-  spaceId String
-  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  transactionDate DateTime      @db.Date
-  type            PettyCashType
-  amount          Float
-  purpose         String
-
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  createdByUserId String
-  createdBy       User   @relation(fields: [createdByUserId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@index([spaceId, transactionDate])
 }

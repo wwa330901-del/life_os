@@ -1,11 +1,6 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { MembershipRole, SpaceType } from '../../generated/prisma/client.js';
+import { SpaceType } from '../../generated/prisma/client.js';
 
 @Injectable()
 export class SpacesService {
@@ -39,32 +34,18 @@ export class SpacesService {
     });
   }
 
-  /** All spaces a user is allowed to see: their personal space, their
-   * calendar space (if created), + any company they're a member of. */
+  /** All spaces a user is allowed to see: their personal space and their
+   * calendar space (if created). */
   async listForUser(userId: string) {
-    const [personalSpace, calendarSpace, memberships] = await Promise.all([
+    const [personalSpace, calendarSpace] = await Promise.all([
       this.prisma.space.findUnique({ where: { ownerUserId: userId } }),
       this.prisma.space.findUnique({ where: { calendarOwnerUserId: userId } }),
-      this.prisma.companyMembership.findMany({
-        where: { userId },
-        include: { space: true },
-      }),
     ]);
 
-    const companySpaces = memberships.map((m) => ({
-      id: m.space.id,
-      type: m.space.type,
-      name: m.space.name,
-      role: m.role,
-    }));
-
-    const spaces = [
-      ...(personalSpace ? [{ id: personalSpace.id, type: personalSpace.type, name: personalSpace.name, role: null }] : []),
-      ...(calendarSpace ? [{ id: calendarSpace.id, type: calendarSpace.type, name: calendarSpace.name, role: null }] : []),
-      ...companySpaces,
+    return [
+      ...(personalSpace ? [{ id: personalSpace.id, type: personalSpace.type, name: personalSpace.name }] : []),
+      ...(calendarSpace ? [{ id: calendarSpace.id, type: calendarSpace.type, name: calendarSpace.name }] : []),
     ];
-
-    return spaces;
   }
 
   /** Confirms the user may access this space, and returns it. Throws otherwise. */
@@ -80,76 +61,12 @@ export class SpacesService {
       if (space.ownerUserId !== userId) {
         throw new ForbiddenException('You do not have access to this space');
       }
-      return { ...space, role: null };
+      return space;
     }
 
-    if (space.type === SpaceType.CALENDAR) {
-      if (space.calendarOwnerUserId !== userId) {
-        throw new ForbiddenException('You do not have access to this space');
-      }
-      return { ...space, role: null };
-    }
-
-    const membership = await this.prisma.companyMembership.findUnique({
-      where: { userId_spaceId: { userId, spaceId } },
-    });
-    if (!membership) {
+    if (space.calendarOwnerUserId !== userId) {
       throw new ForbiddenException('You do not have access to this space');
     }
-
-    return { ...space, role: membership.role };
-  }
-
-  /** Every member of a company space — used to populate "who can I add to
-   * this project" pickers. Any member of the space may call this (not just
-   * platform admins, unlike the equivalent admin endpoint). */
-  async listMembers(userId: string, spaceId: string) {
-    await this.getForUserOrThrow(userId, spaceId);
-    const memberships = await this.prisma.companyMembership.findMany({
-      where: { spaceId },
-      include: {
-        user: { select: { id: true, username: true, name: true, email: true } },
-        department: true,
-        rank: true,
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    return memberships.map((m) => ({
-      userId: m.user.id,
-      username: m.user.username,
-      name: m.user.name,
-      email: m.user.email,
-      role: m.role,
-      departmentId: m.departmentId,
-      departmentName: m.department?.name ?? null,
-      rankId: m.rankId,
-      rankName: m.rank?.name ?? null,
-    }));
-  }
-
-  /** Company spaces only — personal/calendar spaces are 1:1-per-user and
-   * not something this endpoint is meant to touch. OWNER-only (2026-08-03
-   * user decision, confirming by typing the space's name is enforced
-   * client-side only — the real authorization is this role check).
-   * `Project.spaceId`/`CompanyMembership.spaceId` are the only two
-   * `ON DELETE RESTRICT` foreign keys pointing at Space (everything else —
-   * DocumentTemplate, GeneratedDocument, ProjectPropertyDefinition, etc. —
-   * cascades), so both have to be cleared explicitly before the Space
-   * itself can go; deleting the Projects first cascades away everything
-   * under them (WorkItem/ProjectMember/ProjectTodo/GeneratedDocument/
-   * ProjectPropertyValue/...) via their own existing Cascade rules. */
-  async remove(userId: string, spaceId: string): Promise<void> {
-    const space = await this.getForUserOrThrow(userId, spaceId);
-    if (space.type !== SpaceType.COMPANY) {
-      throw new BadRequestException('只能刪除公司空間');
-    }
-    if (space.role !== MembershipRole.OWNER) {
-      throw new ForbiddenException('只有空間擁有者可以刪除這個空間');
-    }
-    await this.prisma.$transaction([
-      this.prisma.project.deleteMany({ where: { spaceId } }),
-      this.prisma.companyMembership.deleteMany({ where: { spaceId } }),
-      this.prisma.space.delete({ where: { id: spaceId } }),
-    ]);
+    return space;
   }
 }

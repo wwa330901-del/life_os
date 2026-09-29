@@ -4,7 +4,7 @@ import { FinanceTransactionsService } from '../finance/finance-transactions.serv
 import { FinanceBudgetsService } from '../finance/finance-budgets.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { TodosService } from '../todos/todos.service';
-import { FinanceTransactionType, PropertyType } from '../../generated/prisma/client.js';
+import { FinanceTransactionType } from '../../generated/prisma/client.js';
 import { taipeiCurrentMonth } from '../common/taipei-date';
 
 /** Gemini Interactions API's tool-declaration shape (`FunctionT` in the SDK
@@ -45,7 +45,7 @@ export const AI_QUERY_TOOLS = [
   {
     type: 'function' as const,
     name: 'list_todos',
-    description: '列出使用者的代辦事項（個人 + 所有參與專案的工作代辦），可依狀態篩選。',
+    description: '列出使用者的代辦事項，可依狀態篩選。',
     parameters: {
       type: 'object',
       properties: {
@@ -55,24 +55,6 @@ export const AI_QUERY_TOOLS = [
           description: 'pending=尚未完成且非持續性任務, done=已完成, ongoing=持續性任務, all=全部，預設 pending',
         },
       },
-    },
-  },
-  {
-    type: 'function' as const,
-    name: 'list_projects',
-    description: '列出使用者參與的所有專案，包含每個專案的自訂屬性值（案號、業主名稱等）。',
-    parameters: { type: 'object', properties: {} },
-  },
-  {
-    type: 'function' as const,
-    name: 'get_project_detail',
-    description: '依名稱找一個特定專案的完整資料（模糊比對專案名稱）。',
-    parameters: {
-      type: 'object',
-      properties: {
-        projectName: { type: 'string' },
-      },
-      required: ['projectName'],
     },
   },
   {
@@ -113,10 +95,6 @@ export class AiQueryToolsService {
         return this.listFinanceTransactions(userId, args);
       case 'list_todos':
         return this.listTodos(userId, args);
-      case 'list_projects':
-        return this.listProjects(userId);
-      case 'get_project_detail':
-        return this.getProjectDetail(userId, args);
       case 'list_calendar_events':
         return this.listCalendarEvents(userId, args);
       default:
@@ -186,13 +164,9 @@ export class AiQueryToolsService {
 
   private async listTodos(userId: string, args: ToolArgs) {
     const status = typeof args.status === 'string' ? args.status : 'pending';
-    const { personal, work } = await this.todosService.listAll(userId);
-    const all = [
-      ...personal.map((t) => ({ ...t, projectName: '個人' })),
-      ...work.flatMap((w) => w.todos.map((t) => ({ ...t, projectName: w.projectName }))),
-    ];
+    const { personal } = await this.todosService.listAll(userId);
 
-    const matches = (t: (typeof all)[number]) => {
+    const matches = (t: (typeof personal)[number]) => {
       switch (status) {
         case 'done':
           return t.done;
@@ -206,89 +180,12 @@ export class AiQueryToolsService {
       }
     };
 
-    return all.filter(matches).map((t) => ({
+    return personal.filter(matches).map((t) => ({
       title: t.title,
-      projectName: t.projectName,
       dueDate: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
       isOngoing: t.isOngoing,
       done: t.done,
     }));
-  }
-
-  private async listProjects(userId: string) {
-    const projects = await this.prisma.project.findMany({
-      where: { members: { some: { userId } } },
-      include: {
-        space: true,
-        propertyValues: { include: { definition: true, option: true } },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    return projects.map((p) => this.projectSummary(p));
-  }
-
-  private async getProjectDetail(userId: string, args: ToolArgs) {
-    const projectName = typeof args.projectName === 'string' ? args.projectName.trim() : '';
-    if (!projectName) return { error: '沒有指定專案名稱' };
-    const projects = await this.prisma.project.findMany({
-      where: { members: { some: { userId } }, name: { contains: projectName } },
-      include: {
-        space: true,
-        propertyValues: { include: { definition: true, option: true } },
-      },
-      take: 5,
-    });
-    if (projects.length === 0) return { found: false };
-    return { found: true, matches: projects.map((p) => this.projectSummary(p)) };
-  }
-
-  private projectSummary(project: {
-    id: string;
-    name: string;
-    projectStartDate: Date;
-    projectEndDate: Date | null;
-    space: { name: string };
-    propertyValues: {
-      definition: { name: string; type: PropertyType };
-      textValue: string | null;
-      numberValue: number | null;
-      dateValue: Date | null;
-      option: { label: string } | null;
-    }[];
-  }) {
-    const properties: Record<string, string | number | null> = {};
-    for (const value of project.propertyValues) {
-      properties[value.definition.name] = this.propertyValueToDisplay(value);
-    }
-    return {
-      id: project.id,
-      name: project.name,
-      spaceName: project.space.name,
-      projectStartDate: project.projectStartDate.toISOString().slice(0, 10),
-      projectEndDate: project.projectEndDate ? project.projectEndDate.toISOString().slice(0, 10) : null,
-      properties,
-    };
-  }
-
-  private propertyValueToDisplay(value: {
-    definition: { type: PropertyType };
-    textValue: string | null;
-    numberValue: number | null;
-    dateValue: Date | null;
-    option: { label: string } | null;
-  }): string | number | null {
-    switch (value.definition.type) {
-      case PropertyType.TEXT:
-        return value.textValue;
-      case PropertyType.NUMBER:
-        return value.numberValue;
-      case PropertyType.DATE:
-        return value.dateValue ? value.dateValue.toISOString().slice(0, 10) : null;
-      case PropertyType.SELECT:
-        return value.option?.label ?? null;
-      default:
-        return null;
-    }
   }
 
   private async listCalendarEvents(userId: string, args: ToolArgs) {

@@ -131,7 +131,6 @@ class _SpaceRow extends StatelessWidget {
         ? switch (s.type) {
             SpaceType.personal => AppAccents.personal(scheme.brightness),
             SpaceType.calendar => AppAccents.calendar(scheme.brightness),
-            SpaceType.company => AppAccents.company(scheme.brightness),
           }
         : switch (_kind) {
             _NonSpaceKind.knowledge => AppAccents.knowledge(scheme.brightness),
@@ -143,7 +142,6 @@ class _SpaceRow extends StatelessWidget {
         ? switch (s.type) {
             SpaceType.personal => Icons.person_outline,
             SpaceType.calendar => Icons.calendar_today_outlined,
-            SpaceType.company => Icons.apartment,
           }
         : switch (_kind) {
             _NonSpaceKind.knowledge => Icons.auto_stories_outlined,

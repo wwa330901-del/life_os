@@ -22,34 +22,21 @@ class AppUser {
   );
 }
 
-enum SpaceType { personal, company, calendar }
+enum SpaceType { personal, calendar }
 
 class SpaceSummary {
-  const SpaceSummary({
-    required this.id,
-    required this.type,
-    required this.name,
-    required this.role,
-  });
+  const SpaceSummary({required this.id, required this.type, required this.name});
 
   final String id;
   final SpaceType type;
   final String name;
 
-  /// Null for a personal space. One of OWNER / ADMIN / MEMBER for a company space.
-  final String? role;
-
   factory SpaceSummary.fromJson(Map<String, dynamic> json) {
     final typeStr = json['type'] as String;
     return SpaceSummary(
       id: json['id'] as String,
-      type: switch (typeStr) {
-        'PERSONAL' => SpaceType.personal,
-        'CALENDAR' => SpaceType.calendar,
-        _ => SpaceType.company,
-      },
+      type: typeStr == 'CALENDAR' ? SpaceType.calendar : SpaceType.personal,
       name: json['name'] as String,
-      role: json['role'] as String?,
     );
   }
 }

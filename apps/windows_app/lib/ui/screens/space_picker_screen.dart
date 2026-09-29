@@ -308,7 +308,7 @@ class _TodoSpaceCard extends StatelessWidget {
                 const Text('代辦事項', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 const SizedBox(height: 2),
                 Text(
-                  '個人 + 工作代辦',
+                  '持續性任務與待辦',
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],
@@ -356,7 +356,7 @@ class _AiAssistantCard extends StatelessWidget {
                 const Text('AI 問答', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 const SizedBox(height: 2),
                 Text(
-                  '問你的記帳/代辦/專案/行事曆',
+                  '問你的記帳/代辦/行事曆',
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],
@@ -380,7 +380,6 @@ class _SpaceCard extends StatelessWidget {
     final tint = switch (space.type) {
       SpaceType.personal => AppAccents.personal(scheme.brightness),
       SpaceType.calendar => AppAccents.calendar(scheme.brightness),
-      SpaceType.company => AppAccents.company(scheme.brightness),
     };
 
     return SizedBox(
@@ -404,7 +403,6 @@ class _SpaceCard extends StatelessWidget {
                     switch (space.type) {
                       SpaceType.personal => Icons.person_outline,
                       SpaceType.calendar => Icons.calendar_today_outlined,
-                      SpaceType.company => Icons.apartment,
                     },
                     size: 18,
                     color: scheme.onSurface,
@@ -422,7 +420,6 @@ class _SpaceCard extends StatelessWidget {
                   switch (space.type) {
                     SpaceType.personal => '個人空間',
                     SpaceType.calendar => '行事曆空間',
-                    SpaceType.company => '公司空間 · ${space.role}',
                   },
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),

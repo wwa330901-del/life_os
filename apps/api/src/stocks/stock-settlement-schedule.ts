@@ -4,8 +4,8 @@
 // finance-recurring-schedule.ts, reusing the working-day engine 工期表
 // scheduling already built.
 
-import { addWorkingDays } from '../projects/scheduling/working-day-calculator';
-import { HolidayCalendarInput } from '../projects/scheduling/scheduling-types';
+import { addWorkingDays } from '../common/scheduling/working-day-calculator';
+import { HolidayCalendarInput } from '../common/scheduling/scheduling-types';
 
 /** Standard Taiwan market calendar: weekends off + government holidays, no
  * per-project ad-hoc overrides — the same days TWSE itself is closed. */

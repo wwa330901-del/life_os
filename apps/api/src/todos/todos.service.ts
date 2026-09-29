@@ -1,12 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ProjectsService } from '../projects/projects.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
-import { PermissionsService } from '../permissions/permissions.service';
-import {
-  PermissionAction,
-  PermissionResourceType,
-} from '../../generated/prisma/client.js';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
 
@@ -17,101 +11,57 @@ interface SyncableTodo {
   dueDateAllDay: boolean;
   isOngoing: boolean;
   personalOwnerUserId: string | null;
-  assigneeUserId: string | null;
 }
 
 /** 代辦事項 has no upper bound otherwise — completed items just kept
  * accumulating forever (same class of problem as the 知識庫 pagination fix,
  * see 大系統V1.43.0), except here the fix is UX-driven rather than purely
  * performance-driven: a completed item stops being useful in the live list
- * the moment it's checked off. `listAll` (the 個人/工作 live view) excludes
- * every `done` item immediately (2026-08-05: changed from "stays visible
- * through the day it was completed" after the user tried that and found it
+ * the moment it's checked off. `listAll` (the live view) excludes every
+ * `done` item immediately (2026-08-05: changed from "stays visible through
+ * the day it was completed" after the user tried that and found it
  * pointless — a same-day-completed item still cluttered the active list
  * all day); `listCompleted` (the 已完成 tab) is the paginated, searchable
  * place it goes to remain findable, effective immediately too. */
 const COMPLETED_TODOS_PAGE_SIZE = 10;
 
-/** 代辦事項 — split into 個人 (owned directly by a user, no project at all)
- * and 工作 (owned by a company-space project, same as the old project-scoped
- * todos). Both live in the same `ProjectTodo` table (see schema comment),
- * this service is just the one place that knows how to tell them apart and
- * enforce access for each. */
+/** 個人代辦事項 — owned directly by their creator, no project/company-space
+ * concept involved (see schema comment on ProjectTodo for why the table is
+ * still named that). */
 @Injectable()
 export class TodosService {
   private readonly logger = new Logger(TodosService.name);
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly projectsService: ProjectsService,
     private readonly calendarEventsService: CalendarEventsService,
-    private readonly permissionsService: PermissionsService,
   ) {}
 
-  /** Grouped view for the top-level 代辦事項 screen: 個人 as one flat list,
-   * 工作 as one list per project the user belongs to. */
   async listAll(userId: string) {
     // A completed item drops out of this live view the instant it's
     // checked off — see `listCompleted` for where it goes after that.
-    const visibleDone = { done: false };
-
-    const [personal, memberships] = await Promise.all([
-      this.prisma.projectTodo.findMany({
-        where: { personalOwnerUserId: userId, ...visibleDone },
-        orderBy: [{ done: 'asc' }, { sortOrder: 'asc' }],
-      }),
-      this.prisma.projectMember.findMany({
-        where: { userId },
-        include: { project: { include: { space: true } } },
-        orderBy: { createdAt: 'desc' },
-      }),
-    ]);
-
-    const projectIds = memberships.map((m) => m.projectId);
-    const workTodos = projectIds.length
-      ? await this.prisma.projectTodo.findMany({
-          where: { projectId: { in: projectIds }, ...visibleDone },
-          orderBy: [{ done: 'asc' }, { sortOrder: 'asc' }],
-        })
-      : [];
-    const todosByProject = new Map<string, typeof workTodos>();
-    for (const todo of workTodos) {
-      const list = todosByProject.get(todo.projectId!) ?? [];
-      list.push(todo);
-      todosByProject.set(todo.projectId!, list);
-    }
-
-    const work = memberships.map((m) => ({
-      projectId: m.projectId,
-      projectName: m.project.name,
-      spaceName: m.project.space.name,
-      todos: todosByProject.get(m.projectId) ?? [],
-    }));
-
-    return { personal, work };
+    const personal = await this.prisma.projectTodo.findMany({
+      where: { personalOwnerUserId: userId, done: false },
+      orderBy: [{ done: 'asc' }, { sortOrder: 'asc' }],
+    });
+    return { personal };
   }
 
-  /** 已完成代辦事項 — full history (個人 + 工作 combined, no date limit),
-   * cursor-paginated 10/page with an optional title search, replacing what
-   * used to just be the tail end of `listAll`'s ever-growing list. */
+  /** 已完成代辦事項 — full history, cursor-paginated 10/page with an
+   * optional title search, replacing what used to just be the tail end of
+   * `listAll`'s ever-growing list. */
   async listCompleted(
     userId: string,
     filter: { search?: string; cursor?: string } = {},
   ) {
     const take = COMPLETED_TODOS_PAGE_SIZE;
-    const memberships = await this.prisma.projectMember.findMany({
-      where: { userId },
-      select: { projectId: true },
-    });
-    const projectIds = memberships.map((m) => m.projectId);
 
     const rows = await this.prisma.projectTodo.findMany({
       where: {
         done: true,
-        OR: [{ personalOwnerUserId: userId }, { projectId: { in: projectIds } }],
+        personalOwnerUserId: userId,
         ...(filter.search ? { title: { contains: filter.search, mode: 'insensitive' } } : {}),
       },
-      include: { project: { include: { space: true } } },
       orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
       take: take + 1,
       ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
@@ -120,11 +70,7 @@ export class TodosService {
     const hasMore = rows.length > take;
     const page = hasMore ? rows.slice(0, take) : rows;
     return {
-      items: page.map(({ project, ...todo }) => ({
-        ...todo,
-        projectName: project?.name ?? null,
-        spaceName: project?.space.name ?? null,
-      })),
+      items: page,
       nextCursor: hasMore ? page[page.length - 1].id : null,
     };
   }
@@ -132,46 +78,16 @@ export class TodosService {
   async create(userId: string, dto: CreateTodoDto) {
     this.assertDueDateXorOngoing(dto.dueDate ?? null, dto.isOngoing ?? false);
 
-    if (!dto.projectId) {
-      const todo = await this.prisma.projectTodo.create({
-        data: {
-          personalOwnerUserId: userId,
-          title: dto.title,
-          dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-          dueDateAllDay: dto.dueDateAllDay ?? true,
-          isOngoing: dto.isOngoing ?? false,
-          priority: dto.priority,
-          notes: dto.notes,
-          sortOrder: await this.nextSortOrder({ personalOwnerUserId: userId }),
-        },
-      });
-      await this.syncCalendarEvent(todo);
-      return todo;
-    }
-
-    const project = await this.getAuthorizedProject(userId, dto.projectId);
-    // 個人代辦不屬於公司空間資源，不受這套權限管——只有掛在專案底下的工作
-    // 代辦才檢查（見 project_life_os_company_space_target_scope 記憶）。
-    await this.permissionsService.assertCan(
-      userId,
-      project.spaceId,
-      PermissionResourceType.TODOS,
-      PermissionAction.WRITE,
-    );
-    if (dto.assigneeUserId) {
-      await this.assertProjectMember(project.id, dto.assigneeUserId);
-    }
     const todo = await this.prisma.projectTodo.create({
       data: {
-        projectId: project.id,
+        personalOwnerUserId: userId,
         title: dto.title,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         dueDateAllDay: dto.dueDateAllDay ?? true,
         isOngoing: dto.isOngoing ?? false,
         priority: dto.priority,
         notes: dto.notes,
-        assigneeUserId: dto.assigneeUserId,
-        sortOrder: await this.nextSortOrder({ projectId: project.id }),
+        sortOrder: await this.nextSortOrder(userId),
       },
     });
     await this.syncCalendarEvent(todo);
@@ -180,9 +96,6 @@ export class TodosService {
 
   async update(userId: string, id: string, dto: UpdateTodoDto) {
     const existing = await this.getAuthorizedTodo(userId, id);
-    if (dto.assigneeUserId && existing.projectId) {
-      await this.assertProjectMember(existing.projectId, dto.assigneeUserId);
-    }
 
     // Only re-check the date/ongoing rule when this update actually
     // touches one of those two fields — an update that's e.g. only
@@ -209,18 +122,12 @@ export class TodosService {
         ...(dto.isOngoing !== undefined && { isOngoing: dto.isOngoing }),
         ...(dto.priority !== undefined && { priority: dto.priority }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
-        ...(dto.assigneeUserId !== undefined && { assigneeUserId: dto.assigneeUserId }),
       },
     });
     // 完成/取消完成、標題、優先順序、備註都不影響行事曆那筆——只有真的會改變
-    // 「這件事什麼時候、算誰的」的欄位才需要重新同步，其餘情況跳過這次多餘
-    // 的資料庫查詢。
-    if (
-      dto.dueDate !== undefined ||
-      dto.dueDateAllDay !== undefined ||
-      dto.isOngoing !== undefined ||
-      dto.assigneeUserId !== undefined
-    ) {
+    // 「這件事什麼時候」的欄位才需要重新同步，其餘情況跳過這次多餘的資料庫
+    // 查詢。
+    if (dto.dueDate !== undefined || dto.dueDateAllDay !== undefined || dto.isOngoing !== undefined) {
       await this.syncCalendarEvent(todo);
     }
     return todo;
@@ -252,20 +159,19 @@ export class TodosService {
   }
 
   /** 代辦事項→行事曆 one-way sync (2026-08-05, explicit user request): a
-   * todo with a due date/time gets a matching CalendarEvent in its
-   * owner's (個人 owner, or 工作 todo's assignee) 行事曆 space, kept in
-   * sync on every create/update. The reverse never happens — editing the
-   * CalendarEvent directly never writes back to the todo, and completing
-   * a todo deliberately leaves the calendar event alone (explicit user
-   * choice — it's a historical record, not something that should vanish
-   * just because the task is done). Best-effort: a sync failure is
-   * logged and swallowed, never thrown back to the caller — a todo write
-   * must never fail just because its calendar mirror couldn't be made,
-   * same "must not block the primary action" philosophy as
+   * todo with a due date/time gets a matching CalendarEvent in its owner's
+   * 行事曆 space, kept in sync on every create/update. The reverse never
+   * happens — editing the CalendarEvent directly never writes back to the
+   * todo, and completing a todo deliberately leaves the calendar event
+   * alone (explicit user choice — it's a historical record, not something
+   * that should vanish just because the task is done). Best-effort: a sync
+   * failure is logged and swallowed, never thrown back to the caller — a
+   * todo write must never fail just because its calendar mirror couldn't
+   * be made, same "must not block the primary action" philosophy as
    * `CalendarEventsService`'s own Google push. */
   private async syncCalendarEvent(todo: SyncableTodo): Promise<void> {
     try {
-      const ownerUserId = todo.personalOwnerUserId ?? todo.assigneeUserId;
+      const ownerUserId = todo.personalOwnerUserId;
       const existing = await this.prisma.calendarEvent.findUnique({
         where: { sourceTodoId: todo.id },
       });
@@ -299,8 +205,6 @@ export class TodosService {
       }
 
       if (existing.spaceId !== calendarSpace.id) {
-        // Owner changed (a 工作代辦 got reassigned) — the old event lives
-        // in the previous owner's calendar space, can't just be moved.
         await this.removeSyncedEvent(existing);
         await this.calendarEventsService.create(ownerUserId, calendarSpace.id, eventInput, todo.id);
         return;
@@ -318,52 +222,22 @@ export class TodosService {
     await this.calendarEventsService.remove(space.calendarOwnerUserId, existing.spaceId, existing.id);
   }
 
-  private async nextSortOrder(where: { projectId: string } | { personalOwnerUserId: string }) {
+  private async nextSortOrder(personalOwnerUserId: string) {
     const maxSortOrder = await this.prisma.projectTodo.aggregate({
-      where,
+      where: { personalOwnerUserId },
       _max: { sortOrder: true },
     });
     return (maxSortOrder._max.sortOrder ?? -1) + 1;
   }
 
-  private async getAuthorizedProject(userId: string, projectId: string) {
-    const project = await this.projectsService.getProjectOrThrow(projectId);
-    await this.projectsService.assertAccess(userId, project);
-    return project;
-  }
-
-  /** Only ever called from `update`/`remove` — both writes — so gating
-   * TODOS/WRITE here (for the 工作 branch only; 個人 todos have no spaceId
-   * and stay untouched) covers both without a separate read/write split
-   * like `ProjectsService.assertAccess`/`assertCanWrite` needed. */
   private async getAuthorizedTodo(userId: string, id: string) {
     const todo = await this.prisma.projectTodo.findUnique({ where: { id } });
     if (!todo) {
       throw new NotFoundException('代辦事項不存在');
     }
-    if (todo.personalOwnerUserId) {
-      if (todo.personalOwnerUserId !== userId) {
-        throw new ForbiddenException('You do not have access to this todo');
-      }
-      return todo;
+    if (todo.personalOwnerUserId !== userId) {
+      throw new ForbiddenException('You do not have access to this todo');
     }
-    const project = await this.projectsService.getProjectOrThrow(todo.projectId!);
-    await this.projectsService.assertAccess(userId, project);
-    await this.permissionsService.assertCan(
-      userId,
-      project.spaceId,
-      PermissionResourceType.TODOS,
-      PermissionAction.WRITE,
-    );
     return todo;
-  }
-
-  private async assertProjectMember(projectId: string, userId: string) {
-    const membership = await this.prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId, projectId } },
-    });
-    if (!membership) {
-      throw new BadRequestException('指派對象不是這個專案的成員');
-    }
   }
 }

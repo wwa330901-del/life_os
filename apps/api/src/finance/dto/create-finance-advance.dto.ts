@@ -18,8 +18,4 @@ export class CreateFinanceAdvanceDto {
   @IsOptional()
   @IsString()
   note?: string;
-
-  @IsOptional()
-  @IsString()
-  projectId?: string;
 }

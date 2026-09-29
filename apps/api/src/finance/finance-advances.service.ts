@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccessService } from './finance-access.service';
-import { ProjectsService } from '../projects/projects.service';
 import { FinanceTransactionType } from '../../generated/prisma/client.js';
 import { CreateFinanceAdvanceDto } from './dto/create-finance-advance.dto';
 import { CreateFinanceAdvanceRepaymentDto } from './dto/create-finance-advance-repayment.dto';
@@ -11,39 +10,36 @@ import { UpdateFinanceAdvanceRepaymentDto } from './dto/update-finance-advance-r
 const advanceInclude = {
   initialTransaction: true,
   repayments: { include: { transaction: true }, orderBy: { createdAt: 'asc' as const } },
-  project: true,
 };
 
-/** 工作上先幫忙出錢，之後公司/專案還你 — see the `FinanceAdvance` schema doc
- * comment for why this is a separate model/service from
- * `FinanceLoansService` despite the near-identical mechanic. Unlike a
- * personal loan there's no direction: the initial move is always
- * `ADVANCE_OUT`, every repayment is always `ADVANCE_IN`. */
+/** 工作上先幫忙出錢，之後還你 — see the `FinanceAdvance` schema doc comment
+ * for why this is a separate model/service from `FinanceLoansService`
+ * despite the near-identical mechanic. Unlike a personal loan there's no
+ * direction: the initial move is always `ADVANCE_OUT`, every repayment is
+ * always `ADVANCE_IN`. */
 @Injectable()
 export class FinanceAdvancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: FinanceAccessService,
-    private readonly projectsService: ProjectsService,
   ) {}
 
-  /** Cursor-paginated (30/page), optionally filtered by `projectId`/`settled`
-   * — see `FinanceLoansService.list`'s doc comment for why `settled` filters
-   * at the query level against a persisted column rather than being sorted
-   * out client-side after an unfiltered page load. `from`/`to` (both
-   * inclusive) filter by the advance's `initialTransaction.date` — used by
-   * the App's date/week/month history search. */
+  /** Cursor-paginated (30/page), optionally filtered by `settled` — see
+   * `FinanceLoansService.list`'s doc comment for why `settled` filters at
+   * the query level against a persisted column rather than being sorted out
+   * client-side after an unfiltered page load. `from`/`to` (both inclusive)
+   * filter by the advance's `initialTransaction.date` — used by the App's
+   * date/week/month history search. */
   async list(
     userId: string,
     spaceId: string,
-    filter: { projectId?: string; cursor?: string; settled?: boolean; from?: Date; to?: Date } = {},
+    filter: { cursor?: string; settled?: boolean; from?: Date; to?: Date } = {},
   ) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const take = 30;
     const rows = await this.prisma.financeAdvance.findMany({
       where: {
         spaceId,
-        ...(filter.projectId && { projectId: filter.projectId }),
         ...(filter.settled !== undefined && { settled: filter.settled }),
         ...((filter.from || filter.to) && {
           initialTransaction: {
@@ -67,15 +63,11 @@ export class FinanceAdvancesService {
   async create(userId: string, spaceId: string, dto: CreateFinanceAdvanceDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
     await this.assertAccount(spaceId, dto.accountId);
-    if (dto.projectId) {
-      await this.assertProjectAccess(userId, dto.projectId);
-    }
 
     const advance = await this.prisma.financeAdvance.create({
       data: {
         spaceId,
         title: dto.title,
-        projectId: dto.projectId,
         initialTransaction: {
           create: {
             spaceId,
@@ -131,23 +123,18 @@ export class FinanceAdvancesService {
     return this.withOutstanding(updated);
   }
 
-  /** `title`/`projectId` live on `FinanceAdvance` itself; amount/account/
-   * date/note all live on the linked `initialTransaction` (same "single
-   * source of truth on the transaction row" convention as
-   * `FinanceLoansService.update`). */
+  /** `title` lives on `FinanceAdvance` itself; amount/account/date/note all
+   * live on the linked `initialTransaction` (same "single source of truth
+   * on the transaction row" convention as `FinanceLoansService.update`). */
   async update(userId: string, spaceId: string, advanceId: string, dto: UpdateFinanceAdvanceDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const advance = await this.getOrThrow(spaceId, advanceId);
     if (dto.accountId) await this.assertAccount(spaceId, dto.accountId);
-    if (dto.projectId) await this.assertProjectAccess(userId, dto.projectId);
 
-    if (dto.title !== undefined || dto.projectId !== undefined || dto.clearProjectId) {
+    if (dto.title !== undefined) {
       await this.prisma.financeAdvance.update({
         where: { id: advanceId },
-        data: {
-          ...(dto.title !== undefined && { title: dto.title }),
-          ...(dto.clearProjectId ? { projectId: null } : dto.projectId !== undefined && { projectId: dto.projectId }),
-        },
+        data: { title: dto.title },
       });
     }
 
@@ -236,11 +223,6 @@ export class FinanceAdvancesService {
     if (!account || account.spaceId !== spaceId) {
       throw new BadRequestException('帳戶不存在');
     }
-  }
-
-  private async assertProjectAccess(userId: string, projectId: string) {
-    const project = await this.projectsService.getProjectOrThrow(projectId);
-    await this.projectsService.assertAccess(userId, project);
   }
 
   private outstandingOf(advance: {

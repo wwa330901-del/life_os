@@ -8,8 +8,7 @@ import '../../../../state/todo_provider.dart';
 import '../todo_tile.dart';
 
 /// 個人事項 — deliberately kept simple per the user's own spec: just a
-/// title and an optional due date, no priority/notes/assignee (those are a
-/// 工作 concept, see `WorkTodoTab`).
+/// title and an optional due date.
 class PersonalTodoTab extends ConsumerWidget {
   const PersonalTodoTab({super.key});
 

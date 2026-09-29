@@ -6,7 +6,7 @@
 // string-literal union, not a nominal enum), so callers can pass that
 // Prisma type straight through without a cast.
 
-import { isTaiwanHoliday } from '../projects/scheduling/taiwan-holiday-calendar';
+import { isTaiwanHoliday } from '../common/scheduling/taiwan-holiday-calendar';
 
 export type Adjustment = 'NONE' | 'EARLIER' | 'LATER';
 

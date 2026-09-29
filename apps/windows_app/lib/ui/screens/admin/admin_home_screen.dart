@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'admin_accounts_screen.dart';
-import 'admin_spaces_screen.dart';
 
 class AdminHomeScreen extends StatelessWidget {
   const AdminHomeScreen({super.key});
@@ -22,18 +21,6 @@ class AdminHomeScreen extends StatelessWidget {
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const AdminAccountsScreen())),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.apartment_outlined),
-              title: const Text('空間管理'),
-              subtitle: const Text('管理公司空間與成員權限'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const AdminSpacesScreen())),
             ),
           ),
         ],

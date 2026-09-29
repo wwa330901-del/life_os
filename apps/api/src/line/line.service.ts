@@ -43,13 +43,6 @@ interface LineWebhookEvent {
   postback?: { data?: string };
 }
 
-interface QuickReplyItem {
-  label: string;
-  data: string;
-}
-
-type TodoTarget = { kind: 'personal'; userId: string } | { kind: 'project'; projectId: string };
-
 /** A handler's one output message, decoupled from *how* it gets to the
  * user — a single-line command replies via this straight to LINE
  * (`(text) => this.reply(replyToken, text)`); a line inside a 條列式批次
@@ -72,8 +65,6 @@ const EDGE_SEPARATORS = new RegExp(
 );
 
 const LINK_CODE_TTL_MINUTES = 10;
-/** LINE caps a message's quickReply.items at 13. */
-const MAX_QUICK_REPLY_ITEMS = 13;
 
 /**
  * Backs the LINE bot behind 元序's 記帳/財務總覽/代辦事項/行事曆 features:
@@ -93,12 +84,11 @@ const MAX_QUICK_REPLY_ITEMS = 13;
  *   just replies with the format + the space's actual category/account
  *   names so there's something to type.
  * - 財務總覽: balances + today's/this month's totals.
- * - 代辦事項 / 代辦事項總覽: "新增 XXX" still needs a target project
- *   (`activeProjectId`, picked once via quick-reply when ambiguous, same
- *   as before), but "完成 N" now references the Nth item of whichever list
- *   was shown last (`LineAccountLink.lastTodoListIds`) instead of matching
- *   by typed title — titles typed while completing something often don't
- *   match what was typed when it was created.
+ * - 代辦事項 / 代辦事項總覽: always the caller's own 個人代辦事項 (no
+ *   company-space project concept anymore) — "完成 N" references the Nth
+ *   item of whichever list was shown last (`LineAccountLink.lastTodoListIds`)
+ *   instead of matching by typed title — titles typed while completing
+ *   something often don't match what was typed when it was created.
  * - 新增行事曆: see `parseCalendarCommand`.
  *
  * Writes go straight through Prisma rather than the HTTP-facing
@@ -173,12 +163,6 @@ export class LineService {
           where: { lineUserId },
         });
 
-        if (event.type === 'postback' && event.postback?.data) {
-          if (!link) continue;
-          await this.handlePostback(link, event.postback.data, replyToken);
-          continue;
-        }
-
         if (event.type === 'message' && event.message?.type === 'image') {
           if (!link) continue;
           await this.handleImageMessage(
@@ -246,32 +230,6 @@ export class LineService {
     );
   }
 
-  /** The only postback left in use is the 個人/專案 picker for 代辦事項
-   * (LINE's own quick-reply buttons — plain text UI, not a rendered image,
-   * so it never hit the CJK-font rendering problem the old rich-menu flow
-   * had). */
-  private async handlePostback(
-    link: LineAccountLink,
-    data: string,
-    replyToken: string,
-  ) {
-    const [key, value] = data.split(':');
-    if (key === 'proj') {
-      await this.prisma.lineAccountLink.update({
-        where: { id: link.id },
-        data: { activeProjectId: value, activeTodoPersonal: false },
-      });
-      await this.sendTodoHelp(link.id, { kind: 'project', projectId: value }, replyToken);
-    }
-    if (key === 'todo' && value === 'personal') {
-      await this.prisma.lineAccountLink.update({
-        where: { id: link.id },
-        data: { activeProjectId: null, activeTodoPersonal: true },
-      });
-      await this.sendTodoHelp(link.id, { kind: 'personal', userId: link.userId }, replyToken);
-    }
-  }
-
   // --- Routing ---
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
@@ -289,7 +247,6 @@ export class LineService {
   ) {
     const linkId = link.id;
     const userId = link.userId;
-    const activeProjectId = link.activeProjectId;
 
     // --- 知識庫：任何等待中的狀態一律優先處理，因為此時使用者打的任何文字
     // （包含剛好也是選單指令字面的內容）都是在回答那個等待中的問題，不是在
@@ -381,20 +338,8 @@ export class LineService {
       await this.sendTodoOverviewAllProjects(linkId, userId, replyToken);
       return;
     }
-    // 2026-08-06 起「代辦事項」每次都重新問要記個人事項還是哪個專案，不
-    // 再沿用上次選的目標（`enterTodoFlow` 收到 `false, null` 就是「還沒
-    // 選過」，會強制彈出選單）——這樣「切換專案」就不是必要指令了，但
-    // 保留當作同義詞，舊習慣還能用。
     if (LineService.TODO_ENTRY_KEYWORDS.includes(text)) {
-      await this.enterTodoFlow(linkId, userId, false, null, replyToken);
-      return;
-    }
-    if (text === '切換專案') {
-      await this.prisma.lineAccountLink.update({
-        where: { id: linkId },
-        data: { activeProjectId: null, activeTodoPersonal: false },
-      });
-      await this.enterTodoFlow(linkId, userId, false, null, replyToken);
+      await this.sendTodoHelp(linkId, userId, replyToken);
       return;
     }
     if (text.startsWith('新增行事曆')) {
@@ -1079,12 +1024,9 @@ export class LineService {
     }
   }
 
-  // --- 代墊（工作上先幫忙出錢，之後公司/專案還你）---
+  // --- 代墊（工作上先幫忙出錢，之後還你）---
 
-  /** "代墊 金額 說明 [@專案名稱]" — 專案名稱 optional, matched (contains,
-   * case-sensitive) against company-space projects the caller belongs to;
-   * no match just means the advance isn't tied to any project, same as
-   * leaving it unset in the App. */
+  /** "代墊 金額 說明" */
   private async tryAdvanceCommand(
     userId: string,
     text: string,
@@ -1102,7 +1044,7 @@ export class LineService {
 
     const parsed = this.parseAdvanceCommand(text);
     if (!parsed) {
-      await respond('看不懂代墊格式，請用「代墊 5000 材料款」或加上「@專案名稱」這種格式。');
+      await respond('看不懂代墊格式，請用「代墊 5000 材料款」這種格式。');
       return true;
     }
 
@@ -1116,38 +1058,20 @@ export class LineService {
       return true;
     }
 
-    let projectId: string | undefined;
-    let projectName: string | undefined;
-    if (parsed.projectNameHint) {
-      const memberships = await this.prisma.projectMember.findMany({
-        where: { userId },
-        include: { project: true },
-      });
-      const matched = memberships.find((m) => m.project.name.includes(parsed.projectNameHint!));
-      if (matched) {
-        projectId = matched.projectId;
-        projectName = matched.project.name;
-      }
-    }
-
     await this.financeAdvancesService.create(userId, space.id, {
       title: parsed.title,
       amount: parsed.amount,
       accountId,
       date: new Date().toISOString(),
-      projectId,
     });
 
-    await respond(
-      `已記錄代墊 ${parsed.amount.toLocaleString('en-US')}（${parsed.title}）${projectName ? `，掛在專案「${projectName}」` : ''}，傳「代墊列表」查看。`,
-    );
+    await respond(`已記錄代墊 ${parsed.amount.toLocaleString('en-US')}（${parsed.title}），傳「代墊列表」查看。`);
     return true;
   }
 
   private parseAdvanceCommand(text: string): {
     amount: number;
     title: string;
-    projectNameHint: string | null;
   } | null {
     let rest = text.slice(2).replace(LEADING_SEPARATORS, '');
     const amountMatch = rest.match(/^\d+(\.\d+)?/);
@@ -1156,17 +1080,9 @@ export class LineService {
     if (!(amount > 0)) return null;
     rest = rest.slice(amountMatch[0].length).replace(LEADING_SEPARATORS, '');
 
-    const atIdx = rest.indexOf('@');
-    let title: string;
-    let projectNameHint: string | null = null;
-    if (atIdx !== -1) {
-      title = rest.slice(0, atIdx).replace(EDGE_SEPARATORS, '').trim();
-      projectNameHint = rest.slice(atIdx + 1).trim() || null;
-    } else {
-      title = rest.trim();
-    }
+    const title = rest.trim();
     if (!title) return null;
-    return { amount, title, projectNameHint };
+    return { amount, title };
   }
 
   /** "代墊列表" — same shape as `sendLoanList`, unsettled-only + numbered
@@ -1198,7 +1114,7 @@ export class LineService {
     outstanding.forEach((advance, i) => {
       const principal = advance.initialTransaction?.amount ?? 0;
       lines.push(
-        `${i + 1}. ${advance.title}${advance.project ? `（${advance.project.name}）` : ''}　還剩 ${advance.outstanding.toLocaleString('en-US')}（原 ${principal.toLocaleString('en-US')}）`,
+        `${i + 1}. ${advance.title}　還剩 ${advance.outstanding.toLocaleString('en-US')}（原 ${principal.toLocaleString('en-US')}）`,
       );
     });
     lines.push('', '傳「收回代墊 編號 金額」登記收回，例如「收回代墊 1 1000」。');
@@ -1983,13 +1899,7 @@ export class LineService {
     }
   }
 
-  // --- 代辦事項（個人 / 工作）---
-
-  private todoTargetWhere(target: TodoTarget) {
-    return target.kind === 'personal'
-      ? { personalOwnerUserId: target.userId, done: false }
-      : { projectId: target.projectId, done: false };
-  }
+  // --- 代辦事項（個人）---
 
   /** `（8/10）`／`（持續）`／`''` (for a pre-existing row with neither set —
    * see schema comment on ProjectTodo). */
@@ -1999,79 +1909,11 @@ export class LineService {
     return '';
   }
 
-  /** No active target yet → quick-reply buttons: 個人 + every project the
-   * user belongs to (auto-picks 個人 if they belong to zero projects,
-   * since that's the only option left); otherwise shows that target's
-   * 代辦事項 format reminder + numbered list directly. */
-  private async enterTodoFlow(
-    linkId: string,
-    userId: string,
-    activeTodoPersonal: boolean,
-    activeProjectId: string | null,
-    replyToken: string,
-  ) {
-    if (activeTodoPersonal) {
-      await this.sendTodoHelp(linkId, { kind: 'personal', userId }, replyToken);
-      return;
-    }
-    if (activeProjectId) {
-      await this.sendTodoHelp(linkId, { kind: 'project', projectId: activeProjectId }, replyToken);
-      return;
-    }
-
-    const memberships = await this.prisma.projectMember.findMany({
-      where: { userId },
-      include: { project: true },
-      orderBy: { createdAt: 'desc' },
-      take: MAX_QUICK_REPLY_ITEMS - 1,
-    });
-    if (memberships.length === 0) {
-      await this.prisma.lineAccountLink.update({
-        where: { id: linkId },
-        data: { activeTodoPersonal: true },
-      });
-      await this.sendTodoHelp(linkId, { kind: 'personal', userId }, replyToken);
-      return;
-    }
-    await this.replyWithQuickReply(
-      replyToken,
-      '要記個人事項，還是哪個專案的代辦事項？',
-      [
-        { label: '個人事項', data: 'todo:personal' },
-        ...memberships.map((m) => ({
-          label: m.project.name.slice(0, 20),
-          data: `proj:${m.project.id}`,
-        })),
-      ],
-    );
-  }
-
-  /** Format reminder + the target's incomplete todos, numbered — those
-   * numbers are what "完成 N" resolves against next. */
-  private async sendTodoHelp(
-    linkId: string,
-    target: TodoTarget,
-    replyToken: string,
-  ) {
-    let title: string;
-    if (target.kind === 'project') {
-      const project = await this.prisma.project.findUnique({
-        where: { id: target.projectId },
-      });
-      if (!project) {
-        await this.reply(
-          replyToken,
-          '這個專案好像不存在了，傳「切換專案」重新選一個。',
-        );
-        return;
-      }
-      title = project.name;
-    } else {
-      title = '個人';
-    }
-
+  /** Format reminder + the caller's incomplete personal todos, numbered —
+   * those numbers are what "完成 N" resolves against next. */
+  private async sendTodoHelp(linkId: string, userId: string, replyToken: string) {
     const incomplete = await this.prisma.projectTodo.findMany({
-      where: this.todoTargetWhere(target),
+      where: { personalOwnerUserId: userId, done: false },
       orderBy: [{ dueDate: 'asc' }, { sortOrder: 'asc' }],
     });
     await this.prisma.lineAccountLink.update({
@@ -2080,7 +1922,7 @@ export class LineService {
     });
 
     const lines = [
-      `✅ 代辦事項（${title}）`,
+      '✅ 代辦事項',
       '新增8/10買材料｜完成2｜改期2 8/15',
       '',
       `未完成清單（${incomplete.length}）：`,
@@ -2090,29 +1932,18 @@ export class LineService {
         ? incomplete.map((t, i) => `${i + 1}. ${t.title}${this.todoDateSuffix(t)}`)
         : ['（目前沒有未完成的代辦事項）']),
     );
-    lines.push('', '傳「代辦事項總覽」看個人+所有專案今天的狀況，再傳一次「代辦事項」可以重新選目標。');
+    lines.push('', '傳「代辦事項總覽」看今天的狀況。');
     await this.reply(replyToken, lines.join('\n'));
   }
 
-  /** 今日已完成（個人+所有專案合併顯示，不用選）、今日到期還沒完成、未來 7
-   * 天內到期、持續性任務（不受日期限制，永遠列出）—— 未完成的三組會連續編
-   * 號，供「完成 N」使用；已完成的只是列出來看，沒有編號（沒有可以「完成」
-   * 的動作）。個人事項不受專案成員身份限制，即使使用者不屬於任何專案，個
-   * 人事項一樣會顯示。 */
+  /** 今日已完成、今日到期還沒完成、未來 7 天內到期、持續性任務（不受日期
+   * 限制，永遠列出）—— 未完成的三組會連續編號，供「完成 N」使用；已完成的
+   * 只是列出來看，沒有編號（沒有可以「完成」的動作）。 */
   private async sendTodoOverviewAllProjects(
     linkId: string,
     userId: string,
     replyToken: string,
   ) {
-    const memberships = await this.prisma.projectMember.findMany({
-      where: { userId },
-      include: { project: true },
-    });
-    const projectIds = memberships.map((m) => m.projectId);
-    const projectNameOf = new Map(
-      memberships.map((m) => [m.projectId, m.project.name]),
-    );
-
     // Bounded to what the four buckets below can actually use (still-open,
     // or completed today) — this used to fetch the caller's entire todo
     // history unconditionally and filter in memory, the same unbounded-list
@@ -2120,10 +1951,8 @@ export class LineService {
     const { start: todayStart, end: todayEnd } = taipeiTodayRange();
     const todos = await this.prisma.projectTodo.findMany({
       where: {
-        AND: [
-          { OR: [{ projectId: { in: projectIds } }, { personalOwnerUserId: userId }] },
-          { OR: [{ done: false }, { done: true, completedAt: { gte: todayStart } }] },
-        ],
+        personalOwnerUserId: userId,
+        OR: [{ done: false }, { done: true, completedAt: { gte: todayStart } }],
       },
       orderBy: [{ dueDate: 'asc' }, { sortOrder: 'asc' }],
     });
@@ -2153,10 +1982,9 @@ export class LineService {
       },
     });
 
-    const labelOf = (t: (typeof todos)[number]) =>
-      `${t.title}（${t.projectId ? projectNameOf.get(t.projectId) : '個人'}）`;
+    const labelOf = (t: (typeof todos)[number]) => t.title;
 
-    const lines: string[] = ['✅ 代辦事項總覽（個人+所有專案）', ''];
+    const lines: string[] = ['✅ 代辦事項總覽', ''];
 
     lines.push(`今日已完成（${completedToday.length}）：`);
     lines.push(
@@ -2269,10 +2097,6 @@ export class LineService {
     text: string,
     respond: Responder,
   ) {
-    if (!link.activeTodoPersonal && !link.activeProjectId) {
-      await respond('請先傳「代辦事項」選擇要記錄的個人事項或專案。');
-      return;
-    }
     const parsed = this.parseTodoCommand(text);
     if (parsed === 'needs_date') {
       await respond(
@@ -2289,32 +2113,13 @@ export class LineService {
 
     // 透過 TodosService 而不是直接寫 Prisma——這樣才會一併觸發代辦事項→
     // 行事曆的同步（2026-08-05），不用在這裡重複寫一次同步邏輯。
-    if (link.activeTodoPersonal) {
-      await this.todosService.create(link.userId, {
-        title,
-        dueDate: dueDate?.toISOString(),
-        dueDateAllDay,
-        isOngoing,
-      });
-      await respond(`已新增個人代辦事項「${title}」（${dateLabel}）。`);
-      return;
-    }
-
-    const project = await this.prisma.project.findUnique({
-      where: { id: link.activeProjectId! },
-    });
-    if (!project) {
-      await respond('這個專案好像不存在了，傳「切換專案」重新選一個。');
-      return;
-    }
     await this.todosService.create(link.userId, {
-      projectId: link.activeProjectId!,
       title,
       dueDate: dueDate?.toISOString(),
       dueDateAllDay,
       isOngoing,
     });
-    await respond(`已新增代辦事項「${title}」（${project.name}，${dateLabel}）。`);
+    await respond(`已新增代辦事項「${title}」（${dateLabel}）。`);
   }
 
   /** "完成 N" references the Nth item of whichever list (代辦事項 or
@@ -2349,7 +2154,6 @@ export class LineService {
     }
     const todo = await this.prisma.projectTodo.findUnique({
       where: { id: todoId },
-      include: { project: true },
     });
     if (!todo) {
       await this.reply(replyToken, '這筆代辦事項好像已經被刪除了。');
@@ -2363,10 +2167,7 @@ export class LineService {
       where: { id: todo.id },
       data: { done: true, completedAt: new Date() },
     });
-    await this.reply(
-      replyToken,
-      `已完成「${todo.title}」（${todo.project?.name ?? '個人'}）。`,
-    );
+    await this.reply(replyToken, `已完成「${todo.title}」。`);
   }
 
   /** "改期 N 日期或「持續」" — same numbered-list reference as「完成 N」,
@@ -2411,7 +2212,6 @@ export class LineService {
     }
     const todo = await this.prisma.projectTodo.findUnique({
       where: { id: todoId },
-      include: { project: true },
     });
     if (!todo) {
       await this.reply(replyToken, '這筆代辦事項好像已經被刪除了。');
@@ -2425,10 +2225,7 @@ export class LineService {
       isOngoing: parsed.isOngoing,
     });
     const dateLabel = parsed.isOngoing ? '持續' : formatTaipeiDateTime(parsed.dueDate!, parsed.dueDateAllDay);
-    await this.reply(
-      replyToken,
-      `已將「${todo.title}」（${todo.project?.name ?? '個人'}）改期為 ${dateLabel}。`,
-    );
+    await this.reply(replyToken, `已將「${todo.title}」改期為 ${dateLabel}。`);
   }
 
   // --- 行事曆 ---
@@ -2559,33 +2356,6 @@ export class LineService {
 
   private async reply(replyToken: string, text: string): Promise<void> {
     await this.callReplyApi({ replyToken, messages: [{ type: 'text', text }] });
-  }
-
-  private async replyWithQuickReply(
-    replyToken: string,
-    text: string,
-    items: QuickReplyItem[],
-  ): Promise<void> {
-    await this.callReplyApi({
-      replyToken,
-      messages: [
-        {
-          type: 'text',
-          text,
-          quickReply: {
-            items: items.slice(0, MAX_QUICK_REPLY_ITEMS).map((item) => ({
-              type: 'action',
-              action: {
-                type: 'postback',
-                label: item.label,
-                data: item.data,
-                displayText: item.label,
-              },
-            })),
-          },
-        },
-      ],
-    });
   }
 
   private async callReplyApi(body: Record<string, unknown>): Promise<void> {
