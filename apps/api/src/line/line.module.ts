@@ -6,6 +6,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { AiAssistantModule } from '../ai-assistant/ai-assistant.module';
 import { UsersModule } from '../users/users.module';
 import { TodosModule } from '../todos/todos.module';
+import { LifeGoalsModule } from '../life-goals/life-goals.module';
 import { LineWebhookController } from './line-webhook.controller';
 import { LineLinkController } from './line-link.controller';
 import { LineService } from './line.service';
@@ -19,6 +20,7 @@ import { LineService } from './line.service';
     AiAssistantModule,
     UsersModule,
     TodosModule,
+    LifeGoalsModule,
   ],
   controllers: [LineWebhookController, LineLinkController],
   providers: [LineService],

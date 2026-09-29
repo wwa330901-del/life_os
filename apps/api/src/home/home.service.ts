@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
-import { FinanceTransactionType } from '../../generated/prisma/client.js';
+import { FinanceTransactionType, LifeGoalStatus } from '../../generated/prisma/client.js';
 import { UpdateHomeLayoutDto } from './dto/update-home-layout.dto';
 import { taipeiTodayRange } from '../common/taipei-date';
 
@@ -18,6 +18,7 @@ const DEFAULT_WIDGET_TYPES = [
   'todayTodos',
   'stockSummary',
   'ongoingTodos',
+  'lifeGoals',
   'recentKnowledgeItems',
 ];
 
@@ -62,18 +63,21 @@ export class HomeService {
   }
 
   async getDashboard(userId: string) {
-    const [personalFinance, todosToday, stockSummary, ongoingTodos, recentKnowledgeItems] = await Promise.all([
-      this.getPersonalFinance(userId),
-      this.getTodosToday(userId),
-      this.getStockSummary(userId),
-      this.getOngoingTodos(userId),
-      this.getRecentKnowledgeItems(userId),
-    ]);
+    const [personalFinance, todosToday, stockSummary, ongoingTodos, lifeGoals, recentKnowledgeItems] =
+      await Promise.all([
+        this.getPersonalFinance(userId),
+        this.getTodosToday(userId),
+        this.getStockSummary(userId),
+        this.getOngoingTodos(userId),
+        this.getActiveLifeGoals(userId),
+        this.getRecentKnowledgeItems(userId),
+      ]);
     return {
       personalFinance,
       todosToday,
       stockSummary,
       ongoingTodos,
+      lifeGoals,
       recentKnowledgeItems,
     };
   }
@@ -187,6 +191,24 @@ export class HomeService {
     });
 
     return todos.map((t) => ({ id: t.id, title: t.title }));
+  }
+
+  /** Top 5 未完成 人生目標, soonest `targetDate` first (nulls last) — a
+   * lightweight preview, not the full `LifeGoalsService.listAll` payload. */
+  private async getActiveLifeGoals(userId: string) {
+    const goals = await this.prisma.lifeGoal.findMany({
+      where: { ownerUserId: userId, status: LifeGoalStatus.ACTIVE },
+      orderBy: [{ targetDate: 'asc' }, { sortOrder: 'asc' }],
+      take: 5,
+    });
+    return goals.map((g) => ({
+      id: g.id,
+      title: g.title,
+      targetValue: g.targetValue,
+      currentValue: g.currentValue,
+      unit: g.unit,
+      targetDate: g.targetDate,
+    }));
   }
 
   /** Most recent 5 knowledge items this user owns, regardless of status —

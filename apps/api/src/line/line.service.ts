@@ -16,6 +16,7 @@ import { InstagramFetcherService } from '../knowledge/instagram-fetcher.service'
 import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
 import { UsersService } from '../users/users.service';
 import { TodosService } from '../todos/todos.service';
+import { LifeGoalsService } from '../life-goals/life-goals.service';
 import {
   isInstagramUrl,
   INSTAGRAM_UNSUPPORTED_MESSAGE,
@@ -26,6 +27,7 @@ import {
   FinanceTransactionType,
   FinanceLoanDirection,
   StockTransactionType,
+  LifeGoalStatus,
 } from '../../generated/prisma/client.js';
 import type { LineAccountLink } from '../../generated/prisma/client.js';
 import {
@@ -125,6 +127,7 @@ export class LineService {
     private readonly aiAssistantService: AiAssistantService,
     private readonly usersService: UsersService,
     private readonly todosService: TodosService,
+    private readonly lifeGoalsService: LifeGoalsService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -389,6 +392,11 @@ export class LineService {
       return;
     }
 
+    if (text === '人生目標') {
+      await this.sendLifeGoals(userId, replyToken);
+      return;
+    }
+
     if (text.startsWith('查詢')) {
       await this.handleAiQuery(userId, text, replyToken);
       return;
@@ -421,6 +429,9 @@ export class LineService {
         '✅ 代辦事項　📅 行事曆',
         '新增行事曆7/31 14:00開會',
         '（傳「代辦事項」「今日行事曆」看清單）',
+        '',
+        '🎯 人生目標',
+        '傳「人生目標」看目前進度',
         '',
         '📚 知識庫　🤖 AI 問答',
         '傳「知識庫」看完整說明｜查詢 <問題>',
@@ -2226,6 +2237,34 @@ export class LineService {
     });
     const dateLabel = parsed.isOngoing ? '持續' : formatTaipeiDateTime(parsed.dueDate!, parsed.dueDateAllDay);
     await this.reply(replyToken, `已將「${todo.title}」改期為 ${dateLabel}。`);
+  }
+
+  // --- 人生目標 ---
+
+  /** 唯讀 — 新增/更新進度目前只在 App 端做（數字型目標的「目前值」用打字
+   * 輸入不太自然），LINE 這裡先只做「隨時看得到進度」這件事。 */
+  private async sendLifeGoals(userId: string, replyToken: string) {
+    const goals = await this.lifeGoalsService.listAll(userId, LifeGoalStatus.ACTIVE);
+    if (goals.length === 0) {
+      await this.reply(replyToken, '🎯 人生目標\n\n目前沒有進行中的目標，去 App 新增一個吧。');
+      return;
+    }
+
+    const lines = ['🎯 人生目標', ''];
+    for (const g of goals) {
+      const dateLabel = g.targetDate
+        ? `（期限 ${g.targetDate.getMonth() + 1}/${g.targetDate.getDate()}）`
+        : '';
+      if (g.targetValue != null) {
+        const percent = Math.min(100, Math.round(((g.currentValue ?? 0) / g.targetValue) * 100));
+        lines.push(
+          `・${g.title}${dateLabel}\n　${percent}%（${g.currentValue ?? 0}/${g.targetValue}${g.unit ?? ''}）`,
+        );
+      } else {
+        lines.push(`・${g.title}${dateLabel}`);
+      }
+    }
+    await this.reply(replyToken, lines.join('\n'));
   }
 
   // --- 行事曆 ---

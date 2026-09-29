@@ -130,6 +130,7 @@ model User {
   financeLoanInvitesReceived FinanceLoanInvite[]        @relation("LoanInviteTo")
   friendshipsRequested       Friendship[]               @relation("FriendshipRequester")
   friendshipsReceived        Friendship[]               @relation("FriendshipAddressee")
+  lifeGoals                  LifeGoal[]
 }
 
 /// 好友 (2026-08-06) — a mutual, symmetric relationship: unlike CalendarShare
@@ -1110,4 +1111,47 @@ model AiUsageLog {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+enum LifeGoalStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+/// 人生目標 (2026-09-29) — account-level like 知識庫/代辦事項 (not scoped to
+/// any Space): a goal is inherently the owner's own, not something a space
+/// would own. `targetValue`/`currentValue`/`unit` are all optional and
+/// independent of each other — a goal with a number (「存到 150,000
+/// 元」) shows a computed progress bar; a goal with none of the three
+/// (「學會放鬆、不焦慮」) just shows status + `targetDate`, never forced
+/// to fake a number. A future 財務目標自動連結淨資產趨勢 feature extends
+/// this same shape (writing `currentValue` from FinanceNetWorthSnapshot
+/// instead of the user typing it by hand) rather than needing a new one.
+model LifeGoal {
+  id String @id @default(uuid())
+
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  title String
+  notes String?
+
+  /// 自由文字使用者自訂分類（例如「財務」「健康」）——不另開分類管理表，
+  /// 跟知識庫刻意讓分類系統各自獨立、輕量的作法一致。
+  category String?
+
+  targetValue  Float?
+  currentValue Float? @default(0)
+  unit         String? // 顯示用，例如「元」「本」「公斤」
+
+  targetDate  DateTime?      @db.Date
+  status      LifeGoalStatus @default(ACTIVE)
+  completedAt DateTime?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId, status])
 }
