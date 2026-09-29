@@ -17,6 +17,8 @@ abstract final class AppAccents {
   static const _todoDark = Color(0xFF283244);
   static const _aiAssistantLight = Color(0xFFDDE3D4);
   static const _aiAssistantDark = Color(0xFF2E3427);
+  static const _lifeGoalsLight = Color(0xFFF2DDD5);
+  static const _lifeGoalsDark = Color(0xFF42302A);
 
   static Color personal(Brightness brightness) =>
       brightness == Brightness.dark ? _personalDark : _personalLight;
@@ -32,4 +34,7 @@ abstract final class AppAccents {
 
   static Color aiAssistant(Brightness brightness) =>
       brightness == Brightness.dark ? _aiAssistantDark : _aiAssistantLight;
+
+  static Color lifeGoals(Brightness brightness) =>
+      brightness == Brightness.dark ? _lifeGoalsDark : _lifeGoalsLight;
 }

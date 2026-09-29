@@ -97,7 +97,7 @@ export class FinanceReportService {
   /** 總資產 = 帳戶餘額加總 + 持股市值加總 + 我借出去／代墊出去還沒收回的
    * 金額；總負債 = 我借入還沒還清的金額。市值抓不到的持股（沒有報價）用
    * 成本代替，避免整個總資產因為單一檔缺報價就整包不算。 */
-  private async computeNetWorth(
+  async computeNetWorth(
     userId: string,
     spaceId: string,
   ): Promise<{ totalAssets: number; totalLiabilities: number; netWorth: number }> {

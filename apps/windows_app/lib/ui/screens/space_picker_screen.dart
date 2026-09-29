@@ -10,6 +10,7 @@ import '../../state/ai_assistant_provider.dart';
 import '../../state/auth_provider.dart';
 import '../../state/home_provider.dart';
 import '../../state/knowledge_provider.dart';
+import '../../state/life_goal_provider.dart';
 import '../../state/space_provider.dart';
 import '../../state/todo_provider.dart';
 import 'admin/admin_home_screen.dart';
@@ -76,6 +77,9 @@ class SpacePickerScreen extends ConsumerWidget {
                                 ),
                                 _TodoSpaceCard(
                                   onTap: () => ref.read(showTodoSpaceProvider.notifier).open(),
+                                ),
+                                _LifeGoalsCard(
+                                  onTap: () => ref.read(showLifeGoalsProvider.notifier).open(),
                                 ),
                                 _AiAssistantCard(
                                   onTap: () => ref.read(showAiAssistantProvider.notifier).open(),
@@ -309,6 +313,53 @@ class _TodoSpaceCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '持續性任務與待辦',
+                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 人生目標 isn't a Space either (account-level, same reasoning as 代辦事項)
+/// — tapping it goes straight to `LifeGoalsShell` via `showLifeGoalsProvider`.
+class _LifeGoalsCard extends StatelessWidget {
+  const _LifeGoalsCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = AppAccents.lifeGoals(scheme.brightness);
+
+    return SizedBox(
+      width: 180,
+      height: 140,
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.flag_outlined, size: 18, color: scheme.onSurface),
+                ),
+                const Spacer(),
+                const Text('人生目標', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(
+                  '設定目標、追蹤進度',
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],

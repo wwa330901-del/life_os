@@ -1,5 +1,6 @@
 import 'finance.dart';
 import 'knowledge.dart';
+import 'life_goal.dart';
 
 /// Read-only account balance for the home dashboard — unlike
 /// `FinanceAccount`, there's no `initialBalance`/`sortOrder` to carry
@@ -45,6 +46,7 @@ String homeWidgetLabel(String type) => switch (type) {
   'todayTodos' => '本日代辦事項',
   'stockSummary' => '投資/持股總覽',
   'ongoingTodos' => '持續性任務',
+  'lifeGoals' => '人生目標',
   'recentKnowledgeItems' => '知識庫最新入庫',
   _ => type,
 };
@@ -131,6 +133,41 @@ class HomeStockSummary {
   );
 }
 
+/// One of the first 5 ACTIVE 人生目標 (server-sorted by targetDate) — same
+/// optional number triple as `LifeGoal`, so progress uses the shared
+/// `lifeGoalProgress`.
+class HomeLifeGoal {
+  const HomeLifeGoal({
+    required this.id,
+    required this.title,
+    required this.targetValue,
+    required this.currentValue,
+    required this.startValue,
+    required this.unit,
+    required this.targetDate,
+  });
+
+  final String id;
+  final String title;
+  final double? targetValue;
+  final double? currentValue;
+  final double? startValue;
+  final String? unit;
+  final DateTime? targetDate;
+
+  double? get progress => lifeGoalProgress(targetValue, currentValue, startValue);
+
+  factory HomeLifeGoal.fromJson(Map<String, dynamic> json) => HomeLifeGoal(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    targetValue: (json['targetValue'] as num?)?.toDouble(),
+    currentValue: (json['currentValue'] as num?)?.toDouble(),
+    startValue: (json['startValue'] as num?)?.toDouble(),
+    unit: json['unit'] as String?,
+    targetDate: parseLifeGoalDate(json['targetDate']),
+  );
+}
+
 class HomeKnowledgeItemPreview {
   const HomeKnowledgeItemPreview({
     required this.id,
@@ -158,6 +195,7 @@ class HomeDashboard {
     required this.todosToday,
     required this.stockSummary,
     required this.ongoingTodos,
+    required this.lifeGoals,
     required this.recentKnowledgeItems,
   });
 
@@ -165,6 +203,7 @@ class HomeDashboard {
   final HomeTodosToday todosToday;
   final HomeStockSummary? stockSummary;
   final List<HomeTodoRef> ongoingTodos;
+  final List<HomeLifeGoal> lifeGoals;
   final List<HomeKnowledgeItemPreview> recentKnowledgeItems;
 
   factory HomeDashboard.fromJson(Map<String, dynamic> json) => HomeDashboard(
@@ -177,6 +216,11 @@ class HomeDashboard {
         : HomeStockSummary.fromJson(json['stockSummary'] as Map<String, dynamic>),
     ongoingTodos: (json['ongoingTodos'] as List<dynamic>)
         .map((e) => HomeTodoRef.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    // `?? const []` so an app build newer than the API it's talking to
+    // (e.g. mid-deploy) still renders instead of throwing.
+    lifeGoals: ((json['lifeGoals'] as List<dynamic>?) ?? const [])
+        .map((e) => HomeLifeGoal.fromJson(e as Map<String, dynamic>))
         .toList(),
     recentKnowledgeItems: (json['recentKnowledgeItems'] as List<dynamic>)
         .map((e) => HomeKnowledgeItemPreview.fromJson(e as Map<String, dynamic>))

@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from '../auth/jwt-payload';
 import { LifeGoalStatus } from '../../generated/prisma/client.js';
 import { CreateLifeGoalDto } from './dto/create-life-goal.dto';
 import { UpdateLifeGoalDto } from './dto/update-life-goal.dto';
+import { CreateLifeGoalCheckInDto } from './dto/create-life-goal-check-in.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('life-goals')
@@ -15,6 +16,30 @@ export class LifeGoalsController {
   @Get()
   listAll(@CurrentUser() user: AuthenticatedUser, @Query('status') status?: LifeGoalStatus) {
     return this.service.listAll(user.id, status);
+  }
+
+  @Get('tracking-options')
+  trackingOptions(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.trackingOptions(user.id);
+  }
+
+  @Get(':id/check-ins')
+  listCheckIns(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.listCheckIns(user.id, id);
+  }
+
+  @Post(':id/check-ins')
+  addCheckIn(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CreateLifeGoalCheckInDto,
+  ) {
+    return this.service.addCheckIn(user.id, id, dto);
+  }
+
+  @Delete('check-ins/:checkInId')
+  removeCheckIn(@CurrentUser() user: AuthenticatedUser, @Param('checkInId') checkInId: string) {
+    return this.service.removeCheckIn(user.id, checkInId);
   }
 
   @Post()

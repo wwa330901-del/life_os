@@ -13,5 +13,7 @@ import { FinanceReportController } from './finance-report.controller';
   imports: [FinanceModule, StocksModule],
   controllers: [FinanceReportController],
   providers: [FinanceReportService],
+  // 人生目標的「淨資產」追蹤用同一套算法，不另寫一份。
+  exports: [FinanceReportService],
 })
 export class FinanceReportModule {}

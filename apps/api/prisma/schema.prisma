@@ -116,13 +116,13 @@ model User {
   homeLayoutConfig Json?
 
   personalSpace              Space?                     @relation("PersonalSpaceOwner")
-  calendarSpace               Space?                    @relation("CalendarSpaceOwner")
+  calendarSpace              Space?                     @relation("CalendarSpaceOwner")
   lineAccountLink            LineAccountLink?
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
   googleCalendarConnections  GoogleCalendarConnection[]
   appleCalendarConnections   AppleCalendarConnection[]
   knowledgeCategories        KnowledgeCategory[]
-  knowledgeItems              KnowledgeItem[]
+  knowledgeItems             KnowledgeItem[]
   aiUsageLogs                AiUsageLog[]
   calendarSharesGiven        CalendarShare[]            @relation("CalendarShareOwner")
   calendarSharesReceived     CalendarShare[]            @relation("CalendarShareViewer")
@@ -421,6 +421,8 @@ model FinanceAccount {
 
   stockTransactions         StockTransaction[]
   stockRecurringInvestments StockRecurringInvestment[]
+
+  lifeGoals LifeGoal[]
 }
 
 /// A 記帳 category (收入/支出), user-managed per personal space from day
@@ -880,6 +882,11 @@ model LineAccountLink {
   /// which then creates the CalendarEvent + ProjectTodo for this item.
   pendingExhibitionScheduleItemId String?
 
+  /// 人生目標 LINE AI 對話的上一輪 interaction id + 時間——AI 反問（例如
+  /// 「這本書最喜歡哪一句？」）時，下一則訊息接著同一段對話，10 分鐘後失效。
+  lifeGoalAiInteractionId String?
+  lifeGoalAiInteractionAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -1119,15 +1126,37 @@ enum LifeGoalStatus {
   ABANDONED
 }
 
+/// Where a LifeGoal's current number comes from (2026-09-30, after the
+/// first all-manual version was judged 「有夠難用」). Only MANUAL uses the
+/// stored `currentValue`; every other type is computed fresh on every read
+/// by `LifeGoalProgressService`, so an auto-tracked number is never stale
+/// and there's no sync job to drift.
+enum LifeGoalTrackingType {
+  MANUAL
+  ACCOUNT_BALANCE // 指定記帳帳戶的餘額（trackingAccountId）
+  NET_WORTH // 淨資產（跟財務報表同一套算法）
+  NOTE_KEYWORD_SUM // 備註含 trackingKeyword 的收入＋轉帳金額累計
+  STOCK_VALUE // 持股總市值
+  CHECK_IN // LifeGoalCheckIn 的 value 加總（依 checkInPeriod 分期）
+}
+
+/// Only meaningful for CHECK_IN: which window of check-ins counts toward
+/// `targetValue` — 「每週運動 3 次」 is WEEKLY (Taipei Mon–Sun), 「一年讀
+/// 12 本書」 is TOTAL.
+enum LifeGoalPeriod {
+  TOTAL
+  WEEKLY
+  MONTHLY
+}
+
 /// 人生目標 (2026-09-29) — account-level like 知識庫/代辦事項 (not scoped to
 /// any Space): a goal is inherently the owner's own, not something a space
 /// would own. `targetValue`/`currentValue`/`unit` are all optional and
 /// independent of each other — a goal with a number (「存到 150,000
 /// 元」) shows a computed progress bar; a goal with none of the three
 /// (「學會放鬆、不焦慮」) just shows status + `targetDate`, never forced
-/// to fake a number. A future 財務目標自動連結淨資產趨勢 feature extends
-/// this same shape (writing `currentValue` from FinanceNetWorthSnapshot
-/// instead of the user typing it by hand) rather than needing a new one.
+/// to fake a number. See `LifeGoalTrackingType` for where the number
+/// comes from when it isn't typed by hand.
 model LifeGoal {
   id String @id @default(uuid())
 
@@ -1142,8 +1171,27 @@ model LifeGoal {
   category String?
 
   targetValue  Float?
-  currentValue Float? @default(0)
+  currentValue Float?  @default(0)
+  /// 建立時的起點——進度＝(目前−起點)/(目標−起點)，這樣「體重 75→70」這種往下
+  /// 的目標也算得對（73 公斤是 40%，不是 104%）。null 時視為 0（存錢這種從零開始的）。
+  startValue   Float?
   unit         String? // 顯示用，例如「元」「本」「公斤」
+
+  trackingType       LifeGoalTrackingType @default(MANUAL)
+  trackingAccountId  String?
+  trackingAccount    FinanceAccount?      @relation(fields: [trackingAccountId], references: [id], onDelete: SetNull)
+  trackingKeyword    String?
+  checkInPeriod      LifeGoalPeriod       @default(TOTAL)
+  /// 讀書這類目標：打卡一定要寫心得／最喜歡的一句話才算數，證明真的看過。
+  requireCheckInNote Boolean              @default(false)
+
+  /// Last time the number actually moved by the user's hand (MANUAL edit or
+  /// a check-in) — drives the 「14 天沒更新」 LINE nudge. Separate from
+  /// `updatedAt`, which also bumps on unrelated edits like renaming.
+  progressUpdatedAt DateTime?
+  staleRemindedAt   DateTime?
+
+  checkIns LifeGoalCheckIn[]
 
   targetDate  DateTime?      @db.Date
   status      LifeGoalStatus @default(ACTIVE)
@@ -1154,4 +1202,23 @@ model LifeGoal {
   updatedAt DateTime @updatedAt
 
   @@index([ownerUserId, status])
+}
+
+/// One 打卡 against a CHECK_IN LifeGoal — a finished book, a workout, etc.
+/// `title` is what it was (書名), `note` is the proof (心得／最喜歡的一句
+/// 話), required when the goal's `requireCheckInNote` is set.
+model LifeGoalCheckIn {
+  id String @id @default(uuid())
+
+  goalId String
+  goal   LifeGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  date  DateTime @db.Date
+  value Float    @default(1)
+  title String?
+  note  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([goalId, date])
 }

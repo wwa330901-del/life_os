@@ -1,4 +1,5 @@
-import { IsDateString, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { LifeGoalPeriod, LifeGoalTrackingType } from '../../../generated/prisma/client.js';
 
 export class CreateLifeGoalDto {
   @IsString()
@@ -21,6 +22,11 @@ export class CreateLifeGoalDto {
   @IsNumber()
   currentValue?: number;
 
+  /** Starting point for progress (體重 75→70). Defaults to currentValue on create. */
+  @IsOptional()
+  @IsNumber()
+  startValue?: number;
+
   @IsOptional()
   @IsString()
   unit?: string;
@@ -28,4 +34,24 @@ export class CreateLifeGoalDto {
   @IsOptional()
   @IsDateString()
   targetDate?: string;
+
+  @IsOptional()
+  @IsEnum(LifeGoalTrackingType)
+  trackingType?: LifeGoalTrackingType;
+
+  @IsOptional()
+  @IsString()
+  trackingAccountId?: string;
+
+  @IsOptional()
+  @IsString()
+  trackingKeyword?: string;
+
+  @IsOptional()
+  @IsEnum(LifeGoalPeriod)
+  checkInPeriod?: LifeGoalPeriod;
+
+  @IsOptional()
+  @IsBoolean()
+  requireCheckInNote?: boolean;
 }

@@ -1,9 +1,9 @@
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
-import { LifeGoalStatus } from '../../../generated/prisma/client.js';
+import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { LifeGoalPeriod, LifeGoalStatus, LifeGoalTrackingType } from '../../../generated/prisma/client.js';
 
 // Every field optional; nullable fields (notes/category/targetValue/
-// currentValue/unit/targetDate) accept an explicit `null` to clear them —
-// same convention as UpdateTodoDto.
+// currentValue/unit/targetDate/trackingAccountId/trackingKeyword) accept an
+// explicit `null` to clear them — same convention as UpdateTodoDto.
 export class UpdateLifeGoalDto {
   @IsOptional()
   @IsString()
@@ -26,6 +26,11 @@ export class UpdateLifeGoalDto {
   @IsNumber()
   currentValue?: number | null;
 
+  /** Starting point for progress (體重 75→70). Defaults to currentValue on create. */
+  @IsOptional()
+  @IsNumber()
+  startValue?: number | null;
+
   @IsOptional()
   @IsString()
   unit?: string | null;
@@ -37,4 +42,24 @@ export class UpdateLifeGoalDto {
   @IsOptional()
   @IsEnum(LifeGoalStatus)
   status?: LifeGoalStatus;
+
+  @IsOptional()
+  @IsEnum(LifeGoalTrackingType)
+  trackingType?: LifeGoalTrackingType;
+
+  @IsOptional()
+  @IsString()
+  trackingAccountId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  trackingKeyword?: string | null;
+
+  @IsOptional()
+  @IsEnum(LifeGoalPeriod)
+  checkInPeriod?: LifeGoalPeriod;
+
+  @IsOptional()
+  @IsBoolean()
+  requireCheckInNote?: boolean;
 }

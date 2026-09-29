@@ -13,6 +13,7 @@ import 'models/finance_report.dart';
 import 'models/finance.dart';
 import 'models/home_dashboard.dart';
 import 'models/knowledge.dart';
+import 'models/life_goal.dart';
 import 'models/project_todo.dart';
 import 'models/stock.dart';
 
@@ -1205,6 +1206,59 @@ class ApiClient {
 
   Future<void> deleteTodo(String todoId) async {
     await _delete('/todos/$todoId');
+  }
+
+  /// 人生目標 — account-level. Sorted server-side by status then targetDate.
+  Future<List<LifeGoal>> listLifeGoals() async {
+    final body = await _getList('/life-goals');
+    return body.map((e) => LifeGoal.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createLifeGoal(LifeGoalInput input) async {
+    await _post('/life-goals', input.toJson());
+  }
+
+  /// The editor always submits the whole goal, so nulls in [input] clear
+  /// those fields. [status] has its own call — only changed on purpose.
+  Future<void> updateLifeGoal({required String id, required LifeGoalInput input}) async {
+    await _patchIgnoreBody('/life-goals/$id', input.toJson());
+  }
+
+  /// The user's 記帳 accounts, for the 「指定帳戶餘額」 tracking picker.
+  Future<List<LifeGoalAccountOption>> lifeGoalTrackingOptions() async {
+    final body = await _get('/life-goals/tracking-options');
+    return (body['accounts'] as List<dynamic>)
+        .map((e) => LifeGoalAccountOption.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<LifeGoalCheckIn>> listLifeGoalCheckIns(String goalId) async {
+    final body = await _getList('/life-goals/$goalId/check-ins');
+    return body.map((e) => LifeGoalCheckIn.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> addLifeGoalCheckIn({required String goalId, String? title, String? note, double? value}) async {
+    await _post('/life-goals/$goalId/check-ins', {
+      if (title != null) 'title': title,
+      if (note != null) 'note': note,
+      if (value != null) 'value': value,
+    });
+  }
+
+  Future<void> deleteLifeGoalCheckIn(String checkInId) async {
+    await _delete('/life-goals/check-ins/$checkInId');
+  }
+
+  Future<void> updateLifeGoalStatus({required String id, required LifeGoalStatus status}) async {
+    await _patchIgnoreBody('/life-goals/$id', {'status': status.toJson()});
+  }
+
+  Future<void> updateLifeGoalProgress({required String id, required double currentValue}) async {
+    await _patchIgnoreBody('/life-goals/$id', {'currentValue': currentValue});
+  }
+
+  Future<void> deleteLifeGoal(String id) async {
+    await _delete('/life-goals/$id');
   }
 
   /// Generates (or replaces) a short-lived code the user sends as a LINE

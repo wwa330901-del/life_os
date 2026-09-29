@@ -22,6 +22,8 @@ Widget? buildHomeWidget(BuildContext context, String type, HomeDashboard dashboa
       return _StockSummaryCard(data: dashboard.stockSummary);
     case 'ongoingTodos':
       return _OngoingTodosCard(data: dashboard.ongoingTodos);
+    case 'lifeGoals':
+      return _LifeGoalsCard(data: dashboard.lifeGoals);
     case 'recentKnowledgeItems':
       return _RecentKnowledgeItemsCard(data: dashboard.recentKnowledgeItems);
     default:
@@ -209,6 +211,55 @@ class _OngoingTodosCard extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [for (final t in data) Text('・${t.title}')],
+            ),
+    );
+  }
+}
+
+class _LifeGoalsCard extends StatelessWidget {
+  const _LifeGoalsCard({required this.data});
+
+  final List<HomeLifeGoal> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return _DashboardCard(
+      title: '人生目標',
+      child: data.isEmpty
+          ? const Text('還沒有進行中的目標')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final g in data)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: Text(g.title, overflow: TextOverflow.ellipsis)),
+                            if (g.progress != null)
+                              Text('${(g.progress! * 100).floor()}%', style: const TextStyle(fontWeight: FontWeight.w600)),
+                            if (g.targetDate != null)
+                              Text(
+                                '　${g.targetDate!.year}/${g.targetDate!.month}/${g.targetDate!.day}',
+                                style: textTheme.bodySmall,
+                              ),
+                          ],
+                        ),
+                        if (g.progress != null) ...[
+                          const SizedBox(height: 4),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: LinearProgressIndicator(value: g.progress, minHeight: 6),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
             ),
     );
   }

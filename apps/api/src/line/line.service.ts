@@ -17,6 +17,8 @@ import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
 import { UsersService } from '../users/users.service';
 import { TodosService } from '../todos/todos.service';
 import { LifeGoalsService } from '../life-goals/life-goals.service';
+import { LifeGoalAiService } from '../life-goals/life-goal-ai.service';
+import { formatGoalProgress } from '../life-goals/life-goal-reminder.service';
 import {
   isInstagramUrl,
   INSTAGRAM_UNSUPPORTED_MESSAGE,
@@ -128,6 +130,7 @@ export class LineService {
     private readonly usersService: UsersService,
     private readonly todosService: TodosService,
     private readonly lifeGoalsService: LifeGoalsService,
+    private readonly lifeGoalAiService: LifeGoalAiService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -235,6 +238,11 @@ export class LineService {
 
   // --- Routing ---
 
+  /** Messages that are almost certainly about a goal even while no AI
+   * conversation is active — routed to AI before the batch/command parsers. */
+  private static readonly LIFE_GOAL_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句/;
+  private static readonly LIFE_GOAL_AI_WINDOW_MS = 10 * 60 * 1000;
+
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
   private static readonly TODO_ENTRY_KEYWORDS = [
     '代辦事項',
@@ -308,6 +316,12 @@ export class LineService {
       await this.captureKnowledgeText(userId, text, replyToken);
       return;
     }
+
+    // 人生目標 AI：正在跟 AI 一問一答（例如它剛問「最喜歡哪一句？」），或訊
+    // 息明顯在講目標/打卡時，優先交給 AI——放在批次多行判斷之前，因為讀書
+    // 心得常常是多行的，不能被拆成逐行記帳指令。
+    const lifeGoalAiFirst = this.isLifeGoalConversationActive(link) || LineService.LIFE_GOAL_HINT.test(text);
+    if (lifeGoalAiFirst && (await this.tryLifeGoalAi(link, text, replyToken))) return;
 
     // --- 條列式一次登陸多筆（2026-08-04）：貼多行文字，每行各自當一筆獨立
     // 的記帳／代辦／股票交易／行事曆指令處理，不用一則訊息只能記一筆。編
@@ -410,6 +424,10 @@ export class LineService {
     if (await this.tryStockCommand(userId, text, replyOnce)) return;
     if (await this.tryStockDcaReply(userId, text, replyToken)) return;
 
+    // 固定指令都對不上：最後交給人生目標 AI 看看是不是在講目標（例如
+    // 「體重現在 72」），不是才回「看不懂」。前面已經問過 AI 的就不再問一次。
+    if (!lifeGoalAiFirst && (await this.tryLifeGoalAi(link, text, replyToken))) return;
+
     await this.reply(
       replyToken,
       [
@@ -431,7 +449,8 @@ export class LineService {
         '（傳「代辦事項」「今日行事曆」看清單）',
         '',
         '🎯 人生目標',
-        '傳「人生目標」看目前進度',
+        '傳「人生目標」看進度，直接用講的記錄：',
+        '「讀完原子習慣，最喜歡：每天進步1%」「體重現在72」',
         '',
         '📚 知識庫　🤖 AI 問答',
         '傳「知識庫」看完整說明｜查詢 <問題>',
@@ -2246,26 +2265,61 @@ export class LineService {
   private async sendLifeGoals(userId: string, replyToken: string) {
     const goals = await this.lifeGoalsService.listAll(userId, LifeGoalStatus.ACTIVE);
     if (goals.length === 0) {
-      await this.reply(replyToken, '🎯 人生目標\n\n目前沒有進行中的目標，去 App 新增一個吧。');
+      await this.reply(
+        replyToken,
+        '🎯 人生目標\n\n目前沒有進行中的目標。可以直接跟我說，例如「新增目標 年底前存到15萬」。',
+      );
       return;
     }
 
     const lines = ['🎯 人生目標', ''];
     for (const g of goals) {
-      const dateLabel = g.targetDate
-        ? `（期限 ${g.targetDate.getMonth() + 1}/${g.targetDate.getDate()}）`
-        : '';
-      if (g.targetValue != null) {
-        const percent = Math.min(100, Math.round(((g.currentValue ?? 0) / g.targetValue) * 100));
-        lines.push(
-          `・${g.title}${dateLabel}\n　${percent}%（${g.currentValue ?? 0}/${g.targetValue}${g.unit ?? ''}）`,
-        );
-      } else {
-        lines.push(`・${g.title}${dateLabel}`);
-      }
+      const dateLabel = g.targetDate ? `（期限 ${g.targetDate.getUTCMonth() + 1}/${g.targetDate.getUTCDate()}）` : '';
+      const progress = formatGoalProgress(g);
+      lines.push(progress ? `・${g.title}${dateLabel}\n　${progress}` : `・${g.title}${dateLabel}`);
     }
+    lines.push('', '直接跟我說進度就會記錄，例如「體重現在72」「今天運動了」');
     await this.reply(replyToken, lines.join('\n'));
   }
+
+  private isLifeGoalConversationActive(link: LineAccountLink): boolean {
+    return (
+      link.lifeGoalAiInteractionId != null &&
+      link.lifeGoalAiInteractionAt != null &&
+      Date.now() - link.lifeGoalAiInteractionAt.getTime() < LineService.LIFE_GOAL_AI_WINDOW_MS
+    );
+  }
+
+  /** Returns false (without replying) when the user has no Gemini key or the
+   * AI says the message isn't about goals — the caller then falls through
+   * to its next handler. Continues the previous AI turn while it's fresh so
+   * a follow-up answer (「最喜歡的一句是…」) lands in the same conversation. */
+  private async tryLifeGoalAi(link: LineAccountLink, text: string, replyToken: string): Promise<boolean> {
+    const user = await this.usersService.findById(link.userId);
+    if (!user?.geminiApiKey) return false;
+
+    try {
+      const result = await this.lifeGoalAiService.handle({
+        userId: link.userId,
+        apiKey: user.geminiApiKey,
+        text,
+        previousInteractionId: this.isLifeGoalConversationActive(link) ? link.lifeGoalAiInteractionId : null,
+      });
+      await this.prisma.lineAccountLink.update({
+        where: { id: link.id },
+        data: {
+          lifeGoalAiInteractionId: result.interactionId,
+          lifeGoalAiInteractionAt: result.interactionId ? new Date() : null,
+        },
+      });
+      if (!result.handled) return false;
+      await this.reply(replyToken, result.reply);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
 
   // --- 行事曆 ---
 

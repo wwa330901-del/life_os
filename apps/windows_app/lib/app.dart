@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'state/ai_assistant_provider.dart';
 import 'state/auth_provider.dart';
 import 'state/knowledge_provider.dart';
+import 'state/life_goal_provider.dart';
 import 'state/space_provider.dart';
 import 'state/todo_provider.dart';
 import 'state/update_provider.dart';
@@ -12,6 +13,7 @@ import 'ui/screens/login_screen.dart';
 import 'ui/screens/space_picker_screen.dart';
 import 'ui/shell/ai_assistant_shell.dart';
 import 'ui/shell/knowledge_shell.dart';
+import 'ui/shell/life_goals_shell.dart';
 import 'ui/shell/space_shell.dart';
 import 'ui/shell/todo_shell.dart';
 import 'ui/widgets/update_dialog.dart';
@@ -82,6 +84,9 @@ class _RootRouter extends ConsumerWidget {
     }
     if (ref.watch(showTodoSpaceProvider)) {
       return const TodoShell();
+    }
+    if (ref.watch(showLifeGoalsProvider)) {
+      return const LifeGoalsShell();
     }
     if (ref.watch(showAiAssistantProvider)) {
       return const AiAssistantShell();

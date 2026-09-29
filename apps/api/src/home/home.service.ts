@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
+import { LifeGoalProgressService } from '../life-goals/life-goal-progress.service';
 import { FinanceTransactionType, LifeGoalStatus } from '../../generated/prisma/client.js';
 import { UpdateHomeLayoutDto } from './dto/update-home-layout.dto';
 import { taipeiTodayRange } from '../common/taipei-date';
@@ -38,6 +39,7 @@ export class HomeService {
     private readonly prisma: PrismaService,
     private readonly financeAccountsService: FinanceAccountsService,
     private readonly stocksHoldingsService: StocksHoldingsService,
+    private readonly lifeGoalProgress: LifeGoalProgressService,
   ) {}
 
   async getLayout(userId: string): Promise<HomeWidgetConfig[]> {
@@ -194,18 +196,22 @@ export class HomeService {
   }
 
   /** Top 5 未完成 人生目標, soonest `targetDate` first (nulls last) — a
-   * lightweight preview, not the full `LifeGoalsService.listAll` payload. */
+   * lightweight preview, not the full `LifeGoalsService.listAll` payload.
+   * Progress is resolved the same way the App list does, so auto-tracked
+   * goals (帳戶餘額/淨資產/打卡…) show their live number here too. */
   private async getActiveLifeGoals(userId: string) {
     const goals = await this.prisma.lifeGoal.findMany({
       where: { ownerUserId: userId, status: LifeGoalStatus.ACTIVE },
       orderBy: [{ targetDate: 'asc' }, { sortOrder: 'asc' }],
       take: 5,
     });
-    return goals.map((g) => ({
+    const resolved = await this.lifeGoalProgress.resolve(userId, goals);
+    return resolved.map((g) => ({
       id: g.id,
       title: g.title,
       targetValue: g.targetValue,
       currentValue: g.currentValue,
+      startValue: g.startValue,
       unit: g.unit,
       targetDate: g.targetDate,
     }));
