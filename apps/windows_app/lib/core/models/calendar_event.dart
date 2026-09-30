@@ -151,6 +151,22 @@ class AppleCalendarSummary {
       AppleCalendarSummary(url: json['url'] as String, displayName: json['displayName'] as String);
 }
 
+class AppleSyncedCalendar {
+  const AppleSyncedCalendar({required this.url, required this.displayName, required this.isWrite});
+
+  final String url;
+  final String displayName;
+
+  /// 元序新增「存到 iPhone」的行程會寫進這一個。
+  final bool isWrite;
+
+  factory AppleSyncedCalendar.fromJson(Map<String, dynamic> json) => AppleSyncedCalendar(
+    url: json['url'] as String,
+    displayName: json['displayName'] as String,
+    isWrite: json['isWrite'] as bool,
+  );
+}
+
 class AppleCalendarConnectionStatus {
   const AppleCalendarConnectionStatus({
     required this.connected,

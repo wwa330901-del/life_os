@@ -1,4 +1,17 @@
-import { BadGatewayException, Body, Controller, Delete, Get, Logger, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Logger,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload';
@@ -8,6 +21,7 @@ import { AppleCalendarService } from './apple-calendar.service';
 import { AppleCalendarSyncService } from './apple-calendar-sync.service';
 import { DiscoverAppleCalendarsDto } from './dto/discover-apple-calendars.dto';
 import { ConnectAppleCalendarDto } from './dto/connect-apple-calendar.dto';
+import { SetAppleWriteCalendarDto } from './dto/set-apple-write-calendar.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('spaces/:spaceId/calendar/apple')
@@ -97,6 +111,50 @@ export class AppleCalendarConnectionController {
       this.prisma.appleCalendarConnection.deleteMany({ where: { spaceId } }),
     ]);
     return { connected: false };
+  }
+
+  /// 已連結後看「同步中的日曆」名稱——用存著的 App 專用密碼即時向 iCloud
+  /// 查，讓使用者不用重新輸入密碼就能改寫入哪一個。
+  @Get('calendars')
+  async listSyncedCalendars(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string) {
+    await this.access.assertCalendarSpace(user.id, spaceId);
+    const connection = await this.prisma.appleCalendarConnection.findUnique({ where: { spaceId } });
+    if (!connection) throw new NotFoundException('還沒有連結 iCloud 日曆');
+    let all: Array<{ url: string; displayName: string }>;
+    try {
+      all = await this.appleCalendar.discoverCalendars(connection.appleId, connection.appPassword);
+    } catch (error) {
+      throw new BadGatewayException(`讀取 iCloud 日曆失敗：${error instanceof Error ? error.message : error}`);
+    }
+    const nameByUrl = new Map(all.map((c) => [c.url, c.displayName]));
+    const writeUrl = connection.writeCalendarUrl ?? connection.selectedCalendarUrls[0] ?? null;
+    return {
+      calendars: connection.selectedCalendarUrls.map((url) => ({
+        url,
+        displayName: nameByUrl.get(url) ?? '（已不存在的日曆）',
+        isWrite: url === writeUrl,
+      })),
+    };
+  }
+
+  @Patch('write-calendar')
+  async setWriteCalendar(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('spaceId') spaceId: string,
+    @Body() dto: SetAppleWriteCalendarDto,
+  ) {
+    await this.access.assertCalendarSpace(user.id, spaceId);
+    const connection = await this.prisma.appleCalendarConnection.findUnique({ where: { spaceId } });
+    if (!connection) throw new NotFoundException('還沒有連結 iCloud 日曆');
+    // 同 connect——寫入的日曆一定要在同步清單裡，不然寫進去的行程讀不回來。
+    if (!connection.selectedCalendarUrls.includes(dto.writeCalendarUrl)) {
+      throw new BadRequestException('只能選同步中的日曆');
+    }
+    await this.prisma.appleCalendarConnection.update({
+      where: { spaceId },
+      data: { writeCalendarUrl: dto.writeCalendarUrl },
+    });
+    return { writeCalendarUrl: dto.writeCalendarUrl };
   }
 
   @Post('sync')

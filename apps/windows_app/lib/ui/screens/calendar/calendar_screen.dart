@@ -220,6 +220,11 @@ class _AppleConnectButton extends ConsumerWidget {
           children: [
             Text(label, style: Theme.of(context).textTheme.bodySmall),
             IconButton(
+              tooltip: '新增的行程寫進哪個 iPhone 日曆',
+              icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+              onPressed: () => _chooseWriteCalendar(context, ref),
+            ),
+            IconButton(
               tooltip: '立即同步',
               icon: const Icon(Icons.sync, size: 18),
               onPressed: () => _syncNow(context, ref),
@@ -300,6 +305,7 @@ class _AppleConnectButton extends ConsumerWidget {
     }
 
     final selected = <String>{};
+    String? writeUrl;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -309,6 +315,7 @@ class _AppleConnectButton extends ConsumerWidget {
             width: 360,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (final calendar in calendars)
                   CheckboxListTile(
@@ -317,11 +324,25 @@ class _AppleConnectButton extends ConsumerWidget {
                     onChanged: (checked) => setState(() {
                       if (checked == true) {
                         selected.add(calendar.url);
+                        writeUrl ??= calendar.url;
                       } else {
                         selected.remove(calendar.url);
+                        if (writeUrl == calendar.url) writeUrl = selected.isEmpty ? null : selected.first;
                       }
                     }),
                   ),
+                if (selected.length > 1) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: writeUrl,
+                    decoration: const InputDecoration(labelText: '在元序新增的行程要寫進哪一個'),
+                    items: [
+                      for (final calendar in calendars.where((c) => selected.contains(c.url)))
+                        DropdownMenuItem(value: calendar.url, child: Text(calendar.displayName)),
+                    ],
+                    onChanged: (value) => setState(() => writeUrl = value),
+                  ),
+                ],
               ],
             ),
           ),
@@ -345,11 +366,52 @@ class _AppleConnectButton extends ConsumerWidget {
             appleId: appleId,
             appPassword: appPassword,
             selectedCalendarUrls: selected.toList(),
+            writeCalendarUrl: writeUrl,
           );
       ref.invalidate(appleCalendarConnectionProvider(spaceId));
       _invalidateAllMonths(ref);
     } on ApiException catch (e) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _chooseWriteCalendar(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    List<AppleSyncedCalendar> calendars;
+    try {
+      calendars = await ref.read(apiClientProvider).listAppleSyncedCalendars(spaceId);
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+    if (!context.mounted || calendars.isEmpty) return;
+
+    final chosen = await showDialog<AppleSyncedCalendar>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('在元序新增的行程要寫進哪一個 iPhone 日曆？'),
+        children: [
+          for (final calendar in calendars)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(calendar),
+              child: Row(
+                children: [
+                  Icon(calendar.isWrite ? Icons.radio_button_checked : Icons.radio_button_unchecked, size: 18),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(calendar.displayName)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null || chosen.isWrite) return;
+
+    try {
+      await ref.read(apiClientProvider).setAppleWriteCalendar(spaceId: spaceId, writeCalendarUrl: chosen.url);
+      messenger.showSnackBar(SnackBar(content: Text('之後新增的行程會寫進「${chosen.displayName}」')));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 

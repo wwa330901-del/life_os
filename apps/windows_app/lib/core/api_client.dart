@@ -318,12 +318,27 @@ class ApiClient {
     required String appleId,
     required String appPassword,
     required List<String> selectedCalendarUrls,
+    String? writeCalendarUrl,
   }) async {
     await _post('/spaces/$spaceId/calendar/apple/connect', {
       'appleId': appleId,
       'appPassword': appPassword,
       'selectedCalendarUrls': selectedCalendarUrls,
+      if (writeCalendarUrl != null) 'writeCalendarUrl': writeCalendarUrl,
     });
+  }
+
+  /// 已連結後列出同步中的日曆（含名稱、哪一個是寫入用的）——用伺服器存著
+  /// 的 App 專用密碼查，不用重新輸入。
+  Future<List<AppleSyncedCalendar>> listAppleSyncedCalendars(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/calendar/apple/calendars');
+    return (body['calendars'] as List<dynamic>)
+        .map((e) => AppleSyncedCalendar.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> setAppleWriteCalendar({required String spaceId, required String writeCalendarUrl}) async {
+    await _patch('/spaces/$spaceId/calendar/apple/write-calendar', {'writeCalendarUrl': writeCalendarUrl});
   }
 
   Future<void> disconnectAppleCalendar(String spaceId) async {
