@@ -32,6 +32,8 @@ class FinanceReportTab extends ConsumerWidget {
       data: (report) => ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          _HealthSection(spaceId: spaceId),
+          const SizedBox(height: 24),
           _NetWorthSection(netWorth: report.netWorth),
           const SizedBox(height: 24),
           _SavingsRateSection(savingsRate: report.savingsRate),
@@ -70,6 +72,81 @@ class _SectionCard extends StatelessWidget {
             Text(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
             child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 財務健檢 — own provider so a slow/failed score never blocks the rest of
+/// the report.
+class _HealthSection extends ConsumerWidget {
+  const _HealthSection({required this.spaceId});
+
+  final String spaceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final healthAsync = ref.watch(financeHealthProvider(spaceId));
+    final scheme = Theme.of(context).colorScheme;
+
+    return _SectionCard(
+      title: '財務健檢',
+      child: healthAsync.when(
+        loading: () => const LinearProgressIndicator(),
+        error: (error, _) => Text('讀取失敗：$error'),
+        data: (health) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('${health.total}', style: Theme.of(context).textTheme.displaySmall),
+                const SizedBox(width: 6),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text('/ 100　${health.grade}'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            for (final item in health.items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        SizedBox(width: 96, child: Text(item.label)),
+                        Expanded(
+                          child: LinearProgressIndicator(
+                            value: item.max == 0 ? 0 : item.score / item.max,
+                            minHeight: 6,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 64,
+                          child: Text(
+                            '${item.score % 1 == 0 ? item.score.toInt() : item.score}/${item.max}',
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(item.detail, style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.7))),
+                    if (item.tip != null)
+                      Text('→ ${item.tip}', style: TextStyle(fontSize: 12, color: scheme.primary)),
+                  ],
+                ),
+              ),
+            Text(
+              '想要具體規劃，可以問 AI 問答「幫我做財務規劃」',
+              style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+            ),
           ],
         ),
       ),

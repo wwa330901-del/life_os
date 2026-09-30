@@ -696,6 +696,11 @@ class ApiClient {
     return FinanceReport.fromJson(body);
   }
 
+  Future<FinanceHealth> financeHealth(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/finance/report/health');
+    return FinanceHealth.fromJson(body);
+  }
+
   Future<void> createFinanceTransaction({
     required String spaceId,
     required FinanceTransactionType type,

@@ -53,7 +53,11 @@ final financeReportProvider = FutureProvider.autoDispose.family<FinanceReport, S
   return ref.read(apiClientProvider).financeReport(spaceId);
 });
 
-final financeBudgetsProvider = FutureProvider.autoDispose.family<List<FinanceBudget>, String>((
+final financeHealthProvider = FutureProvider.autoDispose.family<FinanceHealth, String>((ref, spaceId) {
+  return ref.read(apiClientProvider).financeHealth(spaceId);
+});
+
+final financeBudgetsProvider =FutureProvider.autoDispose.family<List<FinanceBudget>, String>((
   ref,
   spaceId,
 ) {

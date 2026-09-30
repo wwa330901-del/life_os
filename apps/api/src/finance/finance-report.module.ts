@@ -3,6 +3,7 @@ import { FinanceModule } from './finance.module';
 import { StocksModule } from '../stocks/stocks.module';
 import { FinanceReportService } from './finance-report.service';
 import { FinanceReportController } from './finance-report.controller';
+import { FinanceHealthService } from './finance-health.service';
 
 /// Split out from FinanceModule (rather than added to it) specifically to
 /// avoid a circular import — StocksModule already imports FinanceModule
@@ -12,8 +13,8 @@ import { FinanceReportController } from './finance-report.controller';
 @Module({
   imports: [FinanceModule, StocksModule],
   controllers: [FinanceReportController],
-  providers: [FinanceReportService],
+  providers: [FinanceReportService, FinanceHealthService],
   // 人生目標的「淨資產」追蹤用同一套算法，不另寫一份。
-  exports: [FinanceReportService],
+  exports: [FinanceReportService, FinanceHealthService],
 })
 export class FinanceReportModule {}

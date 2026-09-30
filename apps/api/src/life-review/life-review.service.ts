@@ -16,6 +16,7 @@ import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
 import { formatTaipeiDateTime } from '../common/taipei-date';
 import { AiUsageStatus, FinanceTransactionType, LifeGoalStatus, LifeGoalTrackingType } from '../../generated/prisma/client.js';
 import { JournalService } from '../journal/journal.service';
+import { FinanceHealthService } from '../finance/finance-health.service';
 import { dateKeyString, keyToInstant, ReviewKind, ReviewPeriod, reviewPeriod } from './review-period';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -50,6 +51,7 @@ export class LifeReviewService {
     private readonly lineNotifier: LineNotifierService,
     private readonly aiUsage: AiUsageService,
     private readonly journal: JournalService,
+    private readonly financeHealth: FinanceHealthService,
   ) {}
 
   @Cron('0 20 * * 0', { timeZone: 'Asia/Taipei' })
@@ -152,6 +154,12 @@ export class LifeReviewService {
     if (startSnap && endSnap && startSnap.id !== endSnap.id) {
       lines.push(`淨資產 ${fmt(endSnap.netWorth)}（${signed(endSnap.netWorth - startSnap.netWorth)}）`);
     }
+    // 財務健檢只放月回顧——分數看的是近 3 個月，每週變化不大。
+    const health = period.kind === 'month' ? await this.financeHealth.forSpace(userId, space.id) : null;
+    if (health) {
+      const weakest = [...health.items].sort((a, b) => a.score / a.max - b.score / b.max)[0];
+      lines.push(`🩺 財務健檢 ${health.total} 分（${health.grade}），最該加強：${weakest.label}`);
+    }
 
     return {
       text: lines.join('\n'),
@@ -161,6 +169,7 @@ export class LifeReviewService {
         income: current.totalIncome,
         topCategories: top.map((c) => ({ name: c.name, total: c.total, previous: prevByCategory.get(c.name) ?? 0 })),
         overBudget: over.map((b) => ({ category: b.categoryName, budget: b.monthlyAmount, spent: b.spent })),
+        ...(health && { financialHealth: { total: health.total, items: health.items.map((i) => ({ label: i.label, score: i.score, max: i.max, tip: i.tip })) } }),
       },
     };
   }

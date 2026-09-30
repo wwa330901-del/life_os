@@ -286,3 +286,44 @@ class ReportTopExpense {
     categoryName: (json['category'] as Map<String, dynamic>?)?['name'] as String?,
   );
 }
+
+/// 財務健檢 — see backend `finance-health.ts`. Rule-based 0–100.
+class FinanceHealth {
+  const FinanceHealth({required this.total, required this.grade, required this.items});
+
+  final int total;
+  final String grade;
+  final List<FinanceHealthItem> items;
+
+  factory FinanceHealth.fromJson(Map<String, dynamic> json) => FinanceHealth(
+    total: (json['total'] as num).toInt(),
+    grade: json['grade'] as String,
+    items: (json['items'] as List<dynamic>)
+        .map((e) => FinanceHealthItem.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+class FinanceHealthItem {
+  const FinanceHealthItem({
+    required this.label,
+    required this.score,
+    required this.max,
+    required this.detail,
+    required this.tip,
+  });
+
+  final String label;
+  final double score;
+  final int max;
+  final String detail;
+  final String? tip;
+
+  factory FinanceHealthItem.fromJson(Map<String, dynamic> json) => FinanceHealthItem(
+    label: json['label'] as String,
+    score: (json['score'] as num).toDouble(),
+    max: (json['max'] as num).toInt(),
+    detail: json['detail'] as String,
+    tip: json['tip'] as String?,
+  );
+}

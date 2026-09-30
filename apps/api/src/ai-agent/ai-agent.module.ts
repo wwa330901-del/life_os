@@ -9,6 +9,7 @@ import { TodosModule } from '../todos/todos.module';
 import { LifeGoalsModule } from '../life-goals/life-goals.module';
 import { LifeReviewModule } from '../life-review/life-review.module';
 import { JournalModule } from '../journal/journal.module';
+import { FinanceReportModule } from '../finance/finance-report.module';
 import { AiAgentService } from './ai-agent.service';
 import { AiAssistantController } from './ai-assistant.controller';
 
@@ -27,6 +28,7 @@ import { AiAssistantController } from './ai-assistant.controller';
     LifeGoalsModule,
     LifeReviewModule,
     JournalModule,
+    FinanceReportModule,
   ],
   controllers: [AiAssistantController],
   providers: [AiAgentService],

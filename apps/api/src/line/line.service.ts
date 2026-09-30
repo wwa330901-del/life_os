@@ -19,6 +19,7 @@ import { TodosService } from '../todos/todos.service';
 import { LifeGoalsService } from '../life-goals/life-goals.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { LifeReviewService } from '../life-review/life-review.service';
+import { FinanceHealthService, formatFinanceHealth } from '../finance/finance-health.service';
 import { formatGoalProgress } from '../life-goals/life-goal-reminder.service';
 import {
   isInstagramUrl,
@@ -133,6 +134,7 @@ export class LineService {
     private readonly lifeGoalsService: LifeGoalsService,
     private readonly aiAgent: AiAgentService,
     private readonly lifeReview: LifeReviewService,
+    private readonly financeHealth: FinanceHealthService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -258,6 +260,7 @@ export class LineService {
     '知識庫',
     '週回顧',
     '月回顧',
+    '財務健檢',
     '關閉日記提醒',
     '開啟日記提醒',
     ...LineService.GUIDE_KEYWORDS,
@@ -297,6 +300,9 @@ export class LineService {
           '📝 日記',
       '直接講今天發生的事，例如「今天跟家人吃飯很開心」',
       '每晚 9:30 沒寫會問你（傳「關閉日記提醒」可以關掉）',
+      '',
+      '🩺 財務',
+      '傳「財務健檢」看 0～100 分跟改善建議，或問「幫我做財務規劃」',
       '',
       '📊 回顧',
       '傳「週回顧」「月回顧」，週日晚上和每月 1 號也會自動傳給你',
@@ -513,6 +519,12 @@ export class LineService {
         replyToken,
         enabled ? '好，之後每晚 9:30 沒寫日記會問你一聲 📝' : '好，不會再每晚問你了。想寫的時候直接跟我說就好。',
       );
+      return;
+    }
+
+    if (text === '財務健檢') {
+      const health = await this.financeHealth.forUser(userId);
+      await this.reply(replyToken, health ? formatFinanceHealth(health) : '找不到你的個人空間，請先到元序 App 登入一次。');
       return;
     }
 

@@ -22,6 +22,7 @@ import {
 import type { LineAccountLink } from '../../generated/prisma/client.js';
 import { LifeReviewService } from '../life-review/life-review.service';
 import { JOURNAL_AI_GUIDE, JOURNAL_TOOLS, JournalAiService } from '../journal/journal-ai.service';
+import { FinanceHealthService } from '../finance/finance-health.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
 
@@ -61,6 +62,13 @@ interface CalendarEventData {
 const TARGET_LABEL: Record<CalendarSyncTarget, string> = { GOOGLE: 'Google', ICLOUD: 'iPhone（iCloud）' };
 
 const AGENT_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'get_financial_health',
+    description:
+      '財務健檢：0～100 分與六項細分（儲蓄率、緊急預備金、負債比、預算控管、投資配置、記帳習慣），每項有現況跟改善建議，另附月平均收入/支出與淨資產。做財務規劃、問「我的財務狀況怎樣」時先呼叫。',
+    parameters: { type: 'object', properties: {} },
+  },
   {
     type: 'function' as const,
     name: 'get_life_review',
@@ -237,6 +245,7 @@ export class AiAgentService {
     private readonly stockTools: StockAiService,
     private readonly lifeReview: LifeReviewService,
     private readonly journalTools: JournalAiService,
+    private readonly financeHealth: FinanceHealthService,
   ) {}
 
   static isConversationActive(
@@ -478,6 +487,9 @@ export class AiAgentService {
       STOCK_AI_GUIDE,
       '股票買賣的記錄還是請他用固定指令，例如「買股0050 152 3000 國泰世華」。',
       '',
+      '【財務規劃】',
+      '問財務狀況、要做財務規劃時：先 get_financial_health 拿分數跟每項建議，存錢目標再 list_life_goals 看進度，算出「每月要存多少、預備金還差多少、先還哪筆債」，用具體數字給 3 個以內的優先步驟。分數是規則算的，照實說不要自己改分數。',
+      '',
       '【規劃】',
       '使用者要你幫忙規劃（這週怎麼安排、今天先做什麼、這個月預算、目標怎麼達成）時：先用 list_calendar_events、list_todos、list_life_goals、get_finance_overview 看他真實的行程、代辦、目標、收支，再給具體建議（排出時間表、列出優先順序、算出每月要存多少）。',
       '要一次排好幾個行程時，先用文字列出整份計畫問他，他同意後再逐一 create_calendar_event；只有一個就用 propose_calendar_event。',
@@ -529,6 +541,8 @@ export class AiAgentService {
         ctx.pending = { action: { kind: 'calendar_event', summary, data }, turnId: ctx.turnId };
         return { needsConfirmation: true, summary };
       }
+      case 'get_financial_health':
+        return (await this.financeHealth.forUser(ctx.userId)) ?? { error: '找不到個人空間' };
       case 'get_life_review':
         return (await this.lifeReview.build(ctx.userId, args.period === 'month' ? 'month' : 'week')) ?? '這段時間還沒有記錄';
       case 'confirm_pending_action':

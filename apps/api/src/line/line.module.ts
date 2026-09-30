@@ -12,6 +12,7 @@ import { LineLinkController } from './line-link.controller';
 import { LineService } from './line.service';
 import { AiAgentModule } from '../ai-agent/ai-agent.module';
 import { LifeReviewModule } from '../life-review/life-review.module';
+import { FinanceReportModule } from '../finance/finance-report.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { LifeReviewModule } from '../life-review/life-review.module';
     LifeGoalsModule,
     AiAgentModule,
     LifeReviewModule,
+    FinanceReportModule,
   ],
   controllers: [LineWebhookController, LineLinkController],
   providers: [LineService],

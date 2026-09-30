@@ -91,6 +91,7 @@ function makeService(overrides: { goals?: unknown[]; holdings?: unknown[] } = {}
     lineNotifier as never,
     aiUsage as never,
     journal as never,
+    { forSpace: jest.fn() } as never,
   );
 }
 
