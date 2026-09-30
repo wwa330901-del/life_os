@@ -117,8 +117,7 @@ export class LifeGoalAiService {
           trackingType: TRACKING_LABEL[g.trackingType],
           checkInPeriod: g.trackingType === LifeGoalTrackingType.CHECK_IN ? g.checkInPeriod : undefined,
           requireCheckInNote: g.requireCheckInNote,
-          // 持股市值不給模型看——這個助理不碰任何投資資料。
-          currentValue: g.trackingType === LifeGoalTrackingType.STOCK_VALUE ? '（不提供）' : g.currentValue,
+          currentValue: g.currentValue,
           targetValue: g.targetValue,
           startValue: g.startValue,
           unit: g.unit,

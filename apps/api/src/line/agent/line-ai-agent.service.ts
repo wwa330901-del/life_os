@@ -10,6 +10,7 @@ import { FinanceTransactionsService } from '../../finance/finance-transactions.s
 import { TodosService } from '../../todos/todos.service';
 import { CalendarEventsService } from '../../calendar/calendar-events.service';
 import { KnowledgeItemsService } from '../../knowledge/knowledge-items.service';
+import { STOCK_TOOLS, StockAiService } from '../../stocks/stock-ai.service';
 import { taipeiDateKey, taipeiWallClockToUtc } from '../../common/taipei-date';
 import {
   AiUsageStatus,
@@ -202,7 +203,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...AGENT_TOOLS];
 const KNOWLEDGE_SUMMARY_MAX = 120;
 const KNOWLEDGE_RESULT_MAX = 10;
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
@@ -227,7 +228,7 @@ export interface AgentResult {
  * service the App uses. Guessed values (記帳帳戶) and auto-picked times are
  * never written straight away: they become a `pendingAiAction` that only
  * runs when a LATER message confirms it (enforced here, not left to the
- * model). No stock/investment tools, by standing rule. */
+ * model). 股票只讀：看持股損益、分析走勢（2026-10-01 使用者要求），不記交易。 */
 @Injectable()
 export class LineAiAgentService {
   private readonly logger = new Logger(LineAiAgentService.name);
@@ -241,6 +242,7 @@ export class LineAiAgentService {
     private readonly todos: TodosService,
     private readonly calendarEvents: CalendarEventsService,
     private readonly knowledgeItems: KnowledgeItemsService,
+    private readonly stockTools: StockAiService,
   ) {}
 
   static isConversationActive(link: Pick<LineAccountLink, 'aiInteractionId' | 'aiInteractionAt'>): boolean {
@@ -420,6 +422,11 @@ export class LineAiAgentService {
       '【知識庫】',
       '問「之前存過的 XX」「附近有什麼好吃的」「有什麼展可以看」→ search_knowledge／search_places_near／list_upcoming_exhibitions 查真實收藏再回答，沒有就老實說沒有收藏過。',
       '',
+      '【股票】',
+      '問持股、損益、賺多少 → get_stock_portfolio。問某檔（或全部持股）走勢、怎麼看、要不要續抱 → analyze_stock_trend（全部持股就每檔都查），用算好的數據分析：短中期漲跌、股價在均線上還是下（多頭/空頭排列）、離高點多遠、波動大不大、量有沒有放大、跟他的成本比。',
+      '分析要具體、講數字，可以說偏多/偏空/盤整以及要留意的價位，但最後提醒一句這是依過去價格的分析、不保證未來，決定權在他。不要編造新聞或財報數字，工具沒給的就說沒有資料。',
+      '股票買賣的記錄還是請他用固定指令，例如「買股0050 152 3000 國泰世華」。',
+      '',
       '【規劃】',
       '使用者要你幫忙規劃（這週怎麼安排、今天先做什麼、這個月預算、目標怎麼達成）時：先用 list_calendar_events、list_todos、list_life_goals、get_finance_overview 看他真實的行程、代辦、目標、收支，再給具體建議（排出時間表、列出優先順序、算出每月要存多少）。',
       '要一次排好幾個行程時，先用文字列出整份計畫問他，他同意後再逐一 create_calendar_event；只有一個就用 propose_calendar_event。',
@@ -429,7 +436,6 @@ export class LineAiAgentService {
       '',
       '【其他】',
       '查詢問題（這個月花多少、有哪些代辦）用 get_/list_ 工具查真實資料再回答，不要瞎猜數字。',
-      '你不提供任何投資、股票相關的操作或建議（股票買賣請使用者用固定指令，例如「買股0050 152 3000 國泰世華」）。',
       `打招呼、閒聊、心情、生活問題、一般知識都像朋友一樣自然回應。只有訊息是亂碼或完全看不懂時，才只回覆 ${NOT_HANDLED}。`,
       '回覆一律繁體中文、口語、簡短（LINE 訊息，不要用 Markdown 的 ** 或 #）；做了事就一兩句說明做了什麼或需要他補什麼，規劃建議可以條列但要精簡。',
     ].join('\n');
@@ -440,6 +446,7 @@ export class LineAiAgentService {
   private async execute(ctx: AgentContext, name: string, args: ToolArgs): Promise<unknown> {
     if (QUERY_TOOL_NAMES.has(name)) return this.queryTools.execute(ctx.userId, name, args);
     if (LifeGoalAiService.toolNames.has(name)) return this.goalTools.execute(ctx.userId, name, args);
+    if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
     switch (name) {
       case 'record_transaction':

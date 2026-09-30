@@ -301,7 +301,9 @@ export class LineService {
       '📚 知識庫',
       '傳連結／圖片／影片給我，自動分析收藏',
       '',
-      '📈 股票用打字指令：持股／股票買賣',
+      '📈 股票',
+      '「我的股票賺多少？」「幫我分析台積電的走勢」',
+      '記買賣：買股0050 152 3000 國泰世華',
     ].join('\n');
   }
   private static readonly TODO_ENTRY_KEYWORDS = [
