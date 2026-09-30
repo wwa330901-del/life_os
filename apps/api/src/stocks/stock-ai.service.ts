@@ -36,6 +36,11 @@ export const STOCK_TOOLS = [
   },
 ];
 
+export const STOCK_AI_GUIDE = [
+  '問持股、損益、賺多少 → get_stock_portfolio。問某檔（或全部持股）走勢、怎麼看、要不要續抱 → analyze_stock_trend（全部持股就每檔都查），用算好的數據分析：短中期漲跌、股價在均線上還是下（多頭/空頭排列）、離高點多遠、波動大不大、量有沒有放大、跟他的成本比。',
+  '分析要具體、講數字，可以說偏多/偏空/盤整以及要留意的價位，但最後提醒一句這是依過去價格的分析、不保證未來，決定權在他。不要編造新聞或財報數字，工具沒給的就說沒有資料。',
+].join('\n');
+
 @Injectable()
 export class StockAiService {
   constructor(

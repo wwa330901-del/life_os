@@ -9,8 +9,8 @@ import { LIFE_GOAL_TOOLS, LifeGoalAiService } from '../../life-goals/life-goal-a
 import { FinanceTransactionsService } from '../../finance/finance-transactions.service';
 import { TodosService } from '../../todos/todos.service';
 import { CalendarEventsService } from '../../calendar/calendar-events.service';
-import { KnowledgeItemsService } from '../../knowledge/knowledge-items.service';
-import { STOCK_TOOLS, StockAiService } from '../../stocks/stock-ai.service';
+import { KNOWLEDGE_AI_GUIDE, KNOWLEDGE_TOOLS, KnowledgeAiService } from '../../knowledge/knowledge-ai.service';
+import { STOCK_AI_GUIDE, STOCK_TOOLS, StockAiService } from '../../stocks/stock-ai.service';
 import { taipeiDateKey, taipeiWallClockToUtc } from '../../common/taipei-date';
 import {
   AiUsageStatus,
@@ -56,38 +56,6 @@ interface CalendarEventData {
 }
 
 const TARGET_LABEL: Record<CalendarSyncTarget, string> = { GOOGLE: 'Google', ICLOUD: 'iPhone（iCloud）' };
-
-const KNOWLEDGE_TOOLS = [
-  {
-    type: 'function' as const,
-    name: 'search_knowledge',
-    description:
-      '搜尋使用者知識庫裡自己收藏的內容（文章、影片、筆記、美食、景點…）。keyword 比對標題、摘要、標籤；categoryName 是知識庫分類名稱（可不填）。兩個都不填＝最近收藏的。',
-    parameters: {
-      type: 'object',
-      properties: { keyword: { type: 'string' }, categoryName: { type: 'string' } },
-    },
-  },
-  {
-    type: 'function' as const,
-    name: 'search_places_near',
-    description: '用地點找收藏過的美食或景點（比對地址），例如「信義區有什麼好吃的」→ categoryName=美食、location=信義。',
-    parameters: {
-      type: 'object',
-      properties: {
-        categoryName: { type: 'string', enum: ['美食', '景點'] },
-        location: { type: 'string' },
-      },
-      required: ['categoryName', 'location'],
-    },
-  },
-  {
-    type: 'function' as const,
-    name: 'list_upcoming_exhibitions',
-    description: '列出收藏的展覽（依結束日期排序，含是否已觀展）。想去看展可以接著 find_free_slots 幫他排時間。',
-    parameters: { type: 'object', properties: {} },
-  },
-];
 
 const AGENT_TOOLS = [
   {
@@ -204,8 +172,6 @@ const AGENT_TOOLS = [
 ];
 
 const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...AGENT_TOOLS];
-const KNOWLEDGE_SUMMARY_MAX = 120;
-const KNOWLEDGE_RESULT_MAX = 10;
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 interface AgentContext {
@@ -241,7 +207,7 @@ export class LineAiAgentService {
     private readonly transactions: FinanceTransactionsService,
     private readonly todos: TodosService,
     private readonly calendarEvents: CalendarEventsService,
-    private readonly knowledgeItems: KnowledgeItemsService,
+    private readonly knowledgeTools: KnowledgeAiService,
     private readonly stockTools: StockAiService,
   ) {}
 
@@ -420,11 +386,10 @@ export class LineAiAgentService {
       '先 list_life_goals 看有哪些目標再判斷對應哪一個；說法不同但意思一樣（「看完一本設計書」對「一年讀12本書」）就對應同一個，不要另開新目標。打卡要心得而使用者沒給，先問「最喜歡的一句話或心得是什麼？」。',
       '',
       '【知識庫】',
-      '問「之前存過的 XX」「附近有什麼好吃的」「有什麼展可以看」→ search_knowledge／search_places_near／list_upcoming_exhibitions 查真實收藏再回答，沒有就老實說沒有收藏過。',
+      KNOWLEDGE_AI_GUIDE + '想去看展可以接著 find_free_slots 幫他排時間。',
       '',
       '【股票】',
-      '問持股、損益、賺多少 → get_stock_portfolio。問某檔（或全部持股）走勢、怎麼看、要不要續抱 → analyze_stock_trend（全部持股就每檔都查），用算好的數據分析：短中期漲跌、股價在均線上還是下（多頭/空頭排列）、離高點多遠、波動大不大、量有沒有放大、跟他的成本比。',
-      '分析要具體、講數字，可以說偏多/偏空/盤整以及要留意的價位，但最後提醒一句這是依過去價格的分析、不保證未來，決定權在他。不要編造新聞或財報數字，工具沒給的就說沒有資料。',
+      STOCK_AI_GUIDE,
       '股票買賣的記錄還是請他用固定指令，例如「買股0050 152 3000 國泰世華」。',
       '',
       '【規劃】',
@@ -446,6 +411,7 @@ export class LineAiAgentService {
   private async execute(ctx: AgentContext, name: string, args: ToolArgs): Promise<unknown> {
     if (QUERY_TOOL_NAMES.has(name)) return this.queryTools.execute(ctx.userId, name, args);
     if (LifeGoalAiService.toolNames.has(name)) return this.goalTools.execute(ctx.userId, name, args);
+    if (KnowledgeAiService.toolNames.has(name)) return this.knowledgeTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
     switch (name) {
@@ -475,20 +441,6 @@ export class LineAiAgentService {
         const summary = `新增行程「${data.title}」${describeEvent(data)}${data.syncTarget ? `，存到 ${TARGET_LABEL[data.syncTarget]}` : ''}`;
         ctx.pending = { action: { kind: 'calendar_event', summary, data }, turnId: ctx.turnId };
         return { needsConfirmation: true, summary };
-      }
-      case 'search_knowledge':
-        return this.searchKnowledge(ctx, args);
-      case 'search_places_near': {
-        const items = await this.knowledgeItems.searchByLocation(ctx.userId, String(args.categoryName), String(args.location ?? '').trim());
-        return items.slice(0, KNOWLEDGE_RESULT_MAX).map((item) => this.describeKnowledgeItem(item));
-      }
-      case 'list_upcoming_exhibitions': {
-        const items = await this.knowledgeItems.listUpcomingExhibitions(ctx.userId);
-        return items.slice(0, KNOWLEDGE_RESULT_MAX).map((item) => ({
-          ...this.describeKnowledgeItem(item),
-          endDate: this.knowledgeItems.fieldDateValue(item, '結束日期')?.toISOString().slice(0, 10) ?? null,
-          visited: this.knowledgeItems.fieldBooleanValue(item, '是否已觀展') ?? false,
-        }));
       }
       case 'confirm_pending_action':
         return this.confirmPending(ctx);
@@ -690,36 +642,6 @@ export class LineAiAgentService {
       slots: slots.map((s) => ({ date: taipeiDateKey(s.start), startTime: clock(s.start), endTime: clock(s.end), label: slotLabel(s.start, s.end) })),
       ...(slots.length === 0 && { message: '這段期間找不到空檔，可以問使用者要不要放寬日期或時段' }),
       ...(allDayNotes.length > 0 && { allDayEventsInRange: allDayNotes }),
-    };
-  }
-
-  private async searchKnowledge(ctx: AgentContext, args: ToolArgs) {
-    const keyword = typeof args.keyword === 'string' && args.keyword.trim() ? args.keyword.trim() : undefined;
-    const categoryName = typeof args.categoryName === 'string' ? args.categoryName.trim() : '';
-    let categoryId: string | undefined;
-    if (categoryName) {
-      const categories = await this.prisma.knowledgeCategory.findMany({
-        where: { ownerUserId: ctx.userId },
-        select: { id: true, name: true },
-      });
-      const category =
-        categories.find((c) => c.name === categoryName) ??
-        categories.find((c) => c.name.includes(categoryName) || categoryName.includes(c.name));
-      if (!category) throw new Error(`知識庫沒有「${categoryName}」這個分類，可用的：${categories.map((c) => c.name).join('、')}`);
-      categoryId = category.id;
-    }
-    const page = await this.knowledgeItems.listOwn(ctx.userId, { search: keyword, categoryId, take: KNOWLEDGE_RESULT_MAX });
-    return page.items.map((item) => this.describeKnowledgeItem(item));
-  }
-
-  private describeKnowledgeItem(item: Awaited<ReturnType<KnowledgeItemsService['listUpcomingExhibitions']>>[number]) {
-    const summary = item.summary ?? '';
-    return {
-      title: item.title ?? '未命名',
-      category: item.category?.name ?? null,
-      summary: summary.length > KNOWLEDGE_SUMMARY_MAX ? `${summary.slice(0, KNOWLEDGE_SUMMARY_MAX)}…` : summary,
-      address: this.knowledgeItems.fieldTextValue(item, '地址'),
-      url: item.sourceUrl ?? null,
     };
   }
 

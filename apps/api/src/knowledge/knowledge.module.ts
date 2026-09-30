@@ -12,6 +12,7 @@ import { AI_CONTENT_ANALYSIS_SERVICE } from './ai/ai-content-analysis.interface'
 import { KnowledgeAnalysisPipeline } from './knowledge-analysis-pipeline.service';
 import { KnowledgeExhibitionReminderService } from './knowledge-exhibition-reminder.service';
 import { SupabaseStorageService } from './supabase-storage.service';
+import { KnowledgeAiService } from './knowledge-ai.service';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { UsersModule } from '../users/users.module';
 
@@ -31,6 +32,7 @@ import { UsersModule } from '../users/users.module';
     KnowledgeAnalysisPipeline,
     KnowledgeExhibitionReminderService,
     SupabaseStorageService,
+    KnowledgeAiService,
     {
       provide: AI_CONTENT_ANALYSIS_SERVICE,
       useClass: GeminiContentAnalysisService,
@@ -42,6 +44,7 @@ import { UsersModule } from '../users/users.module';
     KnowledgeAnalysisPipeline,
     InstagramFetcherService,
     SupabaseStorageService,
+    KnowledgeAiService,
     // `feature` on AiUsageLog is a plain string specifically so a later,
     // non-知識庫 AI feature could log through the same table — AiAssistant
     // (元序 AI 問答) is the first one to actually do it.

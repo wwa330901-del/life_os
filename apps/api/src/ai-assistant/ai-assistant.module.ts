@@ -4,12 +4,14 @@ import { CalendarModule } from '../calendar/calendar.module';
 import { TodosModule } from '../todos/todos.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { UsersModule } from '../users/users.module';
+import { StocksModule } from '../stocks/stocks.module';
+import { LifeGoalsModule } from '../life-goals/life-goals.module';
 import { AiQueryToolsService } from './ai-query-tools.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { AiAssistantController } from './ai-assistant.controller';
 
 @Module({
-  imports: [FinanceModule, CalendarModule, TodosModule, KnowledgeModule, UsersModule],
+  imports: [FinanceModule, CalendarModule, TodosModule, KnowledgeModule, UsersModule, StocksModule, LifeGoalsModule],
   controllers: [AiAssistantController],
   providers: [AiQueryToolsService, AiAssistantService],
   // AiQueryToolsService's read-only tools are also composed into the LINE 萬用 AI.
