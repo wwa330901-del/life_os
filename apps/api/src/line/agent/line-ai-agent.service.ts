@@ -9,6 +9,7 @@ import { LIFE_GOAL_TOOLS, LifeGoalAiService } from '../../life-goals/life-goal-a
 import { FinanceTransactionsService } from '../../finance/finance-transactions.service';
 import { TodosService } from '../../todos/todos.service';
 import { CalendarEventsService } from '../../calendar/calendar-events.service';
+import { KnowledgeItemsService } from '../../knowledge/knowledge-items.service';
 import { taipeiDateKey, taipeiWallClockToUtc } from '../../common/taipei-date';
 import {
   AiUsageStatus,
@@ -54,6 +55,38 @@ interface CalendarEventData {
 }
 
 const TARGET_LABEL: Record<CalendarSyncTarget, string> = { GOOGLE: 'Google', ICLOUD: 'iPhone（iCloud）' };
+
+const KNOWLEDGE_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'search_knowledge',
+    description:
+      '搜尋使用者知識庫裡自己收藏的內容（文章、影片、筆記、美食、景點…）。keyword 比對標題、摘要、標籤；categoryName 是知識庫分類名稱（可不填）。兩個都不填＝最近收藏的。',
+    parameters: {
+      type: 'object',
+      properties: { keyword: { type: 'string' }, categoryName: { type: 'string' } },
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'search_places_near',
+    description: '用地點找收藏過的美食或景點（比對地址），例如「信義區有什麼好吃的」→ categoryName=美食、location=信義。',
+    parameters: {
+      type: 'object',
+      properties: {
+        categoryName: { type: 'string', enum: ['美食', '景點'] },
+        location: { type: 'string' },
+      },
+      required: ['categoryName', 'location'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'list_upcoming_exhibitions',
+    description: '列出收藏的展覽（依結束日期排序，含是否已觀展）。想去看展可以接著 find_free_slots 幫他排時間。',
+    parameters: { type: 'object', properties: {} },
+  },
+];
 
 const AGENT_TOOLS = [
   {
@@ -169,7 +202,9 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...AGENT_TOOLS];
+const KNOWLEDGE_SUMMARY_MAX = 120;
+const KNOWLEDGE_RESULT_MAX = 10;
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 interface AgentContext {
@@ -187,7 +222,7 @@ export interface AgentResult {
   reply: string;
 }
 
-/** LINE 萬用 AI (2026-09-30): 記帳、代辦、行事曆（含自動找空檔）、人生目標、
+/** LINE 萬用 AI (2026-09-30): 記帳、代辦、行事曆（含自動找空檔）、人生目標、知識庫、生活規劃與閒聊、
  * 查詢 — everything by just talking. Every write goes through the same
  * service the App uses. Guessed values (記帳帳戶) and auto-picked times are
  * never written straight away: they become a `pendingAiAction` that only
@@ -205,6 +240,7 @@ export class LineAiAgentService {
     private readonly transactions: FinanceTransactionsService,
     private readonly todos: TodosService,
     private readonly calendarEvents: CalendarEventsService,
+    private readonly knowledgeItems: KnowledgeItemsService,
   ) {}
 
   static isConversationActive(link: Pick<LineAccountLink, 'aiInteractionId' | 'aiInteractionAt'>): boolean {
@@ -363,7 +399,7 @@ export class LineAiAgentService {
     const targets = ctx.connectedTargets.map((t) => `${t}＝${TARGET_LABEL[t]}`).join('、') || '（沒有連結任何外部行事曆，行程只存在元序，不用問存哪）';
 
     return [
-      '你是「元序」App 的 LINE 助理。使用者用聊天的方式跟你說要記帳、新增代辦、排行程、記錄人生目標、或問自己的資料，你用工具幫他完成。',
+      '你是「元序」App 的 LINE 生活助理，像一個熟悉使用者生活的真人朋友兼秘書，用自然口語聊天。使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
       `現在是 ${today}（台北時間）。「明天」「下週三」這類說法都以這個日期換算成 YYYY-MM-DD。`,
       '',
       '【記帳】',
@@ -381,14 +417,21 @@ export class LineAiAgentService {
       `使用者已有的目標分類：${goalCategories.map((g) => g.category).join('、') || '（無）'}`,
       '先 list_life_goals 看有哪些目標再判斷對應哪一個；說法不同但意思一樣（「看完一本設計書」對「一年讀12本書」）就對應同一個，不要另開新目標。打卡要心得而使用者沒給，先問「最喜歡的一句話或心得是什麼？」。',
       '',
+      '【知識庫】',
+      '問「之前存過的 XX」「附近有什麼好吃的」「有什麼展可以看」→ search_knowledge／search_places_near／list_upcoming_exhibitions 查真實收藏再回答，沒有就老實說沒有收藏過。',
+      '',
+      '【規劃】',
+      '使用者要你幫忙規劃（這週怎麼安排、今天先做什麼、這個月預算、目標怎麼達成）時：先用 list_calendar_events、list_todos、list_life_goals、get_finance_overview 看他真實的行程、代辦、目標、收支，再給具體建議（排出時間表、列出優先順序、算出每月要存多少）。',
+      '要一次排好幾個行程時，先用文字列出整份計畫問他，他同意後再逐一 create_calendar_event；只有一個就用 propose_calendar_event。',
+      '',
       '【等確認的動作】',
       ctx.pending ? `目前有一個等使用者確認的動作：${ctx.pending.action.summary}。使用者這則訊息如果是同意就 confirm_pending_action，不要就 cancel_pending_action，要改內容就重新提議。` : '目前沒有。',
       '',
       '【其他】',
       '查詢問題（這個月花多少、有哪些代辦）用 get_/list_ 工具查真實資料再回答，不要瞎猜數字。',
       '你不提供任何投資、股票相關的操作或建議（股票買賣請使用者用固定指令，例如「買股0050 152 3000 國泰世華」）。',
-      `如果訊息完全不是你能處理的（純打招呼以外的無關內容），只回覆 ${NOT_HANDLED}。`,
-      '回覆一律繁體中文，一兩句話簡短說明做了什麼或需要他補什麼。',
+      `打招呼、閒聊、心情、生活問題、一般知識都像朋友一樣自然回應。只有訊息是亂碼或完全看不懂時，才只回覆 ${NOT_HANDLED}。`,
+      '回覆一律繁體中文、口語、簡短（LINE 訊息，不要用 Markdown 的 ** 或 #）；做了事就一兩句說明做了什麼或需要他補什麼，規劃建議可以條列但要精簡。',
     ].join('\n');
   }
 
@@ -425,6 +468,20 @@ export class LineAiAgentService {
         const summary = `新增行程「${data.title}」${describeEvent(data)}${data.syncTarget ? `，存到 ${TARGET_LABEL[data.syncTarget]}` : ''}`;
         ctx.pending = { action: { kind: 'calendar_event', summary, data }, turnId: ctx.turnId };
         return { needsConfirmation: true, summary };
+      }
+      case 'search_knowledge':
+        return this.searchKnowledge(ctx, args);
+      case 'search_places_near': {
+        const items = await this.knowledgeItems.searchByLocation(ctx.userId, String(args.categoryName), String(args.location ?? '').trim());
+        return items.slice(0, KNOWLEDGE_RESULT_MAX).map((item) => this.describeKnowledgeItem(item));
+      }
+      case 'list_upcoming_exhibitions': {
+        const items = await this.knowledgeItems.listUpcomingExhibitions(ctx.userId);
+        return items.slice(0, KNOWLEDGE_RESULT_MAX).map((item) => ({
+          ...this.describeKnowledgeItem(item),
+          endDate: this.knowledgeItems.fieldDateValue(item, '結束日期')?.toISOString().slice(0, 10) ?? null,
+          visited: this.knowledgeItems.fieldBooleanValue(item, '是否已觀展') ?? false,
+        }));
       }
       case 'confirm_pending_action':
         return this.confirmPending(ctx);
@@ -626,6 +683,36 @@ export class LineAiAgentService {
       slots: slots.map((s) => ({ date: taipeiDateKey(s.start), startTime: clock(s.start), endTime: clock(s.end), label: slotLabel(s.start, s.end) })),
       ...(slots.length === 0 && { message: '這段期間找不到空檔，可以問使用者要不要放寬日期或時段' }),
       ...(allDayNotes.length > 0 && { allDayEventsInRange: allDayNotes }),
+    };
+  }
+
+  private async searchKnowledge(ctx: AgentContext, args: ToolArgs) {
+    const keyword = typeof args.keyword === 'string' && args.keyword.trim() ? args.keyword.trim() : undefined;
+    const categoryName = typeof args.categoryName === 'string' ? args.categoryName.trim() : '';
+    let categoryId: string | undefined;
+    if (categoryName) {
+      const categories = await this.prisma.knowledgeCategory.findMany({
+        where: { ownerUserId: ctx.userId },
+        select: { id: true, name: true },
+      });
+      const category =
+        categories.find((c) => c.name === categoryName) ??
+        categories.find((c) => c.name.includes(categoryName) || categoryName.includes(c.name));
+      if (!category) throw new Error(`知識庫沒有「${categoryName}」這個分類，可用的：${categories.map((c) => c.name).join('、')}`);
+      categoryId = category.id;
+    }
+    const page = await this.knowledgeItems.listOwn(ctx.userId, { search: keyword, categoryId, take: KNOWLEDGE_RESULT_MAX });
+    return page.items.map((item) => this.describeKnowledgeItem(item));
+  }
+
+  private describeKnowledgeItem(item: Awaited<ReturnType<KnowledgeItemsService['listUpcomingExhibitions']>>[number]) {
+    const summary = item.summary ?? '';
+    return {
+      title: item.title ?? '未命名',
+      category: item.category?.name ?? null,
+      summary: summary.length > KNOWLEDGE_SUMMARY_MAX ? `${summary.slice(0, KNOWLEDGE_SUMMARY_MAX)}…` : summary,
+      address: this.knowledgeItems.fieldTextValue(item, '地址'),
+      url: item.sourceUrl ?? null,
     };
   }
 

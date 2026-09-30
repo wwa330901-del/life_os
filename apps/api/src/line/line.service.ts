@@ -248,6 +248,14 @@ export class LineService {
   // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
   // 其他都靠直接跟 AI 講，這裡列出可以叫它做什麼。
   private static readonly GUIDE_KEYWORDS = ['我能做什麼', '可以做什麼', '功能', '說明', '使用說明'];
+  private static readonly MENU_COMMANDS = new Set([
+    '財務總覽',
+    '今日行事曆',
+    '代辦事項總覽',
+    '人生目標',
+    '知識庫',
+    ...LineService.GUIDE_KEYWORDS,
+  ]);
 
   private static buildGuideText(hasAi: boolean): string {
     const aiPart = hasAi
@@ -272,6 +280,16 @@ export class LineService {
           '「看完一本書」（我會問你心得）',
           '「我想今年存到50萬」（幫你開新目標）',
           '',
+          '🗂 找收藏',
+          '「之前存的那篇理財文章」「信義區有什麼好吃的」',
+          '「最近有什麼展可以看？」',
+          '',
+          '🧭 規劃',
+          '「幫我規劃這週」「今天先做什麼好？」',
+          '「這個月還能花多少？」',
+          '',
+          '也可以單純聊天、問意見 🙂',
+          '',
         ]
       : [
           '⚠️ 還沒設定 AI 金鑰，只能用固定指令。',
@@ -283,8 +301,7 @@ export class LineService {
       '📚 知識庫',
       '傳連結／圖片／影片給我，自動分析收藏',
       '',
-      '其他打字就能用的：',
-      '持股／股票買賣／美食／景點／展覽',
+      '📈 股票用打字指令：持股／股票買賣',
     ].join('\n');
   }
   private static readonly TODO_ENTRY_KEYWORDS = [
@@ -364,8 +381,10 @@ export class LineService {
     // 正在跟 AI 一問一答（它剛問「存到 Google 還是 iPhone？」「記在現金可以
     // 嗎？」），或訊息明顯是要 AI 幫忙時，優先交給 AI。
     const geminiApiKey = (await this.usersService.findById(userId))?.geminiApiKey ?? null;
+    // 選單按鈕送出的文字永遠走固定回覆，就算正在跟 AI 聊天也一樣。
     const aiFirst =
       geminiApiKey != null &&
+      !LineService.MENU_COMMANDS.has(text) &&
       (LineAiAgentService.isConversationActive(link) || LineService.AI_FIRST_HINT.test(text));
     if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey))) return;
 
