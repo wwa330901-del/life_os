@@ -245,6 +245,48 @@ export class LineService {
   private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我/;
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
+  // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
+  // 其他都靠直接跟 AI 講，這裡列出可以叫它做什麼。
+  private static readonly GUIDE_KEYWORDS = ['我能做什麼', '可以做什麼', '功能', '說明', '使用說明'];
+
+  private static buildGuideText(hasAi: boolean): string {
+    const aiPart = hasAi
+      ? [
+          '💬 直接跟我講話就好，不用記指令',
+          '',
+          '💰 記帳',
+          '「午餐 120」「昨天加油 1500 刷卡」',
+          '「這個月花了多少？」「上週吃飯花多少」',
+          '',
+          '✅ 代辦',
+          '「提醒我週五交報告」「報告做完了」',
+          '「我還有什麼沒做？」',
+          '',
+          '📅 行程',
+          '「明天下午三點看牙醫」',
+          '「幫我排兩小時健身」（我會找空檔問你）',
+          '「這週有什麼行程？」',
+          '',
+          '🎯 人生目標',
+          '「今天運動了」「體重現在72」',
+          '「看完一本書」（我會問你心得）',
+          '「我想今年存到50萬」（幫你開新目標）',
+          '',
+        ]
+      : [
+          '⚠️ 還沒設定 AI 金鑰，只能用固定指令。',
+          '到元序 App 左側「AI 設定」填 Gemini 金鑰後，就能直接跟我講話。',
+          '',
+        ];
+    return [
+      ...aiPart,
+      '📚 知識庫',
+      '傳連結／圖片／影片給我，自動分析收藏',
+      '',
+      '其他打字就能用的：',
+      '持股／股票買賣／美食／景點／展覽',
+    ].join('\n');
+  }
   private static readonly TODO_ENTRY_KEYWORDS = [
     '代辦事項',
     '代辦',
@@ -422,6 +464,11 @@ export class LineService {
 
     if (text === '人生目標') {
       await this.sendLifeGoals(userId, replyToken);
+      return;
+    }
+
+    if (LineService.GUIDE_KEYWORDS.includes(text)) {
+      await this.reply(replyToken, LineService.buildGuideText(geminiApiKey != null));
       return;
     }
 
