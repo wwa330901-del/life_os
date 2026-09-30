@@ -920,6 +920,8 @@ model LineAccountLink {
   /// 記下問的時間——之後 3 小時內的回覆交給 AI 記成日記。
   journalPromptAt        DateTime?
   journalReminderEnabled Boolean   @default(true)
+  /// 每日早報（2026-10-01）：每天 08:00 今天的行程/代辦/昨天花費/預算，傳「關閉早報」可關。
+  morningBriefEnabled    Boolean   @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -961,6 +963,8 @@ model ProjectTodo {
   /// （2026-09-30：跟代辦一起選，規則同 CalendarEvent.syncTarget）。
   calendarSyncTarget CalendarSyncTarget?
   priority           TodoPriority        @default(MEDIUM)
+  /// 有時間的代辦到期前 1 小時 LINE 提醒過了（2026-10-01）；改到期時間會清掉重來。
+  dueReminderSentAt  DateTime?
   notes              String?
 
   /// The auto-created 行事曆 event mirroring this todo's due date/time, if

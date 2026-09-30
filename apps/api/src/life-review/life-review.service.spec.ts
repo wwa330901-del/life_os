@@ -92,6 +92,15 @@ function makeService(overrides: { goals?: unknown[]; holdings?: unknown[] } = {}
     aiUsage as never,
     journal as never,
     { forSpace: jest.fn() } as never,
+    {
+      list: jest.fn().mockResolvedValue({
+        items: [
+          { direction: 'LEND', counterpartyName: '小明', outstanding: 3000, initialTransaction: { date: new Date('2026-08-20T00:00:00Z') } },
+          { direction: 'LEND', counterpartyName: '阿華', outstanding: 500, initialTransaction: { date: new Date('2026-09-30T00:00:00Z') } },
+        ],
+      }),
+    } as never,
+    { list: jest.fn().mockResolvedValue({ items: [] }) } as never,
   );
 }
 
@@ -112,6 +121,8 @@ describe('LifeReviewService.build', () => {
     expect(text).toContain('進度落後：一年讀 12 本書');
     expect(text).toContain('寫了 3 天，平均心情 3.7/5 🙂');
     expect(text).toContain('常寫到：工作、家人');
+    expect(text).toContain('・小明 還欠 3,000（借出 45 天）');
+    expect(text).not.toContain('阿華'); // lent only 4 days ago
     // No stock holdings and no Gemini key → no stock section, no AI line.
     expect(text).not.toContain('📈');
     expect(text).not.toContain('💬');

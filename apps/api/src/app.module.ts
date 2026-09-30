@@ -24,6 +24,7 @@ import { FinanceReportModule } from './finance/finance-report.module';
 import { LifeGoalsModule } from './life-goals/life-goals.module';
 import { LifeReviewModule } from './life-review/life-review.module';
 import { JournalModule } from './journal/journal.module';
+import { DailyBriefModule } from './daily-brief/daily-brief.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { JournalModule } from './journal/journal.module';
     LifeGoalsModule,
     LifeReviewModule,
     JournalModule,
+    DailyBriefModule,
   ],
   controllers: [AppController],
   providers: [

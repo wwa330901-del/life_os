@@ -14,13 +14,16 @@ import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
 import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
 import { formatTaipeiDateTime } from '../common/taipei-date';
-import { AiUsageStatus, FinanceTransactionType, LifeGoalStatus, LifeGoalTrackingType } from '../../generated/prisma/client.js';
+import { AiUsageStatus, FinanceLoanDirection, FinanceTransactionType, LifeGoalStatus, LifeGoalTrackingType } from '../../generated/prisma/client.js';
 import { JournalService } from '../journal/journal.service';
 import { FinanceHealthService } from '../finance/finance-health.service';
+import { FinanceLoansService } from '../finance/finance-loans.service';
+import { FinanceAdvancesService } from '../finance/finance-advances.service';
 import { dateKeyString, keyToInstant, ReviewKind, ReviewPeriod, reviewPeriod } from './review-period';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const TOP_CATEGORIES = 3;
+const OWED_STALE_DAYS = 30;
 const LIST_MAX = 5;
 const UPCOMING_DAYS = 7;
 /** 落後判斷：時間過了這麼多比例，進度還差這麼多就算落後。 */
@@ -52,6 +55,8 @@ export class LifeReviewService {
     private readonly aiUsage: AiUsageService,
     private readonly journal: JournalService,
     private readonly financeHealth: FinanceHealthService,
+    private readonly loans: FinanceLoansService,
+    private readonly advances: FinanceAdvancesService,
   ) {}
 
   @Cron('0 20 * * 0', { timeZone: 'Asia/Taipei' })
@@ -82,14 +87,15 @@ export class LifeReviewService {
   /** The full review text, or null when the user has no data at all. */
   async build(userId: string, kind: ReviewKind, now = new Date(), completedMonth = false): Promise<string | null> {
     const period = reviewPeriod(kind, now, completedMonth);
-    const [money, tasks, goals, journal, stocks] = await Promise.all([
+    const [money, owed, tasks, goals, journal, stocks] = await Promise.all([
       this.moneySection(userId, period),
+      this.owedSection(userId, period, now),
       this.taskSection(userId, period, now),
       this.goalSection(userId, period, now),
       this.journalSection(userId, period),
       this.stockSection(userId, period),
     ]);
-    const sections = [money, tasks, goals, journal, stocks].filter((s): s is Section => s != null);
+    const sections = [money, owed, tasks, goals, journal, stocks].filter((s): s is Section => s != null);
     if (sections.length === 0) return null;
 
     const title = `${kind === 'week' ? '📅 週回顧' : '🗓 月回顧'}（${period.label}${period.partial ? '，到今天為止' : ''}）`;
@@ -171,6 +177,35 @@ export class LifeReviewService {
         overBudget: over.map((b) => ({ category: b.categoryName, budget: b.monthlyAmount, spent: b.spent })),
         ...(health && { financialHealth: { total: health.total, items: health.items.map((i) => ({ label: i.label, score: i.score, max: i.max, tip: i.tip })) } }),
       },
+    };
+  }
+
+  // --- 還沒收回的錢（借出超過 30 天、代墊）---
+
+  private async owedSection(userId: string, period: ReviewPeriod, now: Date): Promise<Section | null> {
+    if (period.kind !== 'week') return null;
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId } });
+    if (!space) return null;
+    const [loanPage, advancePage] = await Promise.all([
+      this.loans.list(userId, space.id, { settled: false }),
+      this.advances.list(userId, space.id, { settled: false }),
+    ]);
+    const staleBefore = now.getTime() - OWED_STALE_DAYS * MS_PER_DAY;
+    const lent = loanPage.items.filter(
+      (l) => l.direction === FinanceLoanDirection.LEND && l.initialTransaction && l.initialTransaction.date.getTime() < staleBefore,
+    );
+    const advances = advancePage.items.filter((a) => a.outstanding > 0);
+    if (lent.length === 0 && advances.length === 0) return null;
+    const lines = ['💳 還沒收回的錢'];
+    for (const l of lent.slice(0, LIST_MAX)) {
+      const days = Math.floor((now.getTime() - l.initialTransaction!.date.getTime()) / MS_PER_DAY);
+      lines.push(`・${l.counterpartyName} 還欠 ${fmt(l.outstanding)}（借出 ${days} 天）`);
+    }
+    for (const a of advances.slice(0, LIST_MAX)) lines.push(`・代墊「${a.title}」還沒收回 ${fmt(a.outstanding)}`);
+    lines.push('收到了跟我說「小明還我 1000」就會記');
+    return {
+      text: lines.join('\n'),
+      facts: { owedToMe: lent.map((l) => ({ who: l.counterpartyName, amount: l.outstanding })), advances: advances.map((a) => a.outstanding) },
     };
   }
 

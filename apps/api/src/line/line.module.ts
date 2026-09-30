@@ -13,6 +13,7 @@ import { LineService } from './line.service';
 import { AiAgentModule } from '../ai-agent/ai-agent.module';
 import { LifeReviewModule } from '../life-review/life-review.module';
 import { FinanceReportModule } from '../finance/finance-report.module';
+import { DailyBriefModule } from '../daily-brief/daily-brief.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { FinanceReportModule } from '../finance/finance-report.module';
     AiAgentModule,
     LifeReviewModule,
     FinanceReportModule,
+    DailyBriefModule,
   ],
   controllers: [LineWebhookController, LineLinkController],
   providers: [LineService],

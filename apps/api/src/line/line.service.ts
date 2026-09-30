@@ -19,6 +19,7 @@ import { TodosService } from '../todos/todos.service';
 import { LifeGoalsService } from '../life-goals/life-goals.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { LifeReviewService } from '../life-review/life-review.service';
+import { DailyBriefService } from '../daily-brief/daily-brief.service';
 import { FinanceHealthService, formatFinanceHealth } from '../finance/finance-health.service';
 import { formatGoalProgress } from '../life-goals/life-goal-reminder.service';
 import {
@@ -135,6 +136,7 @@ export class LineService {
     private readonly aiAgent: AiAgentService,
     private readonly lifeReview: LifeReviewService,
     private readonly financeHealth: FinanceHealthService,
+    private readonly dailyBrief: DailyBriefService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -261,6 +263,9 @@ export class LineService {
     '週回顧',
     '月回顧',
     '財務健檢',
+    '早報',
+    '關閉早報',
+    '開啟早報',
     '關閉日記提醒',
     '開啟日記提醒',
     ...LineService.GUIDE_KEYWORDS,
@@ -303,6 +308,9 @@ export class LineService {
       '',
       '🩺 財務',
       '傳「財務健檢」看 0～100 分跟改善建議，或問「幫我做財務規劃」',
+      '',
+      '⏰ 提醒',
+      '每天 8 點早報（今天行程、代辦、預算），有時間的代辦前 1 小時提醒；傳「早報」隨時看',
       '',
       '📊 回顧',
       '傳「週回顧」「月回顧」，週日晚上和每月 1 號也會自動傳給你',
@@ -526,6 +534,17 @@ export class LineService {
         replyToken,
         enabled ? '好，之後每晚 9:30 沒寫日記會問你一聲 📝' : '好，不會再每晚問你了。想寫的時候直接跟我說就好。',
       );
+      return;
+    }
+
+    if (text === '早報') {
+      await this.reply(replyToken, (await this.dailyBrief.build(userId)) ?? '今天沒有行程、到期的代辦，也沒有要注意的預算 👍');
+      return;
+    }
+    if (text === '關閉早報' || text === '開啟早報') {
+      const enabled = text === '開啟早報';
+      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { morningBriefEnabled: enabled } });
+      await this.reply(replyToken, enabled ? '好，每天早上 8 點會傳今天的重點給你 ☀️' : '好，不會再傳早報了。想看的時候傳「早報」就好。');
       return;
     }
 

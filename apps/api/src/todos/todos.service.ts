@@ -121,6 +121,8 @@ export class TodosService {
         ...(justCompleted && { completedAt: new Date() }),
         ...(justReopened && { completedAt: null }),
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
+        // 到期時間改了，到期前提醒要重新算。
+        ...((dto.dueDate !== undefined || dto.dueDateAllDay !== undefined) && { dueReminderSentAt: null }),
         ...(dto.dueDateAllDay !== undefined && { dueDateAllDay: dto.dueDateAllDay }),
         ...(dto.isOngoing !== undefined && { isOngoing: dto.isOngoing }),
         ...(dto.priority !== undefined && { priority: dto.priority }),
