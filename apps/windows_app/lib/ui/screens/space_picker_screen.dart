@@ -9,6 +9,7 @@ import '../../core/theme/app_theme.dart';
 import '../../state/ai_assistant_provider.dart';
 import '../../state/auth_provider.dart';
 import '../../state/home_provider.dart';
+import '../../state/divination_provider.dart';
 import '../../state/journal_provider.dart';
 import '../../state/knowledge_provider.dart';
 import '../../state/life_goal_provider.dart';
@@ -84,6 +85,9 @@ class SpacePickerScreen extends ConsumerWidget {
                                 ),
                                 _JournalCard(
                                   onTap: () => ref.read(showJournalProvider.notifier).open(),
+                                ),
+                                _DivinationCard(
+                                  onTap: () => ref.read(showDivinationProvider.notifier).open(),
                                 ),
                                 _AiAssistantCard(
                                   onTap: () => ref.read(showAiAssistantProvider.notifier).open(),
@@ -410,6 +414,52 @@ class _JournalCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '用講的就記，看心情變化',
+                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 算命 home card — opens `DivinationShell` via `showDivinationProvider`.
+class _DivinationCard extends StatelessWidget {
+  const _DivinationCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = AppAccents.divination(scheme.brightness);
+
+    return SizedBox(
+      width: 180,
+      height: 140,
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.auto_awesome_outlined, size: 18, color: scheme.onSurface),
+                ),
+                const Spacer(),
+                const Text('算命', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(
+                  '梅花易數，想算什麼就起卦',
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],

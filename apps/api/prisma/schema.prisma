@@ -105,6 +105,10 @@ model User {
   /// the trust boundary.
   geminiApiKey String?
 
+  /// 算命用的生辰（2026-10-01）：日期必填、時間可以不知道。
+  birthDate DateTime? @db.Date
+  birthTime String?
+
   /// This user's 首頁 widget layout — which widgets are shown and in what
   /// order, e.g. `{ widgets: [{ type: "personalFinance", visible: true },
   /// ...] }`. Null means "use the default layout" (all widgets, default
@@ -120,6 +124,7 @@ model User {
   lineAccountLink            LineAccountLink?
   appAiSession               AppAiSession?
   journalEntries             JournalEntry[]
+  divinations                DivinationRecord[]
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
   googleCalendarConnections  GoogleCalendarConnection[]
   appleCalendarConnections   AppleCalendarConnection[]
@@ -1295,4 +1300,22 @@ model JournalEntry {
   updatedAt DateTime @updatedAt
 
   @@index([ownerUserId, date])
+}
+
+/// 梅花易數（2026-10-01）——說「我想算 XX」就用當下時間起卦，AI 依題目解卦，
+/// 每次結果都留著可以回頭看。`reading` 是起卦算出來的卦象（本/互/變卦、體用、旺衰）。
+model DivinationRecord {
+  id          String @id @default(uuid())
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  question       String
+  castAt         DateTime
+  hexagram       String
+  reading        Json
+  interpretation String
+
+  createdAt DateTime @default(now())
+
+  @@index([ownerUserId, createdAt])
 }

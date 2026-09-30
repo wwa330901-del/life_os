@@ -54,6 +54,8 @@ import { FinanceAdvancesService } from './finance-advances.service';
     FinanceBudgetsService,
     FinanceLoansService,
     FinanceAdvancesService,
+    // 理財評估：固定薪資＝每月定期收入。
+    FinanceRecurringTransactionsService,
   ],
 })
 export class FinanceModule {}

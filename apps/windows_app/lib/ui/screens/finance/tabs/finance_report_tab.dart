@@ -2,7 +2,9 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/api_client.dart';
 import '../../../../core/models/finance_report.dart';
+import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
 
@@ -33,6 +35,8 @@ class FinanceReportTab extends ConsumerWidget {
         padding: const EdgeInsets.all(24),
         children: [
           _HealthSection(spaceId: spaceId),
+          const SizedBox(height: 24),
+          _PlanSection(spaceId: spaceId),
           const SizedBox(height: 24),
           _NetWorthSection(netWorth: report.netWorth),
           const SizedBox(height: 24),
@@ -149,6 +153,68 @@ class _HealthSection extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 理財評估 — generated on demand (one Gemini call with the user's own key),
+/// based on the fixed salary set in 固定收支 plus actual spending.
+class _PlanSection extends ConsumerStatefulWidget {
+  const _PlanSection({required this.spaceId});
+
+  final String spaceId;
+
+  @override
+  ConsumerState<_PlanSection> createState() => _PlanSectionState();
+}
+
+class _PlanSectionState extends ConsumerState<_PlanSection> {
+  String? _plan;
+  bool _loading = false;
+
+  Future<void> _generate() async {
+    setState(() => _loading = true);
+    try {
+      final plan = await ref.read(apiClientProvider).generateFinancePlan(widget.spaceId);
+      if (mounted) setState(() => _plan = plan);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return _SectionCard(
+      title: '理財評估',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'AI 依你的固定薪資（在「固定收支」設定每月收入）、固定支出和近 3 個月的花費，建議每月怎麼分配、各分類預算多少。',
+            style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.7)),
+          ),
+          const SizedBox(height: 12),
+          if (_plan != null) ...[
+            SelectableText(_plan!),
+            const SizedBox(height: 8),
+            Text(
+              '想照建議設預算，可以跟 AI 問答或 LINE 說「幫我照建議設好預算」。',
+              style: TextStyle(fontSize: 12, color: scheme.primary),
+            ),
+            const SizedBox(height: 12),
+          ],
+          FilledButton.tonalIcon(
+            onPressed: _loading ? null : _generate,
+            icon: _loading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.insights_outlined),
+            label: Text(_loading ? '分析中…' : (_plan == null ? '產生理財評估' : '重新評估')),
+          ),
+        ],
       ),
     );
   }

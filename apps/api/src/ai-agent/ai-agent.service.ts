@@ -23,6 +23,8 @@ import type { LineAccountLink } from '../../generated/prisma/client.js';
 import { LifeReviewService } from '../life-review/life-review.service';
 import { JOURNAL_AI_GUIDE, JOURNAL_TOOLS, JournalAiService } from '../journal/journal-ai.service';
 import { FinanceHealthService } from '../finance/finance-health.service';
+import { FinancePlanService } from '../finance/finance-plan.service';
+import { DIVINATION_AI_GUIDE, DIVINATION_TOOLS, DivinationAiService } from '../divination/divination-ai.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
@@ -40,6 +42,7 @@ type ToolArgs = Record<string, unknown>;
 type PendingAction =
   | { kind: 'transaction'; summary: string; data: TransactionData }
   | { kind: 'calendar_event'; summary: string; data: CalendarEventData }
+  | { kind: 'budgets'; summary: string; data: Array<{ categoryName: string; monthlyAmount: number }> }
   | RecordPending;
 
 interface TransactionData {
@@ -64,6 +67,38 @@ interface CalendarEventData {
 const TARGET_LABEL: Record<CalendarSyncTarget, string> = { GOOGLE: 'Google', ICLOUD: 'iPhone（iCloud）' };
 
 const AGENT_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'get_financial_plan_inputs',
+    description:
+      '理財評估要用的數據：固定月收入（薪資）與固定支出、近 3 個月平均收入/支出、各分類月平均花費與目前預算、可設預算的分類、財務健檢、淨資產。做理財評估、推薦預算、問「薪水怎麼分配」時先呼叫。',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
+    name: 'set_fixed_income',
+    description: '設定固定薪資（每月自動記一筆收入）。沒講發薪日就先問。accountName 是薪水入帳的帳戶，沒講就用銀行帳戶。',
+    parameters: {
+      type: 'object',
+      properties: { amount: { type: 'number' }, dayOfMonth: { type: 'integer', minimum: 1, maximum: 31 }, accountName: { type: 'string' } },
+      required: ['amount', 'dayOfMonth'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'propose_budgets',
+    description: '把你推薦的每月預算幫他設好（分類名稱要用 budgetableCategories 裡的）。回傳 needsConfirmation，他同意才會設。',
+    parameters: {
+      type: 'object',
+      properties: {
+        budgets: {
+          type: 'array',
+          items: { type: 'object', properties: { categoryName: { type: 'string' }, monthlyAmount: { type: 'number' } }, required: ['categoryName', 'monthlyAmount'] },
+        },
+      },
+      required: ['budgets'],
+    },
+  },
   {
     type: 'function' as const,
     name: 'get_financial_health',
@@ -190,7 +225,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -249,6 +284,8 @@ export class AiAgentService {
     private readonly journalTools: JournalAiService,
     private readonly financeHealth: FinanceHealthService,
     private readonly recordTools: RecordToolsService,
+    private readonly divinationTools: DivinationAiService,
+    private readonly financePlan: FinancePlanService,
   ) {}
 
   static isConversationActive(
@@ -490,12 +527,18 @@ export class AiAgentService {
       STOCK_AI_GUIDE,
       '講股票買賣（「買了 3 張 0050 成交 152」）就 propose_stock_trade。',
       '',
+      '【理財評估】',
+      '講薪水、問「薪水怎麼分配」「幫我做理財評估」→ 沒設固定薪資就先 set_fixed_income（問清楚金額和發薪日），再 get_financial_plan_inputs，依實際花費給：每月分配（固定支出/生活費/儲蓄/投資各多少）、3～5 個分類的建議預算、接下來 3 步。最後問他要不要幫他把預算設好 → propose_budgets。',
+      '',
       '【財務規劃】',
       '問財務狀況、要做財務規劃時：先 get_financial_health 拿分數跟每項建議，存錢目標再 list_life_goals 看進度，算出「每月要存多少、預備金還差多少、先還哪筆債」，用具體數字給 3 個以內的優先步驟。分數是規則算的，照實說不要自己改分數。',
       '',
       '【規劃】',
       '使用者要你幫忙規劃（這週怎麼安排、今天先做什麼、這個月預算、目標怎麼達成）時：先用 list_calendar_events、list_todos、list_life_goals、get_finance_overview 看他真實的行程、代辦、目標、收支，再給具體建議（排出時間表、列出優先順序、算出每月要存多少）。',
       '要一次排好幾個行程時，先用文字列出整份計畫問他，他同意後再逐一 create_calendar_event；只有一個就用 propose_calendar_event。',
+      '',
+      '【算命】',
+      DIVINATION_AI_GUIDE,
       '',
       '【借貸／代墊／修改／刪除】',
       RECORD_AI_GUIDE,
@@ -525,6 +568,7 @@ export class AiAgentService {
       }
       return out;
     }
+    if (DivinationAiService.toolNames.has(name)) return this.divinationTools.execute(ctx.userId, name, args);
     if (JournalAiService.toolNames.has(name)) return this.journalTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
@@ -554,6 +598,24 @@ export class AiAgentService {
         const data = this.calendarEventData(ctx, args);
         const summary = `新增行程「${data.title}」${describeEvent(data)}${data.syncTarget ? `，存到 ${TARGET_LABEL[data.syncTarget]}` : ''}`;
         ctx.pending = { action: { kind: 'calendar_event', summary, data }, turnId: ctx.turnId };
+        return { needsConfirmation: true, summary };
+      }
+      case 'get_financial_plan_inputs':
+        return this.financePlan.inputs(ctx.userId);
+      case 'set_fixed_income':
+        return this.financePlan.setFixedIncome(ctx.userId, {
+          amount: Number(args.amount),
+          dayOfMonth: Number(args.dayOfMonth),
+          ...(typeof args.accountName === 'string' && args.accountName && { accountName: args.accountName }),
+        });
+      case 'propose_budgets': {
+        const items = (Array.isArray(args.budgets) ? args.budgets : [])
+          .map((b) => b as { categoryName?: unknown; monthlyAmount?: unknown })
+          .map((b) => ({ categoryName: String(b.categoryName ?? ''), monthlyAmount: Number(b.monthlyAmount) }))
+          .filter((b) => b.categoryName && b.monthlyAmount > 0);
+        if (items.length === 0) throw new Error('沒有可以設定的預算');
+        const summary = `設定每月預算：${items.map((b) => `${b.categoryName} ${Math.round(b.monthlyAmount).toLocaleString('en-US')}`).join('、')}`;
+        ctx.pending = { action: { kind: 'budgets', summary, data: items }, turnId: ctx.turnId };
         return { needsConfirmation: true, summary };
       }
       case 'get_financial_health':
@@ -775,6 +837,10 @@ export class AiAgentService {
     const action = pending.action;
     if (action.kind === 'transaction') {
       return { ...(await this.writeTransaction(ctx, action.data)), done: action.summary };
+    }
+    if (action.kind === 'budgets') {
+      const applied = await this.financePlan.applyBudgets(ctx.userId, action.data);
+      return { done: applied.length > 0 ? `已設定：${applied.join('、')}` : '沒有找到對應的分類' };
     }
     if (action.kind !== 'calendar_event') {
       return this.recordTools.run(ctx.userId, action);

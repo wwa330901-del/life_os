@@ -11,6 +11,7 @@ import 'models/calendar_share.dart';
 import 'models/friend.dart';
 import 'models/finance_report.dart';
 import 'models/finance.dart';
+import 'models/divination.dart';
 import 'models/home_dashboard.dart';
 import 'models/journal_entry.dart';
 import 'models/knowledge.dart';
@@ -1238,6 +1239,37 @@ class ApiClient {
   }
 
   /// 人生目標 — account-level. Sorted server-side by status then targetDate.
+  // --- 算命（梅花易數）---
+
+  Future<BirthProfile> getBirthProfile() async {
+    return BirthProfile.fromJson(await _get('/divination/profile'));
+  }
+
+  Future<BirthProfile> setBirthProfile({required String birthDate, String? birthTime}) async {
+    final body = await _post('/divination/profile', {'birthDate': birthDate, 'birthTime': ?birthTime});
+    return BirthProfile.fromJson(body);
+  }
+
+  Future<List<DivinationRecord>> listDivinations() async {
+    final body = await _getList('/divination');
+    return body.map((e) => DivinationRecord.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<DivinationRecord> castDivination(String question) async {
+    return DivinationRecord.fromJson(await _post('/divination/cast', {'question': question}));
+  }
+
+  Future<void> deleteDivination(String id) async {
+    await _delete('/divination/$id');
+  }
+
+  // --- 理財評估 ---
+
+  Future<String> generateFinancePlan(String spaceId) async {
+    final body = await _post('/spaces/$spaceId/finance/report/plan', {});
+    return body['plan'] as String;
+  }
+
   // --- 日記 ---
 
   Future<List<JournalEntry>> listJournalEntries({String? keyword}) async {

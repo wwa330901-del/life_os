@@ -20,6 +20,7 @@ import { LifeGoalsService } from '../life-goals/life-goals.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { LifeReviewService } from '../life-review/life-review.service';
 import { DailyBriefService } from '../daily-brief/daily-brief.service';
+import { FinancePlanService } from '../finance/finance-plan.service';
 import { FinanceHealthService, formatFinanceHealth } from '../finance/finance-health.service';
 import { formatGoalProgress } from '../life-goals/life-goal-reminder.service';
 import {
@@ -137,6 +138,7 @@ export class LineService {
     private readonly lifeReview: LifeReviewService,
     private readonly financeHealth: FinanceHealthService,
     private readonly dailyBrief: DailyBriefService,
+    private readonly financePlan: FinancePlanService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -248,7 +250,7 @@ export class LineService {
    * while no AI conversation is active — routed to it before the
    * batch/command parsers so e.g. a multi-line book reflection isn't split
    * into per-line 記帳 commands. */
-  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我/;
+  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|算命|想算|占卜|卜卦|運勢|理財|財務規劃/;
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
   // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
@@ -264,6 +266,7 @@ export class LineService {
     '月回顧',
     '財務健檢',
     '早報',
+    '理財評估',
     '關閉早報',
     '開啟早報',
     '關閉日記提醒',
@@ -307,10 +310,14 @@ export class LineService {
       '每晚 9:30 沒寫會問你（傳「關閉日記提醒」可以關掉）',
       '',
       '🩺 財務',
-      '傳「財務健檢」看 0～100 分跟改善建議，或問「幫我做財務規劃」',
+      '傳「財務健檢」看 0～100 分跟改善建議',
+      '說「我月薪 5 萬，5 號發薪」設定固定薪資，再傳「理財評估」拿分配建議跟推薦預算',
       '',
       '⏰ 提醒',
       '每天 8 點早報（今天行程、代辦、預算），有時間的代辦前 1 小時提醒；傳「早報」隨時看',
+      '',
+      '🔮 算命（梅花易數）',
+      '先說生日「我是 1990/5/3 早上 8 點生的」，之後說「我想算這次換工作順不順」',
       '',
       '📊 回顧',
       '傳「週回顧」「月回顧」，週日晚上和每月 1 號也會自動傳給你',
@@ -537,6 +544,15 @@ export class LineService {
       return;
     }
 
+    if (text === '理財評估') {
+      try {
+        const { plan } = await this.financePlan.generate(userId);
+        await this.reply(replyToken, ['💼 理財評估', '', plan, '', '想照建議設預算，直接跟我說「幫我設好預算」'].join('\n'));
+      } catch (error) {
+        await this.reply(replyToken, error instanceof Error ? error.message : '理財評估產生失敗');
+      }
+      return;
+    }
     if (text === '早報') {
       await this.reply(replyToken, (await this.dailyBrief.build(userId)) ?? '今天沒有行程、到期的代辦，也沒有要注意的預算 👍');
       return;
