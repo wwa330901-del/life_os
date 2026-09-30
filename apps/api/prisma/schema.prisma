@@ -118,6 +118,7 @@ model User {
   personalSpace              Space?                     @relation("PersonalSpaceOwner")
   calendarSpace              Space?                     @relation("CalendarSpaceOwner")
   lineAccountLink            LineAccountLink?
+  appAiSession               AppAiSession?
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
   googleCalendarConnections  GoogleCalendarConnection[]
   appleCalendarConnections   AppleCalendarConnection[]
@@ -1251,4 +1252,18 @@ model LifeGoalCheckIn {
   createdAt DateTime @default(now())
 
   @@index([goalId, date])
+}
+
+/// App 裡「AI 問答」跟 LINE 共用同一個萬用 AI（2026-10-01）——這是 App 那邊的
+/// 對話狀態，欄位跟 LineAccountLink 上的 ai* / pendingAi* 一樣意思。
+model AppAiSession {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  aiInteractionId     String?
+  aiInteractionAt     DateTime?
+  pendingAiAction     Json?
+  pendingAiActionTurn String?
+
+  updatedAt DateTime @updatedAt
 }

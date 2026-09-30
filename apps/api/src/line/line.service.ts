@@ -17,7 +17,7 @@ import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
 import { UsersService } from '../users/users.service';
 import { TodosService } from '../todos/todos.service';
 import { LifeGoalsService } from '../life-goals/life-goals.service';
-import { LineAiAgentService } from './agent/line-ai-agent.service';
+import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { formatGoalProgress } from '../life-goals/life-goal-reminder.service';
 import {
   isInstagramUrl,
@@ -130,7 +130,7 @@ export class LineService {
     private readonly usersService: UsersService,
     private readonly todosService: TodosService,
     private readonly lifeGoalsService: LifeGoalsService,
-    private readonly aiAgent: LineAiAgentService,
+    private readonly aiAgent: AiAgentService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -387,7 +387,7 @@ export class LineService {
     const aiFirst =
       geminiApiKey != null &&
       !LineService.MENU_COMMANDS.has(text) &&
-      (LineAiAgentService.isConversationActive(link) || LineService.AI_FIRST_HINT.test(text));
+      (AiAgentService.isConversationActive(link) || LineService.AI_FIRST_HINT.test(text));
     if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey))) return;
 
     // --- 條列式一次登陸多筆（2026-08-04）：貼多行文字，每行各自當一筆獨立
@@ -2375,7 +2375,7 @@ export class LineService {
    * something it can act on, or fails — the caller falls through. */
   private async tryAiAgent(link: LineAccountLink, text: string, replyToken: string, apiKey: string): Promise<boolean> {
     try {
-      const result = await this.aiAgent.handle({ link, apiKey, text });
+      const result = await this.aiAgent.handleLine({ link, apiKey, text });
       if (!result.handled) return false;
       await this.reply(replyToken, result.reply);
       return true;

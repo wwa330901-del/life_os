@@ -8,13 +8,12 @@ import { StocksModule } from '../stocks/stocks.module';
 import { LifeGoalsModule } from '../life-goals/life-goals.module';
 import { AiQueryToolsService } from './ai-query-tools.service';
 import { AiAssistantService } from './ai-assistant.service';
-import { AiAssistantController } from './ai-assistant.controller';
 
 @Module({
   imports: [FinanceModule, CalendarModule, TodosModule, KnowledgeModule, UsersModule, StocksModule, LifeGoalsModule],
-  controllers: [AiAssistantController],
   providers: [AiQueryToolsService, AiAssistantService],
-  // AiQueryToolsService's read-only tools are also composed into the LINE 萬用 AI.
+  // AiQueryToolsService's read-only tools are also composed into the 萬用 AI (ai-agent);
+  // AiAssistantService is still used by LINE's「查詢」command.
   exports: [AiAssistantService, AiQueryToolsService],
 })
 export class AiAssistantModule {}

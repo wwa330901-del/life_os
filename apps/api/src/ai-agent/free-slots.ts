@@ -1,4 +1,4 @@
-import { isWorkingDay } from '../../common/scheduling/holiday-calendar';
+import { isWorkingDay } from '../common/scheduling/holiday-calendar';
 
 /** 自動排時間 (2026-09-30, user's rule):
  * - 工作的事 → 平日（上班日）08:00–18:00

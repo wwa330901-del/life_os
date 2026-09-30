@@ -9,7 +9,7 @@ const MAX_TREND_MONTHS = 12;
 const RECENT_TRANSACTIONS = 10;
 
 /** Gemini Interactions API tool declarations for 股票 — composed into the
- * LINE 萬用 AI (`LineAiAgentService`). 2026-10-01 使用者要求 AI 要能看持股
+ * LINE 萬用 AI (`AiAgentService`). 2026-10-01 使用者要求 AI 要能看持股
  * 損益、分析持股走向（之前是刻意不給 AI 碰投資資料）。只讀，不會下單或記錄
  * 交易；股票買賣還是走固定指令。 */
 export const STOCK_TOOLS = [

@@ -7,11 +7,12 @@ import { AiAssistantModule } from '../ai-assistant/ai-assistant.module';
 import { UsersModule } from '../users/users.module';
 import { TodosModule } from '../todos/todos.module';
 import { LifeGoalsModule } from '../life-goals/life-goals.module';
-import { LineWebhookController } from './line-webhook.controller';
-import { LineLinkController } from './line-link.controller';
-import { LineService } from './line.service';
-import { AiAgentModule } from '../ai-agent/ai-agent.module';
+import { AiAgentService } from './ai-agent.service';
+import { AiAssistantController } from './ai-assistant.controller';
 
+/** 萬用 AI — one brain shared by LINE (LineModule imports this) and the
+ * App's AI 問答 (`POST /ai-assistant/ask`, same route/shape as before so
+ * installed Apps keep working without an update). */
 @Module({
   imports: [
     FinanceModule,
@@ -22,9 +23,9 @@ import { AiAgentModule } from '../ai-agent/ai-agent.module';
     UsersModule,
     TodosModule,
     LifeGoalsModule,
-    AiAgentModule,
   ],
-  controllers: [LineWebhookController, LineLinkController],
-  providers: [LineService],
+  controllers: [AiAssistantController],
+  providers: [AiAgentService],
+  exports: [AiAgentService],
 })
-export class LineModule {}
+export class AiAgentModule {}

@@ -16,7 +16,7 @@ const TRACKING_LABEL: Record<LifeGoalTrackingType, string> = {
 };
 
 /** Gemini Interactions API tool declarations for 人生目標 — composed into
- * the LINE 萬用 AI (`LineAiAgentService`) alongside every other module's tools. */
+ * the LINE 萬用 AI (`AiAgentService`) alongside every other module's tools. */
 export const LIFE_GOAL_TOOLS = [
   {
     type: 'function' as const,

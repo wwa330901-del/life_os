@@ -118,7 +118,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
                     child: TextField(
                       controller: _inputController,
                       decoration: const InputDecoration(
-                        hintText: '問問你的記帳、代辦、專案、行事曆……',
+                        hintText: '記帳、排行程、打卡、問股票、請我規劃……直接說',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
@@ -155,7 +155,8 @@ class _EmptyState extends StatelessWidget {
             Icon(Icons.smart_toy_outlined, size: 40, color: scheme.onSurface.withValues(alpha: 0.4)),
             const SizedBox(height: 12),
             Text(
-              '問我關於你的記帳、代辦事項、專案、行事曆的問題，例如「這個月餐飲花多少」「我有哪些還沒完成的代辦」。\n（不含投資/股票查詢）',
+              '直接跟我說就好，跟 LINE 的元序助理一樣：\n記帳「午餐 120」、代辦「提醒我週五交報告」、行程「明天下午三點看牙醫」、'
+              '人生目標「今天運動了」、股票「分析我的持股」、找收藏「信義區有什麼好吃的」、規劃「幫我排這週」。',
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)),
             ),

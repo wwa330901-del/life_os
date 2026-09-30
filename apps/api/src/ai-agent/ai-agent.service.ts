@@ -1,25 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { GoogleGenAI } from '@google/genai';
 import { randomUUID } from 'crypto';
-import { PrismaService } from '../../prisma/prisma.service';
-import { AiUsageService } from '../../knowledge/ai-usage.service';
-import { GEMINI_MODEL } from '../../knowledge/ai/gemini-content-analysis.service';
-import { AI_QUERY_TOOLS, AiQueryToolsService } from '../../ai-assistant/ai-query-tools.service';
-import { LIFE_GOAL_TOOLS, LifeGoalAiService } from '../../life-goals/life-goal-ai.service';
-import { FinanceTransactionsService } from '../../finance/finance-transactions.service';
-import { TodosService } from '../../todos/todos.service';
-import { CalendarEventsService } from '../../calendar/calendar-events.service';
-import { KNOWLEDGE_AI_GUIDE, KNOWLEDGE_TOOLS, KnowledgeAiService } from '../../knowledge/knowledge-ai.service';
-import { STOCK_AI_GUIDE, STOCK_TOOLS, StockAiService } from '../../stocks/stock-ai.service';
-import { taipeiDateKey, taipeiWallClockToUtc } from '../../common/taipei-date';
+import { PrismaService } from '../prisma/prisma.service';
+import { AiUsageService } from '../knowledge/ai-usage.service';
+import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
+import { AI_QUERY_TOOLS, AiQueryToolsService } from '../ai-assistant/ai-query-tools.service';
+import { LIFE_GOAL_TOOLS, LifeGoalAiService } from '../life-goals/life-goal-ai.service';
+import { FinanceTransactionsService } from '../finance/finance-transactions.service';
+import { TodosService } from '../todos/todos.service';
+import { CalendarEventsService } from '../calendar/calendar-events.service';
+import { KNOWLEDGE_AI_GUIDE, KNOWLEDGE_TOOLS, KnowledgeAiService } from '../knowledge/knowledge-ai.service';
+import { STOCK_AI_GUIDE, STOCK_TOOLS, StockAiService } from '../stocks/stock-ai.service';
+import { taipeiDateKey, taipeiWallClockToUtc } from '../common/taipei-date';
 import {
   AiUsageStatus,
   CalendarSyncTarget,
   FinanceCategoryKind,
   FinanceTransactionType,
   Prisma,
-} from '../../../generated/prisma/client.js';
-import type { LineAccountLink } from '../../../generated/prisma/client.js';
+} from '../../generated/prisma/client.js';
+import type { LineAccountLink } from '../../generated/prisma/client.js';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
 
 const MAX_TOOL_ROUNDS = 6;
@@ -174,9 +174,22 @@ const AGENT_TOOLS = [
 const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
+/** Where the conversation happens — decides where its state is stored
+ * (LineAccountLink vs AppAiSession), how long a conversation stays live,
+ * and small reply-style differences. */
+export type AgentChannel = { kind: 'line'; linkId: string } | { kind: 'app' };
+
+/** Same four columns on LineAccountLink and AppAiSession. */
+export type AgentState = Pick<
+  LineAccountLink,
+  'aiInteractionId' | 'aiInteractionAt' | 'pendingAiAction' | 'pendingAiActionTurn'
+>;
+
+const APP_CONVERSATION_WINDOW_MS = 60 * 60 * 1000;
+
 interface AgentContext {
   userId: string;
-  linkId: string;
+  channel: AgentChannel;
   turnId: string;
   personalSpaceId: string | null;
   calendarSpaceId: string | null;
@@ -187,17 +200,19 @@ interface AgentContext {
 export interface AgentResult {
   handled: boolean;
   reply: string;
+  interactionId: string;
 }
 
-/** LINE 萬用 AI (2026-09-30): 記帳、代辦、行事曆（含自動找空檔）、人生目標、知識庫、生活規劃與閒聊、
+/** 萬用 AI (2026-09-30 LINE，2026-10-01 App 的 AI 問答也共用): 記帳、代辦、
+ * 行事曆（含自動找空檔）、人生目標、知識庫、股票、生活規劃與閒聊、
  * 查詢 — everything by just talking. Every write goes through the same
  * service the App uses. Guessed values (記帳帳戶) and auto-picked times are
  * never written straight away: they become a `pendingAiAction` that only
  * runs when a LATER message confirms it (enforced here, not left to the
  * model). 股票只讀：看持股損益、分析走勢（2026-10-01 使用者要求），不記交易。 */
 @Injectable()
-export class LineAiAgentService {
-  private readonly logger = new Logger(LineAiAgentService.name);
+export class AiAgentService {
+  private readonly logger = new Logger(AiAgentService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -211,18 +226,57 @@ export class LineAiAgentService {
     private readonly stockTools: StockAiService,
   ) {}
 
-  static isConversationActive(link: Pick<LineAccountLink, 'aiInteractionId' | 'aiInteractionAt'>): boolean {
+  static isConversationActive(
+    state: Pick<AgentState, 'aiInteractionId' | 'aiInteractionAt'>,
+    windowMs = CONVERSATION_WINDOW_MS,
+  ): boolean {
     return (
-      link.aiInteractionId != null &&
-      link.aiInteractionAt != null &&
-      Date.now() - link.aiInteractionAt.getTime() < CONVERSATION_WINDOW_MS
+      state.aiInteractionId != null &&
+      state.aiInteractionAt != null &&
+      Date.now() - state.aiInteractionAt.getTime() < windowMs
     );
   }
 
-  async handle(params: { link: LineAccountLink; apiKey: string; text: string }): Promise<AgentResult> {
+  /** App 的 AI 問答：畫面上每段對話會送回上一輪的 interactionId；沒送（開新
+   * 對話）或跟伺服器記的不一樣，就從頭開始，等確認的動作也一起作廢。 */
+  async handleApp(params: { userId: string; apiKey: string; text: string; previousInteractionId?: string }): Promise<AgentResult> {
+    const session = await this.prisma.appAiSession.findUnique({ where: { userId: params.userId } });
+    const continuing =
+      session != null &&
+      params.previousInteractionId != null &&
+      session.aiInteractionId === params.previousInteractionId &&
+      AiAgentService.isConversationActive(session, APP_CONVERSATION_WINDOW_MS);
+    return this.handle({
+      userId: params.userId,
+      apiKey: params.apiKey,
+      text: params.text,
+      channel: { kind: 'app' },
+      state: continuing ? session : null,
+    });
+  }
+
+  handleLine(params: { link: LineAccountLink; apiKey: string; text: string }): Promise<AgentResult> {
     const { link } = params;
-    const active = LineAiAgentService.isConversationActive(link);
-    const ctx = await this.buildContext(link, active);
+    return this.handle({
+      userId: link.userId,
+      apiKey: params.apiKey,
+      text: params.text,
+      channel: { kind: 'line', linkId: link.id },
+      state: AiAgentService.isConversationActive(link) ? link : null,
+    });
+  }
+
+  /** `state` is null when this message starts a new conversation. */
+  private async handle(params: {
+    userId: string;
+    apiKey: string;
+    text: string;
+    channel: AgentChannel;
+    state: AgentState | null;
+  }): Promise<AgentResult> {
+    const { state, channel } = params;
+    const active = state != null;
+    const ctx = await this.buildContext(params.userId, channel, state);
     const client = new GoogleGenAI({ apiKey: params.apiKey });
     const startedAt = Date.now();
     let inputTokens = 0;
@@ -235,7 +289,7 @@ export class LineAiAgentService {
         model: GEMINI_MODEL,
         system_instruction: await this.systemInstruction(ctx),
         tools: ALL_TOOLS,
-        ...(active && { previous_interaction_id: link.aiInteractionId! }),
+        ...(active && { previous_interaction_id: state.aiInteractionId! }),
         input: params.text,
       });
       inputTokens += interaction.usage?.total_input_tokens ?? 0;
@@ -283,26 +337,32 @@ export class LineAiAgentService {
 
       const text = (interaction.output_text ?? '').trim();
       const handled = text.length > 0 && text !== NOT_HANDLED;
-      await this.prisma.lineAccountLink.update({
-        where: { id: link.id },
-        data: {
-          aiInteractionId: handled ? interaction.id : null,
-          aiInteractionAt: handled ? new Date() : null,
-          ...(ctx.pending
-            ? { pendingAiAction: ctx.pending.action as unknown as Prisma.InputJsonValue, pendingAiActionTurn: ctx.pending.turnId }
-            : { pendingAiAction: Prisma.DbNull, pendingAiActionTurn: null }),
-        },
-      });
-      return { handled, reply: handled ? text : '' };
+      const data = {
+        aiInteractionId: handled ? interaction.id : null,
+        aiInteractionAt: handled ? new Date() : null,
+        ...(ctx.pending
+          ? { pendingAiAction: ctx.pending.action as unknown as Prisma.InputJsonValue, pendingAiActionTurn: ctx.pending.turnId }
+          : { pendingAiAction: Prisma.DbNull, pendingAiActionTurn: null }),
+      };
+      if (channel.kind === 'line') {
+        await this.prisma.lineAccountLink.update({ where: { id: channel.linkId }, data });
+      } else {
+        await this.prisma.appAiSession.upsert({
+          where: { userId: params.userId },
+          create: { userId: params.userId, ...data },
+          update: data,
+        });
+      }
+      return { handled, reply: handled ? text : '', interactionId: interaction.id };
     } catch (error) {
       status = AiUsageStatus.FAILED;
       errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error('LINE 萬用 AI 處理失敗', error as Error);
+      this.logger.error('萬用 AI 處理失敗', error as Error);
       throw error;
     } finally {
       await this.aiUsage.record({
-        userId: link.userId,
-        feature: 'line_ai_agent',
+        userId: params.userId,
+        feature: channel.kind === 'line' ? 'line_ai_agent' : 'ai_assistant_app',
         model: GEMINI_MODEL,
         inputTokens,
         outputTokens,
@@ -315,10 +375,10 @@ export class LineAiAgentService {
 
   // --- context ---
 
-  private async buildContext(link: LineAccountLink, active: boolean): Promise<AgentContext> {
+  private async buildContext(userId: string, channel: AgentChannel, state: AgentState | null): Promise<AgentContext> {
     const [personal, calendar] = await Promise.all([
-      this.prisma.space.findUnique({ where: { ownerUserId: link.userId } }),
-      this.prisma.space.findUnique({ where: { calendarOwnerUserId: link.userId } }),
+      this.prisma.space.findUnique({ where: { ownerUserId: userId } }),
+      this.prisma.space.findUnique({ where: { calendarOwnerUserId: userId } }),
     ]);
     const connectedTargets: CalendarSyncTarget[] = [];
     if (calendar) {
@@ -331,12 +391,12 @@ export class LineAiAgentService {
     }
     // A pending action only survives while its conversation is still live.
     const pending =
-      active && link.pendingAiAction
-        ? { action: link.pendingAiAction as unknown as PendingAction, turnId: link.pendingAiActionTurn }
+      state?.pendingAiAction
+        ? { action: state.pendingAiAction as unknown as PendingAction, turnId: state.pendingAiActionTurn }
         : null;
     return {
-      userId: link.userId,
-      linkId: link.id,
+      userId,
+      channel,
       turnId: randomUUID(),
       personalSpaceId: personal?.id ?? null,
       calendarSpaceId: calendar?.id ?? null,
@@ -367,7 +427,8 @@ export class LineAiAgentService {
     const targets = ctx.connectedTargets.map((t) => `${t}＝${TARGET_LABEL[t]}`).join('、') || '（沒有連結任何外部行事曆，行程只存在元序，不用問存哪）';
 
     return [
-      '你是「元序」App 的 LINE 生活助理，像一個熟悉使用者生活的真人朋友兼秘書，用自然口語聊天。使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
+      `你是「元序」的生活助理（使用者現在在${ctx.channel.kind === 'line' ? ' LINE ' : ' App 的 AI 問答'}跟你聊），像一個熟悉使用者生活的真人朋友兼秘書，用自然口語聊天。` +
+      '使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
       `現在是 ${today}（台北時間）。「明天」「下週三」這類說法都以這個日期換算成 YYYY-MM-DD。`,
       '',
       '【記帳】',
@@ -402,7 +463,7 @@ export class LineAiAgentService {
       '【其他】',
       '查詢問題（這個月花多少、有哪些代辦）用 get_/list_ 工具查真實資料再回答，不要瞎猜數字。',
       `打招呼、閒聊、心情、生活問題、一般知識都像朋友一樣自然回應。只有訊息是亂碼或完全看不懂時，才只回覆 ${NOT_HANDLED}。`,
-      '回覆一律繁體中文、口語、簡短（LINE 訊息，不要用 Markdown 的 ** 或 #）；做了事就一兩句說明做了什麼或需要他補什麼，規劃建議可以條列但要精簡。',
+      '回覆一律繁體中文、口語、簡短（聊天訊息，畫面不支援 Markdown，不要用 ** 或 #）；做了事就一兩句說明做了什麼或需要他補什麼，規劃建議可以條列但要精簡。',
     ].join('\n');
   }
 
