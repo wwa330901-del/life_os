@@ -15,6 +15,10 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    # 最後一步要建立 GitHub Release，需要寫入權限——repo 預設的
+    # GITHUB_TOKEN 權限是唯讀（2026-10-01 發 v2.10.3 時因此 403 失敗）。
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: apps/windows_app
