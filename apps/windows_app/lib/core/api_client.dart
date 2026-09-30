@@ -12,6 +12,7 @@ import 'models/friend.dart';
 import 'models/finance_report.dart';
 import 'models/finance.dart';
 import 'models/home_dashboard.dart';
+import 'models/journal_entry.dart';
 import 'models/knowledge.dart';
 import 'models/life_goal.dart';
 import 'models/project_todo.dart';
@@ -1232,6 +1233,47 @@ class ApiClient {
   }
 
   /// 人生目標 — account-level. Sorted server-side by status then targetDate.
+  // --- 日記 ---
+
+  Future<List<JournalEntry>> listJournalEntries({String? keyword}) async {
+    final query = keyword != null && keyword.isNotEmpty ? '?keyword=${Uri.encodeQueryComponent(keyword)}' : '';
+    final body = await _getList('/journal$query');
+    return body.map((e) => JournalEntry.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createJournalEntry({
+    required String content,
+    required DateTime date,
+    int? mood,
+    List<String> tags = const [],
+  }) async {
+    await _post('/journal', {
+      'content': content,
+      'date': journalDateKey(date),
+      'mood': ?mood,
+      'tags': tags,
+    });
+  }
+
+  Future<void> updateJournalEntry(
+    String id, {
+    required String content,
+    required DateTime date,
+    int? mood,
+    List<String> tags = const [],
+  }) async {
+    await _patch('/journal/$id', {
+      'content': content,
+      'date': journalDateKey(date),
+      'mood': ?mood,
+      'tags': tags,
+    });
+  }
+
+  Future<void> deleteJournalEntry(String id) async {
+    await _delete('/journal/$id');
+  }
+
   Future<List<LifeGoal>> listLifeGoals() async {
     final body = await _getList('/life-goals');
     return body.map((e) => LifeGoal.fromJson(e as Map<String, dynamic>)).toList();

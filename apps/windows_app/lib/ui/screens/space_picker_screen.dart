@@ -9,6 +9,7 @@ import '../../core/theme/app_theme.dart';
 import '../../state/ai_assistant_provider.dart';
 import '../../state/auth_provider.dart';
 import '../../state/home_provider.dart';
+import '../../state/journal_provider.dart';
 import '../../state/knowledge_provider.dart';
 import '../../state/life_goal_provider.dart';
 import '../../state/space_provider.dart';
@@ -80,6 +81,9 @@ class SpacePickerScreen extends ConsumerWidget {
                                 ),
                                 _LifeGoalsCard(
                                   onTap: () => ref.read(showLifeGoalsProvider.notifier).open(),
+                                ),
+                                _JournalCard(
+                                  onTap: () => ref.read(showJournalProvider.notifier).open(),
                                 ),
                                 _AiAssistantCard(
                                   onTap: () => ref.read(showAiAssistantProvider.notifier).open(),
@@ -360,6 +364,52 @@ class _LifeGoalsCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '設定目標、追蹤進度',
+                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 日記 home card — opens `JournalShell` via `showJournalProvider`.
+class _JournalCard extends StatelessWidget {
+  const _JournalCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = AppAccents.journal(scheme.brightness);
+
+    return SizedBox(
+      width: 180,
+      height: 140,
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.menu_book_outlined, size: 18, color: scheme.onSurface),
+                ),
+                const Spacer(),
+                const Text('日記', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(
+                  '用講的就記，看心情變化',
                   style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],

@@ -119,6 +119,7 @@ model User {
   calendarSpace              Space?                     @relation("CalendarSpaceOwner")
   lineAccountLink            LineAccountLink?
   appAiSession               AppAiSession?
+  journalEntries             JournalEntry[]
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
   googleCalendarConnections  GoogleCalendarConnection[]
   appleCalendarConnections   AppleCalendarConnection[]
@@ -915,6 +916,11 @@ model LineAccountLink {
   pendingAiAction     Json?
   pendingAiActionTurn String?
 
+  /// 日記（2026-10-01）：每晚 21:30 沒寫日記就問一句「今天過得怎樣？」，
+  /// 記下問的時間——之後 3 小時內的回覆交給 AI 記成日記。
+  journalPromptAt        DateTime?
+  journalReminderEnabled Boolean   @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -1266,4 +1272,23 @@ model AppAiSession {
   pendingAiActionTurn String?
 
   updatedAt DateTime @updatedAt
+}
+
+/// 日記（2026-10-01）——LINE/App 用講的就記，AI 順便判斷心情（1～5）跟標籤。
+/// 一天可以有很多則。
+model JournalEntry {
+  id          String @id @default(uuid())
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  date    DateTime @db.Date
+  content String
+  /// 1＝很差 … 5＝很好；沒判斷出來就是 null
+  mood    Int?
+  tags    String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId, date])
 }

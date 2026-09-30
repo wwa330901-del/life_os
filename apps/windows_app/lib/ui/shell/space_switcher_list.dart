@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/app_user.dart';
 import '../../core/theme/app_accents.dart';
 import '../../state/ai_assistant_provider.dart';
+import '../../state/journal_provider.dart';
 import '../../state/knowledge_provider.dart';
 import '../../state/life_goal_provider.dart';
 import '../../state/space_provider.dart';
@@ -25,6 +26,7 @@ class SpaceSwitcherList extends ConsumerWidget {
     this.knowledgeSelected = false,
     this.todoSelected = false,
     this.lifeGoalsSelected = false,
+    this.journalSelected = false,
     this.aiAssistantSelected = false,
   });
 
@@ -32,6 +34,7 @@ class SpaceSwitcherList extends ConsumerWidget {
   final bool knowledgeSelected;
   final bool todoSelected;
   final bool lifeGoalsSelected;
+  final bool journalSelected;
   final bool aiAssistantSelected;
 
   @override
@@ -42,6 +45,7 @@ class SpaceSwitcherList extends ConsumerWidget {
       ref.read(showKnowledgeLibraryProvider.notifier).close();
       ref.read(showTodoSpaceProvider.notifier).close();
       ref.read(showLifeGoalsProvider.notifier).close();
+      ref.read(showJournalProvider.notifier).close();
       ref.read(showAiAssistantProvider.notifier).close();
     }
 
@@ -84,6 +88,16 @@ class SpaceSwitcherList extends ConsumerWidget {
                   ref.read(showLifeGoalsProvider.notifier).open();
                 },
         ),
+        _SpaceRow.journal(
+          selected: journalSelected,
+          onTap: journalSelected
+              ? null
+              : () {
+                  closeAllNonSpace();
+                  ref.read(selectedSpaceProvider.notifier).clear();
+                  ref.read(showJournalProvider.notifier).open();
+                },
+        ),
         _SpaceRow.aiAssistant(
           selected: aiAssistantSelected,
           onTap: aiAssistantSelected
@@ -109,7 +123,7 @@ class SpaceSwitcherList extends ConsumerWidget {
 /// space" styling (colored type badge + name) so switching spaces looks the
 /// same as before, just without needing a click to reveal the other options
 /// first.
-enum _NonSpaceKind { none, knowledge, todo, lifeGoals, aiAssistant }
+enum _NonSpaceKind { none, knowledge, todo, lifeGoals, journal, aiAssistant }
 
 class _SpaceRow extends StatelessWidget {
   const _SpaceRow({required this.space, required this.selected, required this.onTap})
@@ -131,6 +145,10 @@ class _SpaceRow extends StatelessWidget {
   const _SpaceRow.lifeGoals({required this.selected, required this.onTap})
     : space = null,
       _kind = _NonSpaceKind.lifeGoals;
+
+  const _SpaceRow.journal({required this.selected, required this.onTap})
+    : space = null,
+      _kind = _NonSpaceKind.journal;
 
   const _SpaceRow.aiAssistant({required this.selected, required this.onTap})
     : space = null,
@@ -154,6 +172,7 @@ class _SpaceRow extends StatelessWidget {
             _NonSpaceKind.knowledge => AppAccents.knowledge(scheme.brightness),
             _NonSpaceKind.todo => AppAccents.todo(scheme.brightness),
             _NonSpaceKind.lifeGoals => AppAccents.lifeGoals(scheme.brightness),
+            _NonSpaceKind.journal => AppAccents.journal(scheme.brightness),
             _NonSpaceKind.aiAssistant => AppAccents.aiAssistant(scheme.brightness),
             _NonSpaceKind.none => scheme.onSurface.withValues(alpha: 0.12),
           };
@@ -166,6 +185,7 @@ class _SpaceRow extends StatelessWidget {
             _NonSpaceKind.knowledge => Icons.auto_stories_outlined,
             _NonSpaceKind.todo => Icons.checklist_outlined,
             _NonSpaceKind.lifeGoals => Icons.flag_outlined,
+            _NonSpaceKind.journal => Icons.menu_book_outlined,
             _NonSpaceKind.aiAssistant => Icons.smart_toy_outlined,
             _NonSpaceKind.none => Icons.home_outlined,
           };
@@ -175,6 +195,7 @@ class _SpaceRow extends StatelessWidget {
           _NonSpaceKind.knowledge => '知識庫',
           _NonSpaceKind.todo => '代辦事項',
           _NonSpaceKind.lifeGoals => '人生目標',
+          _NonSpaceKind.journal => '日記',
           _NonSpaceKind.aiAssistant => 'AI 問答',
           _NonSpaceKind.none => '回首頁',
         };

@@ -258,6 +258,8 @@ export class LineService {
     '知識庫',
     '週回顧',
     '月回顧',
+    '關閉日記提醒',
+    '開啟日記提醒',
     ...LineService.GUIDE_KEYWORDS,
   ]);
 
@@ -292,7 +294,11 @@ export class LineService {
           '「幫我規劃這週」「今天先做什麼好？」',
           '「這個月還能花多少？」',
           '',
-          '📊 回顧',
+          '📝 日記',
+      '直接講今天發生的事，例如「今天跟家人吃飯很開心」',
+      '每晚 9:30 沒寫會問你（傳「關閉日記提醒」可以關掉）',
+      '',
+      '📊 回顧',
       '傳「週回顧」「月回顧」，週日晚上和每月 1 號也會自動傳給你',
       '',
       '也可以單純聊天、問意見 🙂',
@@ -394,7 +400,9 @@ export class LineService {
     const aiFirst =
       geminiApiKey != null &&
       !LineService.MENU_COMMANDS.has(text) &&
-      (AiAgentService.isConversationActive(link) || LineService.AI_FIRST_HINT.test(text));
+      (AiAgentService.isConversationActive(link) ||
+        AiAgentService.isJournalPromptActive(link) ||
+        LineService.AI_FIRST_HINT.test(text));
     if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey))) return;
 
     // --- 條列式一次登陸多筆（2026-08-04）：貼多行文字，每行各自當一筆獨立
@@ -492,6 +500,19 @@ export class LineService {
 
     if (text === '人生目標') {
       await this.sendLifeGoals(userId, replyToken);
+      return;
+    }
+
+    if (text === '關閉日記提醒' || text === '開啟日記提醒') {
+      const enabled = text === '開啟日記提醒';
+      await this.prisma.lineAccountLink.update({
+        where: { id: linkId },
+        data: { journalReminderEnabled: enabled, journalPromptAt: null },
+      });
+      await this.reply(
+        replyToken,
+        enabled ? '好，之後每晚 9:30 沒寫日記會問你一聲 📝' : '好，不會再每晚問你了。想寫的時候直接跟我說就好。',
+      );
       return;
     }
 

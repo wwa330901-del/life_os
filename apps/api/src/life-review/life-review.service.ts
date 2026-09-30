@@ -15,6 +15,7 @@ import { AiUsageService } from '../knowledge/ai-usage.service';
 import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
 import { formatTaipeiDateTime } from '../common/taipei-date';
 import { AiUsageStatus, FinanceTransactionType, LifeGoalStatus, LifeGoalTrackingType } from '../../generated/prisma/client.js';
+import { JournalService } from '../journal/journal.service';
 import { dateKeyString, keyToInstant, ReviewKind, ReviewPeriod, reviewPeriod } from './review-period';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -24,6 +25,7 @@ const UPCOMING_DAYS = 7;
 /** 落後判斷：時間過了這麼多比例，進度還差這麼多就算落後。 */
 const BEHIND_MARGIN = 0.15;
 
+const MOOD_EMOJI = ['', '😞', '😕', '😐', '🙂', '😄'];
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${fmt(Math.abs(n))}`;
 const pct = (now: number, before: number) =>
@@ -47,6 +49,7 @@ export class LifeReviewService {
     private readonly history: StockHistoryService,
     private readonly lineNotifier: LineNotifierService,
     private readonly aiUsage: AiUsageService,
+    private readonly journal: JournalService,
   ) {}
 
   @Cron('0 20 * * 0', { timeZone: 'Asia/Taipei' })
@@ -77,13 +80,14 @@ export class LifeReviewService {
   /** The full review text, or null when the user has no data at all. */
   async build(userId: string, kind: ReviewKind, now = new Date(), completedMonth = false): Promise<string | null> {
     const period = reviewPeriod(kind, now, completedMonth);
-    const [money, tasks, goals, stocks] = await Promise.all([
+    const [money, tasks, goals, journal, stocks] = await Promise.all([
       this.moneySection(userId, period),
       this.taskSection(userId, period, now),
       this.goalSection(userId, period, now),
+      this.journalSection(userId, period),
       this.stockSection(userId, period),
     ]);
-    const sections = [money, tasks, goals, stocks].filter((s): s is Section => s != null);
+    const sections = [money, tasks, goals, journal, stocks].filter((s): s is Section => s != null);
     if (sections.length === 0) return null;
 
     const title = `${kind === 'week' ? '📅 週回顧' : '🗓 月回顧'}（${period.label}${period.partial ? '，到今天為止' : ''}）`;
@@ -252,6 +256,18 @@ export class LifeReviewService {
         behind,
       },
     };
+  }
+
+  // --- 日記 ---
+
+  private async journalSection(userId: string, period: ReviewPeriod): Promise<Section | null> {
+    const stats = await this.journal.stats(userId, period.start, period.end);
+    if (stats.entries === 0) return null;
+    const mood = stats.averageMood != null ? `，平均心情 ${stats.averageMood}/5 ${MOOD_EMOJI[Math.round(stats.averageMood)]}` : '';
+    const tags = stats.topTags.length > 0 ? `
+常寫到：${stats.topTags.join('、')}` : '';
+    return { text: `📝 日記
+寫了 ${stats.days} 天${mood}${tags}`, facts: { journal: stats } };
   }
 
   // --- 股票 ---

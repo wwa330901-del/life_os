@@ -19,6 +19,11 @@ abstract final class AppAccents {
   static const _aiAssistantDark = Color(0xFF2E3427);
   static const _lifeGoalsLight = Color(0xFFF2DDD5);
   static const _lifeGoalsDark = Color(0xFF42302A);
+  static const _journalLight = Color(0xFFE6E0F0);
+  static const _journalDark = Color(0xFF332D40);
+
+  static Color journal(Brightness brightness) =>
+      brightness == Brightness.dark ? _journalDark : _journalLight;
 
   static Color personal(Brightness brightness) =>
       brightness == Brightness.dark ? _personalDark : _personalLight;

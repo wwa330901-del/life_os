@@ -23,6 +23,7 @@ import { FriendsModule } from './friends/friends.module';
 import { FinanceReportModule } from './finance/finance-report.module';
 import { LifeGoalsModule } from './life-goals/life-goals.module';
 import { LifeReviewModule } from './life-review/life-review.module';
+import { JournalModule } from './journal/journal.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { LifeReviewModule } from './life-review/life-review.module';
     FinanceReportModule,
     LifeGoalsModule,
     LifeReviewModule,
+    JournalModule,
   ],
   controllers: [AppController],
   providers: [

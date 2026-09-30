@@ -77,6 +77,9 @@ function makeService(overrides: { goals?: unknown[]; holdings?: unknown[] } = {}
   const history = { daily: jest.fn().mockResolvedValue([]) };
   const lineNotifier = { notifyByUser: jest.fn() };
   const aiUsage = { record: jest.fn() };
+  const journal = {
+    stats: jest.fn().mockResolvedValue({ entries: 4, days: 3, averageMood: 3.7, topTags: ['工作', '家人'] }),
+  };
   return new LifeReviewService(
     prisma as never,
     transactions as never,
@@ -87,6 +90,7 @@ function makeService(overrides: { goals?: unknown[]; holdings?: unknown[] } = {}
     history as never,
     lineNotifier as never,
     aiUsage as never,
+    journal as never,
   );
 }
 
@@ -105,6 +109,8 @@ describe('LifeReviewService.build', () => {
     expect(text).toContain('看牙醫');
     expect(text).toContain('一年讀 12 本書 25%（3/12本），這期打卡 2 次');
     expect(text).toContain('進度落後：一年讀 12 本書');
+    expect(text).toContain('寫了 3 天，平均心情 3.7/5 🙂');
+    expect(text).toContain('常寫到：工作、家人');
     // No stock holdings and no Gemini key → no stock section, no AI line.
     expect(text).not.toContain('📈');
     expect(text).not.toContain('💬');

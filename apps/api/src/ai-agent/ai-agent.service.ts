@@ -21,6 +21,8 @@ import {
 } from '../../generated/prisma/client.js';
 import type { LineAccountLink } from '../../generated/prisma/client.js';
 import { LifeReviewService } from '../life-review/life-review.service';
+import { JOURNAL_AI_GUIDE, JOURNAL_TOOLS, JournalAiService } from '../journal/journal-ai.service';
+import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
 
 const MAX_TOOL_ROUNDS = 6;
@@ -178,7 +180,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -197,6 +199,8 @@ const APP_CONVERSATION_WINDOW_MS = 60 * 60 * 1000;
 interface AgentContext {
   userId: string;
   channel: AgentChannel;
+  /** LINE 剛在 21:30 問過「今天過得怎樣？」 */
+  journalPrompted: boolean;
   turnId: string;
   personalSpaceId: string | null;
   calendarSpaceId: string | null;
@@ -232,6 +236,7 @@ export class AiAgentService {
     private readonly knowledgeTools: KnowledgeAiService,
     private readonly stockTools: StockAiService,
     private readonly lifeReview: LifeReviewService,
+    private readonly journalTools: JournalAiService,
   ) {}
 
   static isConversationActive(
@@ -243,6 +248,10 @@ export class AiAgentService {
       state.aiInteractionAt != null &&
       Date.now() - state.aiInteractionAt.getTime() < windowMs
     );
+  }
+
+  static isJournalPromptActive(link: Pick<LineAccountLink, 'journalPromptAt'>): boolean {
+    return link.journalPromptAt != null && Date.now() - link.journalPromptAt.getTime() < JOURNAL_PROMPT_WINDOW_MS;
   }
 
   /** App 的 AI 問答：畫面上每段對話會送回上一輪的 interactionId；沒送（開新
@@ -271,6 +280,7 @@ export class AiAgentService {
       text: params.text,
       channel: { kind: 'line', linkId: link.id },
       state: AiAgentService.isConversationActive(link) ? link : null,
+      journalPrompted: AiAgentService.isJournalPromptActive(link),
     });
   }
 
@@ -281,10 +291,12 @@ export class AiAgentService {
     text: string;
     channel: AgentChannel;
     state: AgentState | null;
+    journalPrompted?: boolean;
   }): Promise<AgentResult> {
     const { state, channel } = params;
     const active = state != null;
     const ctx = await this.buildContext(params.userId, channel, state);
+    ctx.journalPrompted = params.journalPrompted ?? false;
     const client = new GoogleGenAI({ apiKey: params.apiKey });
     const startedAt = Date.now();
     let inputTokens = 0;
@@ -405,6 +417,7 @@ export class AiAgentService {
     return {
       userId,
       channel,
+      journalPrompted: false,
       turnId: randomUUID(),
       personalSpaceId: personal?.id ?? null,
       calendarSpaceId: calendar?.id ?? null,
@@ -457,6 +470,10 @@ export class AiAgentService {
       '【知識庫】',
       KNOWLEDGE_AI_GUIDE + '想去看展可以接著 find_free_slots 幫他排時間。',
       '',
+      '【日記】',
+      JOURNAL_AI_GUIDE,
+      ...(ctx.journalPrompted ? ['今晚你剛用 LINE 問過他「今天過得怎樣？」——這則訊息如果是在講今天，就記成日記。'] : []),
+      '',
       '【股票】',
       STOCK_AI_GUIDE,
       '股票買賣的記錄還是請他用固定指令，例如「買股0050 152 3000 國泰世華」。',
@@ -481,6 +498,7 @@ export class AiAgentService {
     if (QUERY_TOOL_NAMES.has(name)) return this.queryTools.execute(ctx.userId, name, args);
     if (LifeGoalAiService.toolNames.has(name)) return this.goalTools.execute(ctx.userId, name, args);
     if (KnowledgeAiService.toolNames.has(name)) return this.knowledgeTools.execute(ctx.userId, name, args);
+    if (JournalAiService.toolNames.has(name)) return this.journalTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
     switch (name) {
