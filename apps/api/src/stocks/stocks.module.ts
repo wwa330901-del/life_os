@@ -28,6 +28,6 @@ import { StockAiService } from './stock-ai.service';
     StockAiService,
   ],
   // Reused directly by LineModule for 股票買賣／持股總攬／定期定額回覆 commands.
-  exports: [StocksTransactionsService, StocksHoldingsService, StocksRecurringService, StockAiService],
+  exports: [StocksTransactionsService, StocksHoldingsService, StocksRecurringService, StockAiService, StockHistoryService],
 })
 export class StocksModule {}

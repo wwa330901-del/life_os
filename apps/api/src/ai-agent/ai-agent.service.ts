@@ -20,6 +20,7 @@ import {
   Prisma,
 } from '../../generated/prisma/client.js';
 import type { LineAccountLink } from '../../generated/prisma/client.js';
+import { LifeReviewService } from '../life-review/life-review.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
 
 const MAX_TOOL_ROUNDS = 6;
@@ -58,6 +59,12 @@ interface CalendarEventData {
 const TARGET_LABEL: Record<CalendarSyncTarget, string> = { GOOGLE: 'Google', ICLOUD: 'iPhone（iCloud）' };
 
 const AGENT_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'get_life_review',
+    description: '產生這週或這個月到目前為止的回顧（錢、代辦、目標、股票，含跟上期比較），回傳整理好的文字。使用者說「這週過得怎樣」「月回顧」時用。',
+    parameters: { type: 'object', properties: { period: { type: 'string', enum: ['week', 'month'] } }, required: ['period'] },
+  },
   {
     type: 'function' as const,
     name: 'record_transaction',
@@ -224,6 +231,7 @@ export class AiAgentService {
     private readonly calendarEvents: CalendarEventsService,
     private readonly knowledgeTools: KnowledgeAiService,
     private readonly stockTools: StockAiService,
+    private readonly lifeReview: LifeReviewService,
   ) {}
 
   static isConversationActive(
@@ -503,6 +511,8 @@ export class AiAgentService {
         ctx.pending = { action: { kind: 'calendar_event', summary, data }, turnId: ctx.turnId };
         return { needsConfirmation: true, summary };
       }
+      case 'get_life_review':
+        return (await this.lifeReview.build(ctx.userId, args.period === 'month' ? 'month' : 'week')) ?? '這段時間還沒有記錄';
       case 'confirm_pending_action':
         return this.confirmPending(ctx);
       case 'cancel_pending_action':

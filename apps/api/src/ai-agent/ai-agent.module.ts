@@ -7,6 +7,7 @@ import { AiAssistantModule } from '../ai-assistant/ai-assistant.module';
 import { UsersModule } from '../users/users.module';
 import { TodosModule } from '../todos/todos.module';
 import { LifeGoalsModule } from '../life-goals/life-goals.module';
+import { LifeReviewModule } from '../life-review/life-review.module';
 import { AiAgentService } from './ai-agent.service';
 import { AiAssistantController } from './ai-assistant.controller';
 
@@ -23,6 +24,7 @@ import { AiAssistantController } from './ai-assistant.controller';
     UsersModule,
     TodosModule,
     LifeGoalsModule,
+    LifeReviewModule,
   ],
   controllers: [AiAssistantController],
   providers: [AiAgentService],

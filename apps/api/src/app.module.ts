@@ -22,6 +22,7 @@ import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 import { FriendsModule } from './friends/friends.module';
 import { FinanceReportModule } from './finance/finance-report.module';
 import { LifeGoalsModule } from './life-goals/life-goals.module';
+import { LifeReviewModule } from './life-review/life-review.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { LifeGoalsModule } from './life-goals/life-goals.module';
     FriendsModule,
     FinanceReportModule,
     LifeGoalsModule,
+    LifeReviewModule,
   ],
   controllers: [AppController],
   providers: [

@@ -90,8 +90,15 @@ export class FinanceTransactionsService {
    * 子分類 counts toward its parent's total here, never the child's own —
    * 子分類 only shows up broken out in the transaction list itself. */
   async monthlySummary(userId: string, spaceId: string, month: string) {
-    await this.access.assertPersonalSpace(userId, spaceId);
     const range = monthRange(month);
+    return { month, ...(await this.rangeSummary(userId, spaceId, range.start, range.end)) };
+  }
+
+  /** Same as `monthlySummary` for any [start, end) range of date-only keys
+   * (UTC midnight of the Taipei calendar day) — used by 週回顧. */
+  async rangeSummary(userId: string, spaceId: string, start: Date, end: Date) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    const range = { start, end };
     const transactions = await this.prisma.financeTransaction.findMany({
       where: {
         spaceId,
@@ -126,7 +133,6 @@ export class FinanceTransactionsService {
     }
 
     return {
-      month,
       totalIncome,
       totalExpense,
       net: totalIncome - totalExpense,

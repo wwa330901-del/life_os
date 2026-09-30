@@ -18,6 +18,7 @@ import { UsersService } from '../users/users.service';
 import { TodosService } from '../todos/todos.service';
 import { LifeGoalsService } from '../life-goals/life-goals.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
+import { LifeReviewService } from '../life-review/life-review.service';
 import { formatGoalProgress } from '../life-goals/life-goal-reminder.service';
 import {
   isInstagramUrl,
@@ -131,6 +132,7 @@ export class LineService {
     private readonly todosService: TodosService,
     private readonly lifeGoalsService: LifeGoalsService,
     private readonly aiAgent: AiAgentService,
+    private readonly lifeReview: LifeReviewService,
   ) {}
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
@@ -254,6 +256,8 @@ export class LineService {
     '代辦事項總覽',
     '人生目標',
     '知識庫',
+    '週回顧',
+    '月回顧',
     ...LineService.GUIDE_KEYWORDS,
   ]);
 
@@ -288,7 +292,10 @@ export class LineService {
           '「幫我規劃這週」「今天先做什麼好？」',
           '「這個月還能花多少？」',
           '',
-          '也可以單純聊天、問意見 🙂',
+          '📊 回顧',
+      '傳「週回顧」「月回顧」，週日晚上和每月 1 號也會自動傳給你',
+      '',
+      '也可以單純聊天、問意見 🙂',
           '',
         ]
       : [
@@ -485,6 +492,12 @@ export class LineService {
 
     if (text === '人生目標') {
       await this.sendLifeGoals(userId, replyToken);
+      return;
+    }
+
+    if (text === '週回顧' || text === '月回顧') {
+      const review = await this.lifeReview.build(userId, text === '週回顧' ? 'week' : 'month');
+      await this.reply(replyToken, review ?? '這段時間還沒有任何記錄可以回顧。');
       return;
     }
 
