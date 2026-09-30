@@ -11,6 +11,7 @@ import { LifeReviewModule } from '../life-review/life-review.module';
 import { JournalModule } from '../journal/journal.module';
 import { FinanceReportModule } from '../finance/finance-report.module';
 import { AiAgentService } from './ai-agent.service';
+import { RecordToolsService } from './record-tools.service';
 import { AiAssistantController } from './ai-assistant.controller';
 
 /** 萬用 AI — one brain shared by LINE (LineModule imports this) and the
@@ -31,7 +32,7 @@ import { AiAssistantController } from './ai-assistant.controller';
     FinanceReportModule,
   ],
   controllers: [AiAssistantController],
-  providers: [AiAgentService],
+  providers: [AiAgentService, RecordToolsService],
   exports: [AiAgentService],
 })
 export class AiAgentModule {}

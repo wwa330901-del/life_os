@@ -24,6 +24,7 @@ import { LifeReviewService } from '../life-review/life-review.service';
 import { JOURNAL_AI_GUIDE, JOURNAL_TOOLS, JournalAiService } from '../journal/journal-ai.service';
 import { FinanceHealthService } from '../finance/finance-health.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
+import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
 
 const MAX_TOOL_ROUNDS = 6;
@@ -38,7 +39,8 @@ type ToolArgs = Record<string, unknown>;
 /** An action the AI proposed that only runs once the user replies to confirm. */
 type PendingAction =
   | { kind: 'transaction'; summary: string; data: TransactionData }
-  | { kind: 'calendar_event'; summary: string; data: CalendarEventData };
+  | { kind: 'calendar_event'; summary: string; data: CalendarEventData }
+  | RecordPending;
 
 interface TransactionData {
   type: 'INCOME' | 'EXPENSE';
@@ -188,7 +190,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -246,6 +248,7 @@ export class AiAgentService {
     private readonly lifeReview: LifeReviewService,
     private readonly journalTools: JournalAiService,
     private readonly financeHealth: FinanceHealthService,
+    private readonly recordTools: RecordToolsService,
   ) {}
 
   static isConversationActive(
@@ -485,7 +488,7 @@ export class AiAgentService {
       '',
       '【股票】',
       STOCK_AI_GUIDE,
-      '股票買賣的記錄還是請他用固定指令，例如「買股0050 152 3000 國泰世華」。',
+      '講股票買賣（「買了 3 張 0050 成交 152」）就 propose_stock_trade。',
       '',
       '【財務規劃】',
       '問財務狀況、要做財務規劃時：先 get_financial_health 拿分數跟每項建議，存錢目標再 list_life_goals 看進度，算出「每月要存多少、預備金還差多少、先還哪筆債」，用具體數字給 3 個以內的優先步驟。分數是規則算的，照實說不要自己改分數。',
@@ -493,6 +496,9 @@ export class AiAgentService {
       '【規劃】',
       '使用者要你幫忙規劃（這週怎麼安排、今天先做什麼、這個月預算、目標怎麼達成）時：先用 list_calendar_events、list_todos、list_life_goals、get_finance_overview 看他真實的行程、代辦、目標、收支，再給具體建議（排出時間表、列出優先順序、算出每月要存多少）。',
       '要一次排好幾個行程時，先用文字列出整份計畫問他，他同意後再逐一 create_calendar_event；只有一個就用 propose_calendar_event。',
+      '',
+      '【借貸／代墊／修改／刪除】',
+      RECORD_AI_GUIDE,
       '',
       '【等確認的動作】',
       ctx.pending ? `目前有一個等使用者確認的動作：${ctx.pending.action.summary}。使用者這則訊息如果是同意就 confirm_pending_action，不要就 cancel_pending_action，要改內容就重新提議。` : '目前沒有。',
@@ -510,6 +516,15 @@ export class AiAgentService {
     if (QUERY_TOOL_NAMES.has(name)) return this.queryTools.execute(ctx.userId, name, args);
     if (LifeGoalAiService.toolNames.has(name)) return this.goalTools.execute(ctx.userId, name, args);
     if (KnowledgeAiService.toolNames.has(name)) return this.knowledgeTools.execute(ctx.userId, name, args);
+    if (RecordToolsService.toolNames.has(name)) {
+      const out = await this.recordTools.execute(ctx.userId, name, args);
+      if (out && typeof out === 'object' && 'pending' in out) {
+        const pending = (out as { pending: RecordPending }).pending;
+        ctx.pending = { action: pending, turnId: ctx.turnId };
+        return { needsConfirmation: true, summary: pending.summary };
+      }
+      return out;
+    }
     if (JournalAiService.toolNames.has(name)) return this.journalTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
@@ -760,6 +775,9 @@ export class AiAgentService {
     const action = pending.action;
     if (action.kind === 'transaction') {
       return { ...(await this.writeTransaction(ctx, action.data)), done: action.summary };
+    }
+    if (action.kind !== 'calendar_event') {
+      return this.recordTools.run(ctx.userId, action);
     }
     const data = action.data;
     const event = await this.calendarEvents.create(ctx.userId, this.requireCalendarSpace(ctx), {

@@ -153,6 +153,7 @@ export class AiQueryToolsService {
       : transactions;
 
     return filtered.slice(0, limit).map((t) => ({
+      id: t.id,
       date: t.date.toISOString().slice(0, 10),
       type: t.type,
       amount: t.amount,
@@ -200,6 +201,9 @@ export class AiQueryToolsService {
         : new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
     const events = await this.calendarEvents.list(userId, space.id, startDate, endDate);
     return events.map((e) => ({
+      // 重複行程的每一次都掛在同一個系列底下，不能用 id 單獨改/刪。
+      id: e.seriesId ? null : e.id,
+      recurring: e.seriesId != null,
       title: e.title,
       startAt: e.startAt.toISOString(),
       endAt: e.endAt ? e.endAt.toISOString() : null,
