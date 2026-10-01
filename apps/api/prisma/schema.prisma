@@ -932,6 +932,10 @@ model LineAccountLink {
   journalReminderEnabled Boolean   @default(true)
   /// 每日早報（2026-10-01）：每天 08:00 今天的行程/代辦/昨天花費/預算，傳「關閉早報」可關。
   morningBriefEnabled    Boolean   @default(true)
+  /// App「提醒設定」（2026-10-01）：有時間的代辦前 1 小時、週/月回顧、人生目標到期/太久沒更新。
+  todoReminderEnabled    Boolean   @default(true)
+  reviewEnabled          Boolean   @default(true)
+  goalReminderEnabled    Boolean   @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

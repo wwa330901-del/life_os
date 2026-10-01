@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../widgets/reminder_settings_dialog.dart';
+
 import '../../core/api_client.dart';
 import '../../core/models/app_user.dart';
 import '../../core/models/home_dashboard.dart';
@@ -51,6 +53,11 @@ class SpacePickerScreen extends ConsumerWidget {
                           context,
                         ).push(MaterialPageRoute(builder: (_) => const AdminHomeScreen())),
                       ),
+                    IconButton(
+                      tooltip: '提醒設定',
+                      icon: const Icon(Icons.notifications_outlined),
+                      onPressed: () => showDialog<void>(context: context, builder: (_) => const ReminderSettingsDialog()),
+                    ),
                     IconButton(
                       tooltip: '登出',
                       icon: const Icon(Icons.logout),

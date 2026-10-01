@@ -1423,6 +1423,11 @@ class ApiClient {
     await _delete('/life-goals/$id');
   }
 
+  /// 提醒設定 — `{linked, morningBriefEnabled, journalReminderEnabled, todoReminderEnabled, reviewEnabled, goalReminderEnabled}`.
+  Future<Map<String, dynamic>> getReminderSettings() => _get('/line/settings');
+
+  Future<Map<String, dynamic>> updateReminderSettings(Map<String, bool> changes) => _patch('/line/settings', changes);
+
   /// Generates (or replaces) a short-lived code the user sends as a LINE
   /// message to the 記帳 bot to link their LINE account to this one.
   Future<({String code, DateTime expiresAt})> generateLineLinkCode() async {

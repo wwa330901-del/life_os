@@ -74,7 +74,7 @@ export class LifeReviewService {
 
   private async sendToEveryone(kind: ReviewKind, completedMonth: boolean) {
     const links = await this.prisma.lineAccountLink.findMany({
-      where: { lineUserId: { not: null } },
+      where: { lineUserId: { not: null }, reviewEnabled: true },
       select: { userId: true },
     });
     for (const { userId } of links) {

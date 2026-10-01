@@ -47,6 +47,7 @@ export class LifeGoalReminderService {
     const candidates = await this.prisma.lifeGoal.findMany({
       where: {
         status: LifeGoalStatus.ACTIVE,
+        owner: { lineAccountLink: { is: { goalReminderEnabled: true } } },
         OR: [
           { targetDate: { in: deadlineDates } },
           {

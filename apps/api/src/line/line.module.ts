@@ -9,6 +9,7 @@ import { TodosModule } from '../todos/todos.module';
 import { LifeGoalsModule } from '../life-goals/life-goals.module';
 import { LineWebhookController } from './line-webhook.controller';
 import { LineLinkController } from './line-link.controller';
+import { LineSettingsController } from './line-settings.controller';
 import { LineService } from './line.service';
 import { AiAgentModule } from '../ai-agent/ai-agent.module';
 import { LifeReviewModule } from '../life-review/life-review.module';
@@ -30,7 +31,7 @@ import { DailyBriefModule } from '../daily-brief/daily-brief.module';
     FinanceReportModule,
     DailyBriefModule,
   ],
-  controllers: [LineWebhookController, LineLinkController],
+  controllers: [LineWebhookController, LineLinkController, LineSettingsController],
   providers: [LineService],
 })
 export class LineModule {}

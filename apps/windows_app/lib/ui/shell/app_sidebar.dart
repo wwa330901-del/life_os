@@ -8,6 +8,7 @@ import '../../core/models/app_user.dart';
 import '../../state/auth_provider.dart';
 import '../../state/ui_prefs_provider.dart';
 import '../widgets/ai_settings_dialog.dart';
+import '../widgets/reminder_settings_dialog.dart';
 import '../screens/friends/friends_dialog.dart';
 import 'space_switcher_list.dart';
 
@@ -178,6 +179,12 @@ class _SidebarPanel extends ConsumerWidget {
               label: session?.user.name ?? '個人設定',
               selected: false,
               onTap: () => _editName(context, ref, session?.user.name ?? ''),
+            ),
+            _NavItem(
+              icon: Icons.notifications_outlined,
+              label: '提醒設定',
+              selected: false,
+              onTap: () => showDialog(context: context, builder: (_) => const ReminderSettingsDialog()),
             ),
             _NavItem(
               icon: Icons.smart_toy_outlined,

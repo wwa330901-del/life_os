@@ -141,6 +141,7 @@ export class DailyBriefService {
         dueDateAllDay: false,
         dueReminderSentAt: null,
         personalOwnerUserId: { not: null },
+        personalOwner: { is: { lineAccountLink: { is: { todoReminderEnabled: true } } } },
         dueDate: { gt: now, lte: new Date(now.getTime() + DUE_REMINDER_LEAD_MS) },
       },
       select: { id: true, title: true, dueDate: true, personalOwnerUserId: true },

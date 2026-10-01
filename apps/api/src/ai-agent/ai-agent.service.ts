@@ -67,7 +67,29 @@ interface CalendarEventData {
 
 const TARGET_LABEL: Record<CalendarSyncTarget, string> = { GOOGLE: 'Google', ICLOUD: 'iPhone（iCloud）' };
 
+const REMINDER_FIELDS = {
+  morning_brief: 'morningBriefEnabled',
+  journal: 'journalReminderEnabled',
+  todo: 'todoReminderEnabled',
+  review: 'reviewEnabled',
+  goal: 'goalReminderEnabled',
+} as const;
+
 const AGENT_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'set_reminder',
+    description:
+      '開關 LINE 自動提醒。kind：morning_brief（每天 8 點早報）、journal（每晚 9:30 日記提醒）、todo（有時間的代辦前 1 小時）、review（週日晚上週回顧、每月 1 號月回顧）、goal（人生目標快到期/太久沒更新）。使用者說「不要再傳 X」「打開 X 提醒」時用。',
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: Object.keys(REMINDER_FIELDS) },
+        enabled: { type: 'boolean' },
+      },
+      required: ['kind', 'enabled'],
+    },
+  },
   {
     type: 'function' as const,
     name: 'get_financial_plan_inputs',
@@ -597,6 +619,14 @@ export class AiAgentService {
           syncTarget: data.syncTarget ?? undefined,
         });
         return { created: event.title, when: describeEvent(data), savedTo: data.syncTarget ? TARGET_LABEL[data.syncTarget] : '元序' };
+      }
+      case 'set_reminder': {
+        const field = REMINDER_FIELDS[String(args.kind) as keyof typeof REMINDER_FIELDS];
+        if (!field) return { error: '不認識的提醒種類' };
+        const data = { [field]: args.enabled === true };
+        // App 問答的使用者可能還沒連 LINE — 先存著，連了就照這個設定。
+        await this.prisma.lineAccountLink.upsert({ where: { userId: ctx.userId }, create: { userId: ctx.userId, ...data }, update: data });
+        return { ok: true, kind: args.kind, enabled: args.enabled === true, note: 'App 的「提醒設定」也可以開關' };
       }
       case 'find_free_slots':
         return this.findSlots(ctx, args);
