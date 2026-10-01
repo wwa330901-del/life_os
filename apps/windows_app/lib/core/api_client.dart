@@ -15,7 +15,6 @@ import 'models/finance.dart';
 import 'models/divination.dart';
 import 'models/home_dashboard.dart';
 import 'models/journal_entry.dart';
-import 'models/health_record.dart';
 import 'models/knowledge.dart';
 import 'models/life_goal.dart';
 import 'models/memory.dart';
@@ -1429,56 +1428,6 @@ class ApiClient {
 
   Future<void> deleteJournalEntry(String id) async {
     await _delete('/journal/$id');
-  }
-
-  // --- 健康 ---
-
-  Future<List<HealthRecord>> listHealthRecords({HealthType? type}) async {
-    final body = await _getList('/health${type != null ? '?type=${type.api}' : ''}');
-    return body.map((e) => HealthRecord.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
-  Future<HealthSummary> getHealthSummary({int days = 7}) async {
-    return HealthSummary.fromJson(await _get('/health/summary?days=$days'));
-  }
-
-  /// [startAt]/[endAt] only for 睡眠; [value] is 公斤 or 步數.
-  Future<void> saveHealthRecord({
-    String? id,
-    required HealthType type,
-    required DateTime date,
-    DateTime? startAt,
-    DateTime? endAt,
-    int? minutes,
-    double? value,
-    String? activity,
-    String? note,
-  }) async {
-    final body = {
-      'type': type.api,
-      'date': healthDateKey(date),
-      'startAt': ?startAt?.toUtc().toIso8601String(),
-      'endAt': ?endAt?.toUtc().toIso8601String(),
-      'minutes': ?minutes,
-      'value': ?value,
-      'activity': ?activity,
-      'note': ?note,
-    };
-    if (id == null) {
-      await _post('/health', body);
-    } else {
-      await _patch('/health/$id', body);
-    }
-  }
-
-  Future<void> deleteHealthRecord(String id) async {
-    await _delete('/health/$id');
-  }
-
-  /// 給 iPhone 捷徑用的私人上傳網址。
-  Future<String> getHealthIngestUrl({bool regenerate = false}) async {
-    final body = regenerate ? await _post('/health/ingest-token/regenerate', {}) : await _get('/health/ingest-token');
-    return '$baseUrl/health/ingest?key=${body['token']}';
   }
 
   Future<List<LifeGoal>> listLifeGoals() async {

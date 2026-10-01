@@ -25,7 +25,6 @@ import { JOURNAL_AI_GUIDE, JOURNAL_TOOLS, JournalAiService } from '../journal/jo
 import { FinanceHealthService } from '../finance/finance-health.service';
 import { FinancePlanService } from '../finance/finance-plan.service';
 import { DIVINATION_AI_GUIDE, DIVINATION_TOOLS, DivinationAiService } from '../divination/divination-ai.service';
-import { HEALTH_AI_GUIDE, HEALTH_TOOLS, HealthAiService } from '../health/health-ai.service';
 import { MEMORY_AI_GUIDE, MEMORY_TOOLS, MemoryAiService } from '../memory/memory-ai.service';
 import { MemoryService } from '../memory/memory.service';
 import { getWeather, WEATHER_TOOL } from './weather';
@@ -257,7 +256,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...HEALTH_TOOLS, ...MEMORY_TOOLS, ...WISHLIST_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...MEMORY_TOOLS, ...WISHLIST_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -295,8 +294,8 @@ const CHAT_TOOLS = [
 /** 什麼時候一定要交給 Agent——寧可多交，不能漏（漏了就少一個功能）。 */
 export const CHAT_ROUTER_RULES = [
   '你只負責「純聊天」。下面任何一種情況，一律呼叫 use_agent，不要自己回答：',
-  '1. 要查他自己的資料：錢（花多少、餘額、預算、帳戶、信用卡、訂閱、借貸、代墊）、代辦、行程、人生目標、日記、健康（睡眠運動體重）、股票持股或分析、收藏的知識庫（文章、美食、景點、展覽）、購物車、算過的卦、記住的重要日子、AI 用量。',
-  '2. 要他做事或記錄：記帳、花了錢、收入、轉帳、排行程、提醒、代辦、打卡、做完了、記睡眠運動體重、寫日記、算命占卜、買賣股票、借錢還錢、繳卡費、想買東西、改或刪任何紀錄、開關提醒、設定任何東西。',
+  '1. 要查他自己的資料：錢（花多少、餘額、預算、帳戶、信用卡、訂閱、借貸、代墊）、代辦、行程、人生目標、日記、股票持股或分析、收藏的知識庫（文章、美食、景點、展覽）、購物車、算過的卦、記住的重要日子、AI 用量。',
+  '2. 要他做事或記錄：記帳、花了錢、收入、轉帳、排行程、提醒、代辦、打卡（讀書、運動、體重…）、做完了、寫日記、算命占卜、買賣股票、借錢還錢、繳卡費、想買東西、改或刪任何紀錄、開關提醒、設定任何東西。',
   '3. 他講到關於自己長期有效的事（喜好、不吃什麼、過敏、家人朋友、生日紀念日、工作、住哪、習慣、目標），因為要記下來。',
   '4. 要你沒有工具可查的即時資料：匯率、新聞（股票新聞除外）、交通、營業時間等。（天氣用 get_weather、某檔股票的走勢用 analyze_stock_trend、基本面和新聞用 get_stock_fundamentals，這三個你可以自己查；但問「我的持股、我賺多少」是他的資料，要 use_agent。）',
   '5. 要幫他規劃或給需要看他資料的建議（這週怎麼排、還能花多少、怎麼存錢）。',
@@ -352,7 +351,6 @@ export class AiAgentService {
     private readonly recordTools: RecordToolsService,
     private readonly divinationTools: DivinationAiService,
     private readonly financePlan: FinancePlanService,
-    private readonly healthTools: HealthAiService,
     private readonly memoryTools: MemoryAiService,
     private readonly memory: MemoryService,
     private readonly wishlistTools: WishlistAiService,
@@ -748,7 +746,7 @@ export class AiAgentService {
 
     return [
       `你是「元序」的生活助理（使用者現在在${ctx.channel.kind === 'line' ? ' LINE ' : ' App 的 AI 問答'}跟你聊），像一個熟悉使用者生活的真人朋友兼秘書，用自然口語聊天。` +
-      '使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、記睡眠運動、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
+      '使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
       `現在是 ${today}（台北時間）。「明天」「下週三」這類說法都以這個日期換算成 YYYY-MM-DD。`,
       '',
       location
@@ -780,9 +778,6 @@ export class AiAgentService {
       '【日記】',
       JOURNAL_AI_GUIDE,
       ...(ctx.journalPrompted ? ['今晚你剛用 LINE 問過他「今天過得怎樣？」——這則訊息如果是在講今天，就記成日記。'] : []),
-      '',
-      '【健康】',
-      HEALTH_AI_GUIDE,
       '',
       '【股票】',
       STOCK_AI_GUIDE,
@@ -840,7 +835,6 @@ export class AiAgentService {
     }
     if (DivinationAiService.toolNames.has(name)) return this.divinationTools.execute(ctx.userId, name, args);
     if (JournalAiService.toolNames.has(name)) return this.journalTools.execute(ctx.userId, name, args);
-    if (HealthAiService.toolNames.has(name)) return this.healthTools.execute(ctx.userId, name, args);
     if (MemoryAiService.toolNames.has(name)) return this.memoryTools.execute(ctx.userId, name, args);
     if (WishlistAiService.toolNames.has(name)) return this.wishlistTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);

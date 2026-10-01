@@ -101,14 +101,6 @@ function makeService(overrides: { goals?: unknown[]; holdings?: unknown[] } = {}
       }),
     } as never,
     { list: jest.fn().mockResolvedValue({ items: [] }) } as never,
-    {
-      stats: jest.fn().mockResolvedValue({
-        sleep: { nights: 5, averageMinutes: 400, shortNights: 2 },
-        exercise: { sessions: 3, totalMinutes: 120, activities: [{ name: '跑步', count: 2 }, { name: '重訓', count: 1 }] },
-        weight: { first: 71, last: 70.2, change: -0.8 },
-        steps: { days: 0, average: null },
-      }),
-    } as never,
   );
 }
 
@@ -130,9 +122,7 @@ describe('LifeReviewService.build', () => {
     expect(text).toContain('寫了 3 天，平均心情 3.7/5 🙂');
     expect(text).toContain('常寫到：工作、家人');
     expect(text).toContain('・小明 還欠 3,000（借出 45 天）');
-    expect(text).toContain('睡眠：記了 5 晚，平均 6 小時 40 分（2 晚不到 6 小時）');
-    expect(text).toContain('運動：3 次、共 120 分鐘（跑步 2 次、重訓）');
-    expect(text).toContain('體重：70.2 公斤（-0.8）');
+    expect(text).not.toContain('健康');
     expect(text).not.toContain('步數');
     expect(text).not.toContain('阿華'); // lent only 4 days ago
     // No stock holdings and no Gemini key → no stock section, no AI line.

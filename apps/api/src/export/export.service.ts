@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { PrismaService } from '../prisma/prisma.service';
 import { taipeiDateKey, utcDateKey } from '../common/taipei-date';
-import { formatMinutes } from '../health/health-parse';
 import { ACCURACY_LABEL } from '../divination/divination.service';
 
 type Cell = string | number | null;
@@ -22,7 +21,6 @@ const TX_TYPE: Record<string, string> = {
   ADVANCE_IN: '代墊收回',
 };
 const ACCOUNT_TYPE: Record<string, string> = { CASH: '現金', BANK: '銀行', CREDIT_CARD: '信用卡', OTHER: '其他' };
-const HEALTH_TYPE: Record<string, string> = { SLEEP: '睡眠', EXERCISE: '運動', WEIGHT: '體重', STEPS: '步數' };
 const GOAL_STATUS: Record<string, string> = { ACTIVE: '進行中', COMPLETED: '完成', ABANDONED: '放棄' };
 const PRIORITY: Record<string, string> = { HIGH: '高', MEDIUM: '中', LOW: '低' };
 
@@ -65,7 +63,7 @@ export class ExportService {
     ]);
     const spaceId = personal?.id ?? '__none__';
 
-    const [transactions, accounts, budgets, loans, advances, stocks, events, todos, goals, journal, health, divinations, knowledge] =
+    const [transactions, accounts, budgets, loans, advances, stocks, events, todos, goals, journal, divinations, knowledge] =
       await Promise.all([
         this.prisma.financeTransaction.findMany({
           where: { spaceId },
@@ -91,7 +89,6 @@ export class ExportService {
         this.prisma.projectTodo.findMany({ where: { personalOwnerUserId: userId }, orderBy: { createdAt: 'asc' } }),
         this.prisma.lifeGoal.findMany({ where: { ownerUserId: userId }, include: { checkIns: { orderBy: { date: 'asc' } } }, orderBy: { createdAt: 'asc' } }),
         this.prisma.journalEntry.findMany({ where: { ownerUserId: userId }, orderBy: { date: 'asc' } }),
-        this.prisma.healthRecord.findMany({ where: { ownerUserId: userId }, orderBy: { date: 'asc' } }),
         this.prisma.divinationRecord.findMany({ where: { ownerUserId: userId }, orderBy: { castAt: 'asc' } }),
         this.prisma.knowledgeItem.findMany({ where: { ownerUserId: userId }, include: { category: true }, orderBy: { createdAt: 'asc' } }),
       ]);
@@ -249,29 +246,6 @@ export class ExportService {
           { header: '內容', width: 80 },
         ],
         rows: journal.map((j) => [day(j.date), j.mood, j.tags.join('、'), j.content]),
-      },
-      {
-        name: '健康',
-        columns: [
-          { header: '日期', width: 12 },
-          { header: '種類', width: 8 },
-          { header: '內容', width: 18 },
-          { header: '幾點睡', width: 18 },
-          { header: '幾點起', width: 18 },
-          { header: '備註', width: 24 },
-        ],
-        rows: health.map((h) => [
-          day(h.date),
-          HEALTH_TYPE[h.type] ?? h.type,
-          h.type === 'SLEEP'
-            ? h.minutes != null ? formatMinutes(h.minutes) : null
-            : h.type === 'EXERCISE'
-              ? `${h.activity ?? '運動'}${h.minutes ? ` ${h.minutes} 分鐘` : ''}`
-              : h.type === 'WEIGHT' ? `${h.value} 公斤` : `${Math.round(h.value ?? 0)} 步`,
-          taipeiDateTime(h.startAt),
-          taipeiDateTime(h.endAt),
-          h.note,
-        ]),
       },
       {
         name: '算命',

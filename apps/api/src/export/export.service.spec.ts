@@ -54,11 +54,6 @@ function fakePrisma() {
       ]),
     },
     journalEntry: empty,
-    healthRecord: {
-      findMany: jest.fn().mockResolvedValue([
-        { date: d('2026-10-01T00:00:00Z'), type: 'SLEEP', minutes: 435, startAt: d('2026-09-30T15:30:00Z'), endAt: d('2026-09-30T22:45:00Z'), note: null },
-      ]),
-    },
     divinationRecord: empty,
     knowledgeItem: empty,
   };
@@ -70,7 +65,7 @@ describe('ExportService', () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
     expect(workbook.worksheets.map((w) => w.name)).toEqual([
-      '記帳', '帳戶', '預算', '借貸', '代墊', '股票交易', '行事曆', '代辦', '人生目標', '日記', '健康', '算命', '知識庫',
+      '記帳', '帳戶', '預算', '借貸', '代墊', '股票交易', '行事曆', '代辦', '人生目標', '日記', '算命', '知識庫',
     ]);
     const values = (sheet: string, row: number) => (workbook.getWorksheet(sheet)!.getRow(row).values as unknown[]).slice(1);
     expect(values('記帳', 2)).toEqual(['2026-10-01', '支出', 120, '現金', undefined, '餐飲', '午餐', '便當']);
@@ -79,6 +74,5 @@ describe('ExportService', () => {
     expect(values('人生目標', 2)).toEqual(['一年讀 12 本書', '閱讀', '進行中', 2, 12, '本', undefined, '2026-09-10', '原子習慣：小改變']);
     expect(values('人生目標', 3)[0]).toBe('一年讀 12 本書');
     expect(values('人生目標', 3)[8]).toBe('刻意練習');
-    expect(values('健康', 2)).toEqual(['2026-10-01', '睡眠', '7 小時 15 分', '2026-09-30 23:30', '2026-10-01 06:45']);
   });
 });

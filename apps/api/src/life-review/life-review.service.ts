@@ -17,8 +17,6 @@ import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
 import { formatTaipeiDateTime } from '../common/taipei-date';
 import { AiUsageStatus, FinanceLoanDirection, FinanceTransactionType, LifeGoalStatus, LifeGoalTrackingType } from '../../generated/prisma/client.js';
 import { JournalService } from '../journal/journal.service';
-import { HealthService } from '../health/health.service';
-import { formatMinutes } from '../health/health-parse';
 import { FinanceHealthService } from '../finance/finance-health.service';
 import { FinanceLoansService } from '../finance/finance-loans.service';
 import { FinanceAdvancesService } from '../finance/finance-advances.service';
@@ -60,7 +58,6 @@ export class LifeReviewService {
     private readonly financeHealth: FinanceHealthService,
     private readonly loans: FinanceLoansService,
     private readonly advances: FinanceAdvancesService,
-    private readonly health: HealthService,
   ) {}
 
   @Cron('0 20 * * 0', { timeZone: 'Asia/Taipei' })
@@ -91,16 +88,15 @@ export class LifeReviewService {
   /** The full review text, or null when the user has no data at all. */
   async build(userId: string, kind: ReviewKind, now = new Date(), completedMonth = false): Promise<string | null> {
     const period = reviewPeriod(kind, now, completedMonth);
-    const [money, owed, tasks, goals, journal, health, stocks] = await Promise.all([
+    const [money, owed, tasks, goals, journal, stocks] = await Promise.all([
       this.moneySection(userId, period),
       this.owedSection(userId, period, now),
       this.taskSection(userId, period, now),
       this.goalSection(userId, period, now),
       this.journalSection(userId, period),
-      this.healthSection(userId, period),
       this.stockSection(userId, period),
     ]);
-    const sections = [money, owed, tasks, goals, journal, health, stocks].filter((s): s is Section => s != null);
+    const sections = [money, owed, tasks, goals, journal, stocks].filter((s): s is Section => s != null);
     if (sections.length === 0) return null;
 
     const title = `${kind === 'week' ? '📅 週回顧' : '🗓 月回顧'}（${period.label}${period.partial ? '，到今天為止' : ''}）`;
@@ -317,26 +313,6 @@ export class LifeReviewService {
 常寫到：${stats.topTags.join('、')}` : '';
     return { text: `📝 日記
 寫了 ${stats.days} 天${mood}${tags}`, facts: { journal: stats } };
-  }
-
-  // --- 健康 ---
-
-  private async healthSection(userId: string, period: ReviewPeriod): Promise<Section | null> {
-    const s = await this.health.stats(userId, period.start, period.end);
-    const lines: string[] = [];
-    if (s.sleep.averageMinutes != null) {
-      lines.push(`睡眠：記了 ${s.sleep.nights} 晚，平均 ${formatMinutes(s.sleep.averageMinutes)}${s.sleep.shortNights > 0 ? `（${s.sleep.shortNights} 晚不到 6 小時）` : ''}`);
-    }
-    if (s.exercise.sessions > 0) {
-      const kinds = s.exercise.activities.slice(0, 3).map((a) => `${a.name}${a.count > 1 ? ` ${a.count} 次` : ''}`).join('、');
-      lines.push(`運動：${s.exercise.sessions} 次${s.exercise.totalMinutes > 0 ? `、共 ${s.exercise.totalMinutes} 分鐘` : ''}（${kinds}）`);
-    }
-    if (s.weight) {
-      lines.push(`體重：${s.weight.last} 公斤${s.weight.change !== 0 ? `（${s.weight.change > 0 ? '+' : ''}${s.weight.change}）` : ''}`);
-    }
-    if (s.steps.average != null) lines.push(`步數：平均每天 ${s.steps.average.toLocaleString('en-US')} 步`);
-    if (lines.length === 0) return null;
-    return { text: ['🏃 健康', ...lines].join('\n'), facts: { health: s } };
   }
 
   // --- 股票 ---

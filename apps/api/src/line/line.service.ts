@@ -33,8 +33,6 @@ import { DailyBriefService } from '../daily-brief/daily-brief.service';
 import { FinancePlanService } from '../finance/finance-plan.service';
 import { FinanceHealthService, formatFinanceHealth } from '../finance/finance-health.service';
 import { formatGoalProgress } from '../life-goals/life-goal-reminder.service';
-import { HealthService } from '../health/health.service';
-import { formatMinutes } from '../health/health-parse';
 import {
   isInstagramUrl,
   INSTAGRAM_UNSUPPORTED_MESSAGE,
@@ -151,7 +149,6 @@ export class LineService {
     private readonly financeHealth: FinanceHealthService,
     private readonly dailyBrief: DailyBriefService,
     private readonly financePlan: FinancePlanService,
-    private readonly health: HealthService,
     private readonly voice: VoiceTranscriberService,
     private readonly receiptReader: ReceiptReaderService,
     private readonly aiUsage: AiUsageService,
@@ -306,7 +303,6 @@ export class LineService {
     '代辦事項總覽',
     '人生目標',
     '知識庫',
-    '健康',
     '週回顧',
     '月回顧',
     '財務健檢',
@@ -380,10 +376,6 @@ export class LineService {
       '',
       '⏰ 提醒',
       '每天 8 點早報（今天行程、代辦、預算），有時間的代辦前 1 小時提醒；傳「早報」隨時看',
-      '',
-      '😴 健康',
-      '「昨晚 12 點睡 7 點起」「今天跑步 30 分鐘」「體重 70.5」',
-      '傳「健康」看最近 7 天；iPhone 可以設定自動記錄睡眠（App「健康」→「iPhone 自動記錄」）',
       '',
       '🔮 算命（梅花易數）',
       '說一次生日就會記住「我是 1990/5/3 早上 8 點生的」，之後直接說「我想算這次換工作順不順」',
@@ -601,11 +593,6 @@ export class LineService {
 
     if (text === '人生目標') {
       await this.sendLifeGoals(userId, replyToken);
-      return;
-    }
-
-    if (text === '健康') {
-      await this.reply(replyToken, await this.healthText(userId));
       return;
     }
 
@@ -2599,23 +2586,6 @@ export class LineService {
 
   /** 唯讀 — 新增/更新進度目前只在 App 端做（數字型目標的「目前值」用打字
    * 輸入不太自然），LINE 這裡先只做「隨時看得到進度」這件事。 */
-  /** 圖文選單「健康」：最近 7 天的睡眠/運動/體重/步數，沒資料就教怎麼記。 */
-  private async healthText(userId: string): Promise<string> {
-    const s = await this.health.statsLastDays(userId, 7);
-    const lines: string[] = [];
-    if (s.sleep.averageMinutes != null) {
-      lines.push(`😴 睡眠：平均 ${formatMinutes(s.sleep.averageMinutes)}（記了 ${s.sleep.nights} 晚${s.sleep.shortNights > 0 ? `，${s.sleep.shortNights} 晚不到 6 小時` : ''}）`);
-    }
-    if (s.exercise.sessions > 0) {
-      lines.push(`🏃 運動：${s.exercise.sessions} 次${s.exercise.totalMinutes > 0 ? `、共 ${s.exercise.totalMinutes} 分鐘` : ''}（${s.exercise.activities.slice(0, 3).map((a) => a.name).join('、')}）`);
-    }
-    if (s.weight) lines.push(`⚖️ 體重：${s.weight.last} 公斤${s.weight.change !== 0 ? `（${s.weight.change > 0 ? '+' : ''}${s.weight.change}）` : ''}`);
-    if (s.steps.average != null) lines.push(`👟 步數：平均每天 ${s.steps.average.toLocaleString('en-US')} 步`);
-    const howTo = '直接跟我說就會記：「昨晚 12 點睡 7 點起」「今天跑步 30 分鐘」「體重 70.5」';
-    if (lines.length === 0) return ['😴 健康', '', '最近 7 天還沒有紀錄。', howTo, '', 'iPhone 也可以自動記錄睡眠：到元序 App「健康」→「iPhone 自動記錄」照步驟設定。'].join('\n');
-    return ['😴 最近 7 天的健康', '', ...lines, '', howTo].join('\n');
-  }
-
   private async sendLifeGoals(userId: string, replyToken: string) {
     const goals = await this.lifeGoalsService.listAll(userId, LifeGoalStatus.ACTIVE);
     if (goals.length === 0) {

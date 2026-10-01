@@ -6,7 +6,7 @@ import '../../state/auth_provider.dart';
 
 /// The LINE reminders, label → backend field (`PATCH /line/settings`).
 const _reminders = [
-  ('morningBriefEnabled', '每日早報', '每天早上 8 點：今天的行程、代辦、昨天花費、昨晚睡多久'),
+  ('morningBriefEnabled', '每日早報', '每天早上 8 點：今天的行程、代辦、昨天花費、預算'),
   ('todoReminderEnabled', '代辦到期提醒', '有時間的代辦，到期前 1 小時提醒'),
   ('journalReminderEnabled', '日記提醒', '每晚 9:30 還沒寫日記會問你今天過得怎樣'),
   ('reviewEnabled', '週回顧／月回顧', '週日晚上 8 點、每月 1 號早上 9 點'),

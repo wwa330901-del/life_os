@@ -17,7 +17,6 @@ import { AiAgentModule } from '../ai-agent/ai-agent.module';
 import { LifeReviewModule } from '../life-review/life-review.module';
 import { FinanceReportModule } from '../finance/finance-report.module';
 import { DailyBriefModule } from '../daily-brief/daily-brief.module';
-import { HealthModule } from '../health/health.module';
 import { AdminModule } from '../admin/admin.module';
 
 @Module({
@@ -34,7 +33,6 @@ import { AdminModule } from '../admin/admin.module';
     LifeReviewModule,
     FinanceReportModule,
     DailyBriefModule,
-    HealthModule,
     AdminModule,
   ],
   controllers: [LineWebhookController, LineLinkController, LineSettingsController],

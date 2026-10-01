@@ -27,7 +27,6 @@ import { LifeReviewModule } from './life-review/life-review.module';
 import { JournalModule } from './journal/journal.module';
 import { DailyBriefModule } from './daily-brief/daily-brief.module';
 import { DivinationModule } from './divination/divination.module';
-import { HealthModule } from './health/health.module';
 import { MemoryModule } from './memory/memory.module';
 import { ExportModule } from './export/export.module';
 import { ErrorReportModule } from './error-report/error-report.module';
@@ -64,7 +63,6 @@ import { SecretMigrationService } from './common/secret-migration.service';
     JournalModule,
     DailyBriefModule,
     DivinationModule,
-    HealthModule,
     MemoryModule,
     ExportModule,
     ErrorReportModule,
