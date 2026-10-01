@@ -95,6 +95,18 @@ class FinanceAccountsTab extends ConsumerWidget {
       text: existing == null ? '0' : existing.initialBalance.toStringAsFixed(0),
     );
     var type = existing?.type ?? FinanceAccountType.cash;
+    int? statementDay = existing?.statementDay;
+    int? paymentDueDay = existing?.paymentDueDay;
+    String? paymentAccountId = existing?.paymentAccountId;
+    var autoPay = existing?.cardAutoPay ?? false;
+    final otherAccounts = (ref.read(financeAccountsProvider(spaceId)).value ?? const <FinanceAccount>[])
+        .where((a) => a.id != existing?.id && a.type != FinanceAccountType.creditCard)
+        .toList();
+    if (paymentAccountId != null && !otherAccounts.any((a) => a.id == paymentAccountId)) paymentAccountId = null;
+    final dayItems = [
+      const DropdownMenuItem<int?>(value: null, child: Text('不設定')),
+      for (var d = 1; d <= 31; d++) DropdownMenuItem<int?>(value: d, child: Text('每月 $d 號')),
+    ];
 
     final saved = await showDialog<bool>(
       context: context,
@@ -124,6 +136,55 @@ class FinanceAccountsTab extends ConsumerWidget {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: '期初餘額'),
               ),
+              if (type == FinanceAccountType.creditCard) ...[
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '繳款提醒：設好結帳日和繳款日，繳款日前 3 天和當天 LINE 會提醒要繳多少',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<int?>(
+                        initialValue: statementDay,
+                        decoration: const InputDecoration(labelText: '結帳日'),
+                        items: dayItems,
+                        onChanged: (v) => setState(() => statementDay = v),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<int?>(
+                        initialValue: paymentDueDay,
+                        decoration: const InputDecoration(labelText: '繳款日'),
+                        items: dayItems,
+                        onChanged: (v) => setState(() => paymentDueDay = v),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  initialValue: paymentAccountId,
+                  decoration: const InputDecoration(labelText: '扣款帳戶'),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('不設定')),
+                    for (final a in otherAccounts) DropdownMenuItem<String?>(value: a.id, child: Text(a.name)),
+                  ],
+                  onChanged: (v) => setState(() => paymentAccountId = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('自動扣繳'),
+                  subtitle: const Text('繳款日自動記一筆從扣款帳戶轉過來'),
+                  value: autoPay,
+                  onChanged: paymentAccountId == null ? null : (v) => setState(() => autoPay = v),
+                ),
+              ],
             ],
           ),
           actions: [
@@ -139,21 +200,33 @@ class FinanceAccountsTab extends ConsumerWidget {
     if (name.isEmpty) return;
     final balance = double.tryParse(balanceController.text) ?? 0;
 
+    final api = ref.read(apiClientProvider);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final card = type == FinanceAccountType.creditCard
+        ? CreditCardSettings(
+            statementDay: statementDay,
+            paymentDueDay: paymentDueDay,
+            paymentAccountId: paymentAccountId,
+            autoPay: paymentAccountId != null && autoPay,
+          )
+        : null;
     try {
       if (existing == null) {
-        await ref
-            .read(apiClientProvider)
-            .createFinanceAccount(spaceId: spaceId, name: name, type: type, initialBalance: balance);
+        final id = await api.createFinanceAccount(spaceId: spaceId, name: name, type: type, initialBalance: balance);
+        if (card != null && (card.statementDay != null || card.paymentDueDay != null || card.paymentAccountId != null)) {
+          await api.updateFinanceAccount(spaceId: spaceId, accountId: id, card: card);
+        }
       } else {
-        await ref.read(apiClientProvider).updateFinanceAccount(
+        await api.updateFinanceAccount(
           spaceId: spaceId,
           accountId: existing.id,
           name: name,
           type: type,
           initialBalance: balance,
+          card: card,
         );
       }
-      ref.invalidate(financeAccountsProvider(spaceId));
+      container.invalidate(financeAccountsProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));

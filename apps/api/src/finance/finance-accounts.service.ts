@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccessService } from './finance-access.service';
 import { FinanceTransactionType } from '../../generated/prisma/client.js';
@@ -45,12 +45,22 @@ export class FinanceAccountsService {
   async update(userId: string, spaceId: string, id: string, dto: UpdateFinanceAccountDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
     await this.getOrThrow(spaceId, id);
+    if (dto.paymentAccountId) {
+      if (dto.paymentAccountId === id) throw new BadRequestException('扣款帳戶不能是這張卡自己');
+      await this.getOrThrow(spaceId, dto.paymentAccountId);
+    }
     return this.prisma.financeAccount.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.type !== undefined && { type: dto.type }),
         ...(dto.initialBalance !== undefined && { initialBalance: dto.initialBalance }),
+        ...(dto.statementDay !== undefined && { statementDay: dto.statementDay }),
+        ...(dto.paymentDueDay !== undefined && { paymentDueDay: dto.paymentDueDay }),
+        ...(dto.paymentAccountId !== undefined && { paymentAccountId: dto.paymentAccountId || null }),
+        ...(dto.cardAutoPay !== undefined && { cardAutoPay: dto.cardAutoPay }),
+        // 改了日期就重新算提醒。
+        ...((dto.statementDay !== undefined || dto.paymentDueDay !== undefined) && { cardReminderKey: null }),
       },
     });
   }

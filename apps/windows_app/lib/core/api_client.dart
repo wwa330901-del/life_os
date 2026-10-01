@@ -598,30 +598,40 @@ class ApiClient {
     return body.map((e) => FinanceAccount.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<void> createFinanceAccount({
+  /// Returns the new account's id.
+  Future<String> createFinanceAccount({
     required String spaceId,
     required String name,
     required FinanceAccountType type,
     double? initialBalance,
   }) async {
-    await _post('/spaces/$spaceId/finance/accounts', {
+    final body = await _post('/spaces/$spaceId/finance/accounts', {
       'name': name,
       'type': type.toJson(),
       if (initialBalance != null) 'initialBalance': initialBalance,
     });
+    return body['id'] as String;
   }
 
+  /// [card] 有給就一起存信用卡設定（值是 null 代表清掉）。
   Future<void> updateFinanceAccount({
     required String spaceId,
     required String accountId,
     String? name,
     FinanceAccountType? type,
     double? initialBalance,
+    CreditCardSettings? card,
   }) async {
     await _patchIgnoreBody('/spaces/$spaceId/finance/accounts/$accountId', {
       if (name != null) 'name': name,
       if (type != null) 'type': type.toJson(),
       if (initialBalance != null) 'initialBalance': initialBalance,
+      if (card != null) ...{
+        'statementDay': card.statementDay,
+        'paymentDueDay': card.paymentDueDay,
+        'paymentAccountId': card.paymentAccountId,
+        'cardAutoPay': card.autoPay,
+      },
     });
   }
 

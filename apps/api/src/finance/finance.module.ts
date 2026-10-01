@@ -19,6 +19,7 @@ import { FinanceLoanInvitesController } from './finance-loan-invites.controller'
 import { FinanceLoansService } from './finance-loans.service';
 import { FinanceAdvancesController } from './finance-advances.controller';
 import { FinanceAdvancesService } from './finance-advances.service';
+import { CreditCardService } from './credit-card.service';
 
 @Module({
   imports: [SpacesModule, LineNotifierModule, UsersModule, FriendsModule],
@@ -41,6 +42,7 @@ import { FinanceAdvancesService } from './finance-advances.service';
     FinanceRecurringTransactionsService,
     FinanceLoansService,
     FinanceAdvancesService,
+    CreditCardService,
   ],
   // Reused directly by LineModule so the LINE 財務總覽 command shares the
   // exact same balance/summary logic as the app's own finance screens,
@@ -56,6 +58,8 @@ import { FinanceAdvancesService } from './finance-advances.service';
     FinanceAdvancesService,
     // 理財評估：固定薪資＝每月定期收入。
     FinanceRecurringTransactionsService,
+    // 信用卡繳款：AI 查帳單、繳卡費。
+    CreditCardService,
   ],
 })
 export class FinanceModule {}

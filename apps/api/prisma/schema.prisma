@@ -445,6 +445,15 @@ model FinanceAccount {
   sortOrder      Int                @default(0)
   createdAt      DateTime           @default(now())
 
+  /// 信用卡（2026-10-01）：結帳日、繳款日（1-31，月底不足就用月底）、
+  /// 扣款帳戶（同一個空間的帳戶 id）、自動扣繳（繳款日自動記一筆轉帳）。
+  /// cardReminderKey 記最後一次提醒（「繳款日:剩幾天」），同一則不重發。
+  statementDay     Int?
+  paymentDueDay    Int?
+  paymentAccountId String?
+  cardAutoPay      Boolean @default(false)
+  cardReminderKey  String?
+
   transactions FinanceTransaction[] @relation("AccountTransactions")
   transfersIn  FinanceTransaction[] @relation("TransferToAccount")
 

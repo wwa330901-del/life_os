@@ -99,6 +99,15 @@ extension FinanceRecurringHolidayAdjustmentJson on FinanceRecurringHolidayAdjust
 /// A 記帳 money container (現金/銀行/信用卡/其他) — `balance` is the server's
 /// derived running total (initialBalance plus every transaction against
 /// it), never computed on the client.
+class CreditCardSettings {
+  const CreditCardSettings({this.statementDay, this.paymentDueDay, this.paymentAccountId, this.autoPay = false});
+
+  final int? statementDay;
+  final int? paymentDueDay;
+  final String? paymentAccountId;
+  final bool autoPay;
+}
+
 class FinanceAccount {
   const FinanceAccount({
     required this.id,
@@ -107,6 +116,10 @@ class FinanceAccount {
     required this.initialBalance,
     required this.balance,
     required this.sortOrder,
+    this.statementDay,
+    this.paymentDueDay,
+    this.paymentAccountId,
+    this.cardAutoPay = false,
   });
 
   final String id;
@@ -116,6 +129,12 @@ class FinanceAccount {
   final double balance;
   final int sortOrder;
 
+  /// 信用卡：結帳日、繳款日（每月幾號）、扣款帳戶、自動扣繳。
+  final int? statementDay;
+  final int? paymentDueDay;
+  final String? paymentAccountId;
+  final bool cardAutoPay;
+
   factory FinanceAccount.fromJson(Map<String, dynamic> json) => FinanceAccount(
     id: json['id'] as String,
     name: json['name'] as String,
@@ -123,6 +142,10 @@ class FinanceAccount {
     initialBalance: (json['initialBalance'] as num).toDouble(),
     balance: (json['balance'] as num).toDouble(),
     sortOrder: json['sortOrder'] as int,
+    statementDay: json['statementDay'] as int?,
+    paymentDueDay: json['paymentDueDay'] as int?,
+    paymentAccountId: json['paymentAccountId'] as String?,
+    cardAutoPay: json['cardAutoPay'] as bool? ?? false,
   );
 }
 

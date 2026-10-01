@@ -6,8 +6,10 @@ import { FinanceTransactionsService } from '../finance/finance-transactions.serv
 import { TodosService } from '../todos/todos.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { StocksTransactionsService } from '../stocks/stocks-transactions.service';
+import { CreditCardService } from '../finance/credit-card.service';
+import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { taipeiDateKey, taipeiWallClockToUtc } from '../common/taipei-date';
-import { FinanceLoanDirection, FinanceTransactionType, StockTransactionType } from '../../generated/prisma/client.js';
+import { FinanceAccountType, FinanceLoanDirection, FinanceTransactionType, StockTransactionType } from '../../generated/prisma/client.js';
 
 type Args = Record<string, unknown>;
 
@@ -19,7 +21,8 @@ export type RecordPending =
   | { kind: 'advance'; summary: string; data: { title: string; amount: number; accountId: string; date: string; note?: string } }
   | { kind: 'advance_repayment'; summary: string; data: { advanceId: string; amount: number; accountId: string; date: string } }
   | { kind: 'stock_trade'; summary: string; data: { type: StockTransactionType; stockCode: string; shares: number; pricePerShare: number; accountId: string; tradeDate: string } }
-  | { kind: 'delete'; summary: string; data: { entity: 'transaction' | 'todo' | 'calendar_event'; id: string } };
+  | { kind: 'delete'; summary: string; data: { entity: 'transaction' | 'todo' | 'calendar_event'; id: string } }
+  | { kind: 'card_payment'; summary: string; data: { cardId: string; fromAccountId: string; amount: number; date: string } };
 
 const optionalAccount = { accountName: { type: 'string', description: '使用者有講才填；沒講系統會挑最常用的，確認時一起問' } };
 const optionalDate = { date: { type: 'string', description: 'YYYY-MM-DD，不填＝今天' } };
@@ -27,6 +30,40 @@ const optionalDate = { date: { type: 'string', description: 'YYYY-MM-DD，不填
 /** 借貸／代墊、修改／刪除記錄、講的記股票買賣（2026-10-01 使用者要求 AI
  * 補齊）。會動到錢或刪東西的一律先提議、等下一則訊息確認。 */
 export const RECORD_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'get_credit_card_bills',
+    description:
+      '每張設好結帳日/繳款日的信用卡，下一期繳款日、還剩幾天、要繳多少（estimated=true 表示還沒結帳、是用目前欠款估的）、扣款帳戶、有沒有自動扣繳。另外列出還沒設定日期的信用卡。',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
+    name: 'set_credit_card',
+    description:
+      '設定信用卡的結帳日、繳款日（每月幾號 1-31）、扣款帳戶、是否自動扣繳。只填使用者有講的欄位。設好後系統會在繳款日前 3 天和當天 LINE 提醒。',
+    parameters: {
+      type: 'object',
+      properties: {
+        cardName: { type: 'string', description: '信用卡帳戶名稱' },
+        statementDay: { type: 'number' },
+        paymentDueDay: { type: 'number' },
+        paymentAccountName: { type: 'string', description: '從哪個帳戶繳（通常是銀行）' },
+        autoPay: { type: 'boolean', description: '有綁自動扣繳＝true' },
+      },
+      required: ['cardName'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'propose_card_payment',
+    description:
+      '繳信用卡費：記一筆從扣款帳戶轉到信用卡的轉帳。cardName 沒講而且只有一張卡要繳就用那張；amount 沒講就用這期應繳金額；accountName 沒講就用卡片設定的扣款帳戶。回傳 needsConfirmation，要問使用者確認。',
+    parameters: {
+      type: 'object',
+      properties: { cardName: { type: 'string' }, amount: { type: 'number' }, ...optionalAccount, ...optionalDate },
+    },
+  },
   {
     type: 'function' as const,
     name: 'list_loans_and_advances',
@@ -163,7 +200,7 @@ export const RECORD_TOOLS = [
 ];
 
 export const RECORD_AI_GUIDE =
-  '借錢、還錢、代墊、收回、股票買賣、刪除 → 用 propose_* 提議，等他確認才 confirm_pending_action；改記錯的資料（金額、分類、日期、名稱）直接 update_*，改完說改了什麼。要改或刪之前先用 list_ 工具找到正確那一筆，找到好幾筆就先問是哪一筆。';
+  '信用卡：問卡費、要繳多少 → get_credit_card_bills；說結帳日/繳款日/扣款帳戶/自動扣繳 → set_credit_card；說卡費繳好了、要繳卡費 → propose_card_payment。借錢、還錢、代墊、收回、股票買賣、繳卡費、刪除 → 用 propose_* 提議，等他確認才 confirm_pending_action；改記錯的資料（金額、分類、日期、名稱）直接 update_*，改完說改了什麼。要改或刪之前先用 list_ 工具找到正確那一筆，找到好幾筆就先問是哪一筆。';
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
@@ -177,6 +214,8 @@ export class RecordToolsService {
     private readonly todos: TodosService,
     private readonly calendarEvents: CalendarEventsService,
     private readonly stockTransactions: StocksTransactionsService,
+    private readonly creditCards: CreditCardService,
+    private readonly accounts: FinanceAccountsService,
   ) {}
 
   static readonly toolNames = new Set(RECORD_TOOLS.map((t) => t.name));
@@ -189,6 +228,18 @@ export class RecordToolsService {
     const amount = Number(args.amount);
 
     switch (name) {
+      case 'get_credit_card_bills': {
+        const bills = await this.creditCards.bills(spaceId, today);
+        const unset = await this.prisma.financeAccount.findMany({
+          where: { spaceId, type: FinanceAccountType.CREDIT_CARD, OR: [{ statementDay: null }, { paymentDueDay: null }] },
+          select: { name: true },
+        });
+        return { bills, cardsWithoutDates: unset.map((a) => a.name) };
+      }
+      case 'set_credit_card':
+        return this.setCreditCard(userId, spaceId, args);
+      case 'propose_card_payment':
+        return this.proposeCardPayment(spaceId, args, date, today);
       case 'list_loans_and_advances': {
         const [loans, advances] = await Promise.all([
           this.loans.list(userId, spaceId, { settled: false }),
@@ -292,8 +343,75 @@ export class RecordToolsService {
       case 'delete':
         await this.runDelete(userId, spaceId, pending.data);
         break;
+      case 'card_payment': {
+        const { cardId, fromAccountId, amount, date } = pending.data;
+        await this.creditCards.pay(userId, spaceId, cardId, fromAccountId, amount, date);
+        break;
+      }
     }
     return { done: pending.summary };
+  }
+
+  private async findCard(spaceId: string, name: unknown) {
+    const cards = await this.prisma.financeAccount.findMany({
+      where: { spaceId, type: FinanceAccountType.CREDIT_CARD },
+      orderBy: { sortOrder: 'asc' },
+    });
+    if (cards.length === 0) throw new Error('還沒有信用卡帳戶，請先到 App 的記帳新增一個「信用卡」類型的帳戶');
+    const wanted = typeof name === 'string' ? name.trim() : '';
+    if (!wanted) return cards.length === 1 ? cards[0] : null;
+    const match = cards.find((c) => c.name === wanted) ?? cards.find((c) => c.name.includes(wanted) || wanted.includes(c.name));
+    if (!match) throw new Error(`沒有「${wanted}」這張卡，信用卡有：${cards.map((c) => c.name).join('、')}`);
+    return match;
+  }
+
+  private async setCreditCard(userId: string, spaceId: string, args: Args) {
+    const card = await this.findCard(spaceId, args.cardName);
+    if (!card) throw new Error('有好幾張信用卡，要先問是哪一張');
+    const day = (v: unknown) => {
+      if (v === undefined || v === null || v === '') return undefined;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 1 || n > 31) throw new Error('日期要是每月 1～31 號');
+      return n;
+    };
+    const payFrom =
+      typeof args.paymentAccountName === 'string' && args.paymentAccountName.trim()
+        ? await this.resolveAccount(spaceId, args.paymentAccountName)
+        : null;
+    const updated = await this.accounts.update(userId, spaceId, card.id, {
+      statementDay: day(args.statementDay),
+      paymentDueDay: day(args.paymentDueDay),
+      ...(payFrom && { paymentAccountId: payFrom.id }),
+      ...(typeof args.autoPay === 'boolean' && { cardAutoPay: args.autoPay }),
+    });
+    const accounts = await this.prisma.financeAccount.findMany({ where: { spaceId }, select: { id: true, name: true } });
+    return {
+      saved: true,
+      card: updated.name,
+      statementDay: updated.statementDay,
+      paymentDueDay: updated.paymentDueDay,
+      paymentAccount: accounts.find((a) => a.id === updated.paymentAccountId)?.name ?? null,
+      autoPay: updated.cardAutoPay,
+      missing: [updated.statementDay == null && '結帳日', updated.paymentDueDay == null && '繳款日'].filter(Boolean),
+    };
+  }
+
+  private async proposeCardPayment(spaceId: string, args: Args, date: string, today: string) {
+    const card = await this.findCard(spaceId, args.cardName);
+    const bills = await this.creditCards.bills(spaceId, today);
+    const bill = card ? bills.find((b) => b.accountId === card.id) : bills.filter((b) => b.amount > 0).length === 1 ? bills.find((b) => b.amount > 0) : undefined;
+    const target = card ?? (bill ? await this.prisma.financeAccount.findUnique({ where: { id: bill.accountId } }) : null);
+    if (!target) throw new Error('有好幾張信用卡，要先問繳的是哪一張');
+    const amount = Number(args.amount) > 0 ? Number(args.amount) : (bill?.amount ?? 0);
+    if (!(amount > 0)) throw new Error('不知道要繳多少，問使用者金額');
+    const wantedFrom = typeof args.accountName === 'string' && args.accountName.trim() ? args.accountName : null;
+    const from = wantedFrom
+      ? await this.resolveAccount(spaceId, wantedFrom)
+      : ((target.paymentAccountId && (await this.prisma.financeAccount.findUnique({ where: { id: target.paymentAccountId } }))) ??
+        (await this.prisma.financeAccount.findFirst({ where: { spaceId, type: FinanceAccountType.BANK }, orderBy: { sortOrder: 'asc' } })));
+    if (!from) throw new Error('不知道從哪個帳戶繳，問使用者');
+    const summary = `繳「${target.name}」卡費 ${fmt(amount)} 元，從「${from.name}」轉出（${date}）`;
+    return { pending: { kind: 'card_payment', summary, data: { cardId: target.id, fromAccountId: from.id, amount, date } } satisfies RecordPending };
   }
 
   private async updateTransaction(userId: string, spaceId: string, args: Args) {
