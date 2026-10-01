@@ -1428,6 +1428,20 @@ class ApiClient {
     await _delete('/life-goals/$id');
   }
 
+  /// 錯誤自動通報 — only works when logged in (the endpoint needs the token); failures are the caller's to ignore.
+  Future<void> reportClientError(String message, {String? stack, String? appVersion}) async {
+    if (_token == null) return;
+    await http.post(
+      Uri.parse('$baseUrl/client-errors'),
+      headers: _headers,
+      body: jsonEncode({
+        'message': message.length > 2000 ? message.substring(0, 2000) : message,
+        if (stack != null) 'stack': stack.length > 4000 ? stack.substring(0, 4000) : stack,
+        'appVersion': ?appVersion,
+      }),
+    );
+  }
+
   /// 匯出全部資料：一個 Excel 檔的內容。
   Future<List<int>> downloadExport() async {
     final res = await http.get(Uri.parse('$baseUrl/export/xlsx'), headers: _headers);
