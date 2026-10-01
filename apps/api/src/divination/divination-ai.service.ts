@@ -19,6 +19,12 @@ export const DIVINATION_TOOLS = [
   },
   {
     type: 'function' as const,
+    name: 'get_birth_info',
+    description: '查使用者已經存的出生日期和時間（和八字）。',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
     name: 'cast_meihua',
     description:
       '梅花易數：用現在的時間起卦，針對使用者想算的事解卦，回傳卦象和解卦內容。question 用使用者的原話整理成清楚的一句（例如「這次換工作順不順利」）。',
@@ -48,7 +54,7 @@ export const DIVINATION_TOOLS = [
 ];
 
 export const DIVINATION_AI_GUIDE =
-  '只說「算命」「占卜」沒講要算什麼 → 先問他想算哪件事（例如「這次面試會不會上」），不要直接起卦；他回答後再起卦。使用者說想算什麼、問運勢、要占卜 → cast_meihua，把回傳的 interpretation 完整轉述給他（可以前面加一句卦名）。他講自己的生日 → set_birth_info。還沒有生辰也可以直接算，算完順便提醒可以告訴你生日讓解卦更準。使用者講之前算的事後來怎樣（「上次算的面試真的上了」）→ record_divination_feedback。';
+  '只說「算命」「占卜」沒講要算什麼 → 先問他想算哪件事（例如「這次面試會不會上」），不要直接起卦；他回答後再起卦。使用者說想算什麼、問運勢、要占卜 → cast_meihua，把回傳的 interpretation 完整轉述給他（可以前面加一句卦名）。他講自己的生日 → set_birth_info（存一次就永久記住）。生辰存在系統裡，起卦時自動帶入，絕對不要叫他每次輸入或再問生日；cast_meihua 回傳的 birthInfo 是「還沒存」時，才在算完後提醒一次可以告訴你生日（和出生時間）讓解卦更準。他問自己存的生日 → get_birth_info。使用者講之前算的事後來怎樣（「上次算的面試真的上了」）→ record_divination_feedback。';
 
 @Injectable()
 export class DivinationAiService {
@@ -66,9 +72,21 @@ export class DivinationAiService {
         );
         return { saved: true, ...profile.chart };
       }
+      case 'get_birth_info': {
+        const profile = await this.divination.getProfile(userId);
+        if (!profile.birthDate) return { birthInfo: '還沒存' };
+        return { birthDate: profile.birthDate, birthTime: profile.birthTime ?? '時間不詳', ...profile.chart };
+      }
       case 'cast_meihua': {
         const record = await this.divination.cast(userId, String(args.question ?? ''));
-        return { hexagram: record.hexagram, interpretation: record.interpretation };
+        const profile = await this.divination.getProfile(userId);
+        return {
+          hexagram: record.hexagram,
+          interpretation: record.interpretation,
+          birthInfo: profile.birthDate
+            ? `已存（${profile.birthDate}${profile.birthTime ? ` ${profile.birthTime}` : '，時間不詳'}），解卦已參考`
+            : '還沒存',
+        };
       }
       case 'list_divinations': {
         const records = await this.divination.list(userId);
