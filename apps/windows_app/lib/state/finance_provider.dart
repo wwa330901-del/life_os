@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/finance.dart';
 import '../core/models/finance_report.dart';
+import '../core/models/wishlist.dart';
 import 'auth_provider.dart';
 
 /// This month as `"YYYY-MM"` — the default selection for every 記帳 screen
@@ -204,3 +205,8 @@ final financeAdvancesProvider = AsyncNotifierProvider.autoDispose
     .family<FinanceAdvancesNotifier, FinanceAdvancesPageState, FinanceAdvancesQuery>(
       FinanceAdvancesNotifier.new,
     );
+
+/// 購物車（想買的東西＋什麼時候買得起）。
+final wishlistProvider = FutureProvider.autoDispose<WishlistOverview>((ref) {
+  return ref.read(apiClientProvider).getWishlist();
+});

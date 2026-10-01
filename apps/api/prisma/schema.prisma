@@ -180,10 +180,12 @@ model Friendship {
 }
 
 model Space {
-  id        String    @id @default(uuid())
-  type      SpaceType
-  name      String
-  createdAt DateTime  @default(now())
+  id                    String    @id @default(uuid())
+  type                  SpaceType
+  name                  String
+  /// 購物車每月撥多少（null＝用近 3 個月平均結餘的 30%）。
+  wishlistMonthlyBudget Float?
+  createdAt             DateTime  @default(now())
 
   // Only set when type = PERSONAL. Each user has exactly one personal space.
   ownerUserId String? @unique
@@ -197,6 +199,7 @@ model Space {
 
   financeAccounts              FinanceAccount[]
   financeAlertLogs             FinanceAlertLog[]
+  wishlistItems                WishlistItem[]
   financeCategories            FinanceCategory[]
   financeTransactions          FinanceTransaction[]
   financeBudgets               FinanceBudget[]
@@ -1439,4 +1442,29 @@ model FinanceAlertLog {
   createdAt DateTime @default(now())
 
   @@unique([spaceId, key])
+}
+
+enum WishlistStatus {
+  WANT
+  BOUGHT
+  DROPPED
+}
+
+/// 購物車（2026-10-02）：想買的東西＋價格，依每月可撥的錢排出什麼時候買得起，
+/// 理財評估也會算進去。priority 1＝高、2＝中、3＝低。
+model WishlistItem {
+  id          String         @id @default(uuid())
+  spaceId     String
+  space       Space          @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name        String
+  price       Float
+  priority    Int            @default(2)
+  targetDate  DateTime?      @db.Date
+  note        String?
+  status      WishlistStatus @default(WANT)
+  boughtAt    DateTime?
+  boughtPrice Float?
+  createdAt   DateTime       @default(now())
+
+  @@index([spaceId, status])
 }

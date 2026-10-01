@@ -8,6 +8,7 @@ import { AiUsageService } from '../knowledge/ai-usage.service';
 import { AiUsageAdminService } from '../admin/ai-usage-admin.service';
 import { SubscriptionService } from '../finance/subscription.service';
 import { subscriptionsText } from '../finance/subscriptions';
+import { WishlistService } from '../finance/wishlist.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
@@ -155,6 +156,7 @@ export class LineService {
     private readonly aiUsage: AiUsageService,
     private readonly aiUsageAdmin: AiUsageAdminService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly wishlist: WishlistService,
   ) {}
 
   /** While handling a 語音訊息, the transcript to show above whatever reply
@@ -278,7 +280,7 @@ export class LineService {
    * while no AI conversation is active — routed to it before the
    * batch/command parsers so e.g. a multi-line book reflection isn't split
    * into per-line 記帳 commands. */
-  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我|天氣|下雨|帶傘|氣溫/;
+  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我|天氣|下雨|帶傘|氣溫|想買|想要買|購物車|買得起|撥.*買東西/;
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
   // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
@@ -299,6 +301,7 @@ export class LineService {
     '理財評估',
     '關閉早報',
     '開啟早報',
+    '購物車',
     '訂閱',
     '我的訂閱',
     '關閉花費提醒',
@@ -324,6 +327,9 @@ export class LineService {
           '「國泰卡每月 5 號結帳、20 號繳款，從台新扣」設好會提醒繳卡費',
           '「借小明 5000，他說月底還」到期前會提醒你去收',
           '傳「訂閱」看每月固定扣的錢；分類花太兇或有特別大的單筆，晚上 9 點會提醒你',
+          '',
+          '🛒 購物車',
+          '「想買 AirPods 7490」我會排什麼時候買得起；傳「購物車」看清單',
           '',
           '🧠 記住你的事',
           '「記住我不吃牛」「我太太叫小美，喜歡多肉植物」',
@@ -644,6 +650,10 @@ export class LineService {
       return;
     }
 
+    if (text === '購物車') {
+      await this.reply(replyToken, await this.wishlist.text(userId));
+      return;
+    }
     if (text === '訂閱' || text === '我的訂閱') {
       const subs = await this.subscriptionService.listForUser(userId);
       await this.reply(replyToken, subs ? subscriptionsText(subs) : '找不到你的個人空間，請先到元序 App 登入一次。');

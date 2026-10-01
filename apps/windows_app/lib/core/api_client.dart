@@ -18,6 +18,7 @@ import 'models/health_record.dart';
 import 'models/knowledge.dart';
 import 'models/life_goal.dart';
 import 'models/memory.dart';
+import 'models/wishlist.dart';
 import 'models/project_todo.dart';
 import 'models/stock.dart';
 
@@ -1303,6 +1304,41 @@ class ApiClient {
   }
 
   // --- 日記 ---
+
+  // --- 購物車 ---
+
+  Future<WishlistOverview> getWishlist() async {
+    return WishlistOverview.fromJson(await _get('/wishlist'));
+  }
+
+  Future<void> saveWishlistItem({
+    String? id,
+    required String name,
+    required double price,
+    required int priority,
+    String? targetDate,
+    String? note,
+  }) async {
+    final body = {'name': name, 'price': price, 'priority': priority, 'targetDate': targetDate, 'note': note};
+    if (id == null) {
+      await _post('/wishlist', body);
+    } else {
+      await _patch('/wishlist/$id', body);
+    }
+  }
+
+  Future<void> markWishlistBought(String id, {double? actualPrice}) async {
+    await _post('/wishlist/$id/bought', {if (actualPrice != null) 'actualPrice': actualPrice});
+  }
+
+  Future<void> deleteWishlistItem(String id) async {
+    await _delete('/wishlist/$id');
+  }
+
+  /// null＝回到預設（平均結餘的 30%）。
+  Future<void> setWishlistBudget(double? amount) async {
+    await _patch('/wishlist/budget', {'amount': amount});
+  }
 
   // --- AI 記得的事／重要日子 ---
 

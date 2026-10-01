@@ -7,6 +7,7 @@ import { FinanceBudgetsService } from './finance-budgets.service';
 import { FinanceRecurringTransactionsService } from './finance-recurring-transactions.service';
 import { FinanceHealthService } from './finance-health.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
+import { WishlistService } from './wishlist.service';
 import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
 import { taipeiCurrentMonth } from '../common/taipei-date';
 import { AiUsageStatus, FinanceCategoryKind, FinanceTransactionType } from '../../generated/prisma/client.js';
@@ -33,6 +34,7 @@ export class FinancePlanService {
     private readonly recurring: FinanceRecurringTransactionsService,
     private readonly health: FinanceHealthService,
     private readonly aiUsage: AiUsageService,
+    private readonly wishlist: WishlistService,
   ) {}
 
   async spaceIdOf(userId: string): Promise<string> {
@@ -84,6 +86,17 @@ export class FinancePlanService {
       budgetableCategories: categories.map((c) => c.name),
       health: { total: health.total, grade: health.grade, items: health.items.map((i) => ({ label: i.label, score: i.score, max: i.max, detail: i.detail })) },
       netWorth: round(health.netWorth),
+      /** 購物車：想買的東西、每月撥多少、大概哪個月買得起。 */
+      wishlist: await this.wishlistSummary(userId),
+    };
+  }
+
+  private async wishlistSummary(userId: string) {
+    const o = await this.wishlist.overview(userId);
+    return {
+      monthlyBudget: o.monthlyBudget,
+      total: o.total,
+      items: o.items.map((i) => ({ name: i.name, price: i.price, priority: i.priority, targetDate: i.targetDate, affordableMonth: i.affordableMonth })),
     };
   }
 
@@ -106,9 +119,12 @@ export class FinancePlanService {
       '【現況】收入、固定支出、平均花費、每月大概能存多少；財務健檢分數與最弱的一項。',
       `【每月分配建議】把每月 ${income} 元分成：固定支出／生活費／儲蓄（預備金）／投資，各多少錢、佔幾%，並說明理由（可參考 50/30/20，但要依他的實際狀況調整）。`,
       '【建議預算】挑 3～5 個花費最多的分類，各建議每月預算多少（比現在平均少一點但做得到），用「分類：金額」列出。',
+      ...(data.wishlist.items.length
+        ? ['【購物車】他想買的東西（wishlist）也要排進每月分配：建議每月撥多少買東西、哪樣先買、哪樣可以等或不急，用 affordableMonth 講大概幾月買得起；預備金不夠時先顧預備金。']
+        : []),
       '【接下來 3 步】依優先順序的具體行動（例如先把預備金存到多少、每月定期定額多少、哪個分類要控制）。',
       data.fixedMonthlyIncome > 0 ? '' : '最後提醒他可以設定固定薪資，評估會更準。',
-      '全部 450 字以內。',
+      `全部 ${data.wishlist.items.length ? 550 : 450} 字以內。`,
     ].join('\n');
 
     const startedAt = Date.now();

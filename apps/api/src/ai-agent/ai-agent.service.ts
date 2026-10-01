@@ -29,6 +29,7 @@ import { HEALTH_AI_GUIDE, HEALTH_TOOLS, HealthAiService } from '../health/health
 import { MEMORY_AI_GUIDE, MEMORY_TOOLS, MemoryAiService } from '../memory/memory-ai.service';
 import { MemoryService } from '../memory/memory.service';
 import { getWeather, WEATHER_TOOL } from './weather';
+import { WISHLIST_AI_GUIDE, WISHLIST_TOOLS, WishlistAiService } from '../finance/wishlist-ai.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { DIVINATION_FEEDBACK_WINDOW_MS } from '../divination/divination-feedback.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
@@ -254,7 +255,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...HEALTH_TOOLS, ...MEMORY_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...HEALTH_TOOLS, ...MEMORY_TOOLS, ...WISHLIST_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -320,6 +321,7 @@ export class AiAgentService {
     private readonly healthTools: HealthAiService,
     private readonly memoryTools: MemoryAiService,
     private readonly memory: MemoryService,
+    private readonly wishlistTools: WishlistAiService,
   ) {}
 
   static isConversationActive(
@@ -582,6 +584,9 @@ export class AiAgentService {
       STOCK_AI_GUIDE,
       '講股票買賣（「買了 3 張 0050 成交 152」）就 propose_stock_trade。',
       '',
+      '【購物車】',
+      WISHLIST_AI_GUIDE,
+      '',
       '【理財評估】',
       '講薪水、問「薪水怎麼分配」「幫我做理財評估」→ 沒設固定薪資就先 set_fixed_income（問清楚金額和發薪日），再 get_financial_plan_inputs，依實際花費給：每月分配（固定支出/生活費/儲蓄/投資各多少）、3～5 個分類的建議預算、接下來 3 步。最後問他要不要幫他把預算設好 → propose_budgets。',
       '',
@@ -633,6 +638,7 @@ export class AiAgentService {
     if (JournalAiService.toolNames.has(name)) return this.journalTools.execute(ctx.userId, name, args);
     if (HealthAiService.toolNames.has(name)) return this.healthTools.execute(ctx.userId, name, args);
     if (MemoryAiService.toolNames.has(name)) return this.memoryTools.execute(ctx.userId, name, args);
+    if (WishlistAiService.toolNames.has(name)) return this.wishlistTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
     switch (name) {
