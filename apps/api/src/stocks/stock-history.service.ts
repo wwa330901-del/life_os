@@ -39,10 +39,23 @@ export class StockHistoryService {
     return bars;
   }
 
-  private async month(code: string, year: number, month: number, final: boolean): Promise<DailyBar[]> {
+  /** The most recent trading day's bar, bypassing the current-month cache —
+   * for the daily close job, which must not reuse a pre-close fetch. Falls
+   * back to last month on the first trading days of a month. */
+  async latestBar(stockCode: string): Promise<DailyBar | null> {
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000); // Taipei wall clock
+    for (let i = 0; i <= 1; i++) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      const bars = await this.month(stockCode, d.getUTCFullYear(), d.getUTCMonth() + 1, i > 0, i === 0);
+      if (bars.length > 0) return bars[bars.length - 1];
+    }
+    return null;
+  }
+
+  private async month(code: string, year: number, month: number, final: boolean, fresh = false): Promise<DailyBar[]> {
     const key = `${code}:${year}-${month}`;
     const hit = this.cache.get(key);
-    if (hit && (hit.final || Date.now() - hit.fetchedAt < CURRENT_MONTH_TTL_MS)) return hit.bars;
+    if (!fresh && hit && (hit.final || Date.now() - hit.fetchedAt < CURRENT_MONTH_TTL_MS)) return hit.bars;
 
     let bars = await this.fetchTwse(code, year, month);
     if (bars.length === 0) bars = await this.fetchTpex(code, year, month);

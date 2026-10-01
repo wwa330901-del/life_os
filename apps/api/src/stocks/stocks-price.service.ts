@@ -2,12 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { isTaiwanHoliday } from '../common/scheduling/taiwan-holiday-calendar';
-
-interface TwseStockDayRow {
-  Code: string;
-  Name: string;
-  ClosingPrice: string;
-}
+import { StockHistoryService } from './stock-history.service';
 
 interface TwseMisRow {
   c: string; // 股票代碼
@@ -15,18 +10,27 @@ interface TwseMisRow {
   z: string; // 最近成交價 ("-" when no trade yet today)
 }
 
-/** 股價快取更新 — 每日收盤後用證交所官方 OpenAPI 抓一次收盤價（穩定、免費、
- * 有文件規格），開盤時段額外嘗試用非官方即時報價介面更新，拉不到就維持上次
+/** 股價快取更新 — 每日收盤後用證交所／櫃買官方個股日成交資料抓收盤價，開盤時段額外嘗試用非官方即時報價介面更新，拉不到就維持上次
  * 的值，UI 端會自動退回顯示收盤價，不會壞掉。兩個 cron 都只處理「目前有人
  * 持有或設定定期定額」的股票代碼，不會對整個台股清單發出請求。 */
 @Injectable()
 export class StocksPriceService {
   private readonly logger = new Logger(StocksPriceService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly history: StockHistoryService,
+  ) {}
 
-  /** 14:30 Asia/Taipei, weekdays — after the market's own close. */
-  @Cron('30 14 * * 1-5', { timeZone: 'Asia/Taipei' })
+  /** 14:30 and 16:30 Asia/Taipei, weekdays — after the market's own close;
+   * the second run retries any stock the exchange hadn't published yet.
+   *
+   * Uses each stock's own daily-trading page (證交所, then 櫃買 for 上櫃)
+   * rather than the OpenAPI STOCK_DAY_ALL dump, which isn't refreshed until
+   * ~05:00 the next morning (so it used to store yesterday's close as
+   * today's) and has no 上櫃 stocks. The stored date is the bar's real
+   * trading date. */
+  @Cron('30 14,16 * * 1-5', { timeZone: 'Asia/Taipei' })
   async refreshDailyClose() {
     const today = taipeiDateOnly(new Date());
     if (isTaiwanHoliday(today)) return;
@@ -34,25 +38,28 @@ export class StocksPriceService {
     const codes = await this.trackedStockCodes();
     if (codes.length === 0) return;
 
-    try {
-      const res = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL');
-      if (!res.ok) throw new Error(`TWSE STOCK_DAY_ALL 回應 ${res.status}`);
-      const rows = (await res.json()) as TwseStockDayRow[];
-      const rowByCode = new Map(rows.map((r) => [r.Code, r]));
-
-      for (const code of codes) {
-        const row = rowByCode.get(code);
-        if (!row) continue;
-        const price = Number(row.ClosingPrice.replace(/,/g, ''));
-        if (!Number.isFinite(price) || price <= 0) continue;
-        await this.prisma.stockPriceCache.upsert({
-          where: { stockCode: code },
-          create: { stockCode: code, stockName: row.Name, dailyClosePrice: price, dailyCloseDate: today },
-          update: { stockName: row.Name, dailyClosePrice: price, dailyCloseDate: today },
-        });
+    const failed: string[] = [];
+    for (const [i, code] of codes.entries()) {
+      // 證交所 rate-limits bursts (HTML block page instead of JSON).
+      if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+      const bar = await this.history.latestBar(code);
+      if (!bar) {
+        failed.push(code);
+        continue;
       }
-    } catch (error) {
-      this.logger.error('每日收盤價更新失敗', error);
+      const date = new Date(`${bar.date}T00:00:00Z`);
+      await this.prisma.stockPriceCache.upsert({
+        where: { stockCode: code },
+        create: { stockCode: code, dailyClosePrice: bar.close, dailyCloseDate: date },
+        update: { dailyClosePrice: bar.close, dailyCloseDate: date },
+      });
+    }
+    // Only worth a notification when nothing came back at all — a single
+    // stock missing (suspended, delisted) is normal and logged as a warning.
+    if (failed.length === codes.length) {
+      this.logger.error(`每日收盤價更新失敗：證交所和櫃買都抓不到（${failed.join('、')}）`);
+    } else if (failed.length > 0) {
+      this.logger.warn(`這些股票抓不到收盤價：${failed.join('、')}`);
     }
   }
 
@@ -68,7 +75,8 @@ export class StocksPriceService {
     if (codes.length === 0) return;
 
     try {
-      const query = codes.map((c) => `tse_${c}.tw`).join('|');
+      // 不知道是上市還是上櫃，兩個市場都問；查不到的那邊不會回資料。
+      const query = codes.flatMap((c) => [`tse_${c}.tw`, `otc_${c}.tw`]).join('|');
       const res = await fetch(
         `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${query}&json=1&_=${Date.now()}`,
         { headers: { 'User-Agent': 'Mozilla/5.0' } },

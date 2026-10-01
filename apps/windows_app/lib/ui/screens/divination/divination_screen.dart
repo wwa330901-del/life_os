@@ -29,11 +29,14 @@ class _DivinationScreenState extends ConsumerState<DivinationScreen> {
     final question = _questionController.text.trim();
     if (question.isEmpty || _casting) return;
     setState(() => _casting = true);
+    // 解卦要幾秒，使用者可能先離開這頁；用 container 刷新紀錄，
+    // 結果還是會出現在「算過的卦」裡。
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       final record = await ref.read(apiClientProvider).castDivination(question);
-      _questionController.clear();
-      ref.invalidate(divinationHistoryProvider);
+      container.invalidate(divinationHistoryProvider);
       if (mounted) {
+        _questionController.clear();
         await showDialog<void>(context: context, builder: (_) => _ReadingDialog(record: record));
       }
     } on ApiException catch (e) {
@@ -172,7 +175,7 @@ class _BirthCard extends ConsumerWidget {
               OutlinedButton(
                 onPressed: () async {
                   final saved = await showDialog<bool>(context: context, builder: (_) => _BirthDialog(profile: profile));
-                  if (saved == true) ref.invalidate(birthProfileProvider);
+                  if (saved == true && context.mounted) ref.invalidate(birthProfileProvider);
                 },
                 child: Text(profile.birthDate == null ? '填寫' : '修改'),
               ),
@@ -303,10 +306,11 @@ class _ReadingDialogState extends ConsumerState<_ReadingDialog> {
     final accuracy = _accuracy;
     if (accuracy == null) return;
     setState(() => _saving = true);
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       final text = _feedbackController.text.trim();
       await ref.read(apiClientProvider).setDivinationFeedback(record.id, accuracy, text.isEmpty ? null : text);
-      ref.invalidate(divinationHistoryProvider);
+      container.invalidate(divinationHistoryProvider);
       if (mounted) Navigator.of(context).pop();
     } on ApiException catch (e) {
       if (mounted) {
@@ -357,8 +361,9 @@ class _ReadingDialogState extends ConsumerState<_ReadingDialog> {
       actions: [
         TextButton(
           onPressed: () async {
+            final container = ProviderScope.containerOf(context, listen: false);
             await ref.read(apiClientProvider).deleteDivination(record.id);
-            ref.invalidate(divinationHistoryProvider);
+            container.invalidate(divinationHistoryProvider);
             if (context.mounted) Navigator.of(context).pop();
           },
           child: const Text('刪除'),
