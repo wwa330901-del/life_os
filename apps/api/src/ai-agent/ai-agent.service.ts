@@ -26,6 +26,8 @@ import { FinanceHealthService } from '../finance/finance-health.service';
 import { FinancePlanService } from '../finance/finance-plan.service';
 import { DIVINATION_AI_GUIDE, DIVINATION_TOOLS, DivinationAiService } from '../divination/divination-ai.service';
 import { HEALTH_AI_GUIDE, HEALTH_TOOLS, HealthAiService } from '../health/health-ai.service';
+import { MEMORY_AI_GUIDE, MEMORY_TOOLS, MemoryAiService } from '../memory/memory-ai.service';
+import { MemoryService } from '../memory/memory.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { DIVINATION_FEEDBACK_WINDOW_MS } from '../divination/divination-feedback.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
@@ -249,7 +251,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...HEALTH_TOOLS, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...HEALTH_TOOLS, ...MEMORY_TOOLS, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -313,6 +315,8 @@ export class AiAgentService {
     private readonly divinationTools: DivinationAiService,
     private readonly financePlan: FinancePlanService,
     private readonly healthTools: HealthAiService,
+    private readonly memoryTools: MemoryAiService,
+    private readonly memory: MemoryService,
   ) {}
 
   static isConversationActive(
@@ -520,7 +524,7 @@ export class AiAgentService {
     const shifted = new Date(now.getTime() + 8 * 60 * 60 * 1000);
     const today = `${taipeiDateKey(now)}（星期${WEEKDAYS[shifted.getUTCDay()]}）${String(shifted.getUTCHours()).padStart(2, '0')}:${String(shifted.getUTCMinutes()).padStart(2, '0')}`;
 
-    const [accounts, categories, goalCategories] = await Promise.all([
+    const [accounts, categories, goalCategories, memoryContext] = await Promise.all([
       ctx.personalSpaceId
         ? this.prisma.financeAccount.findMany({ where: { spaceId: ctx.personalSpaceId }, orderBy: { sortOrder: 'asc' } })
         : [],
@@ -530,6 +534,7 @@ export class AiAgentService {
         select: { category: true },
         distinct: ['category'],
       }),
+      this.memory.contextText(ctx.userId),
     ]);
     const leaves = leafCategories(categories);
     const expense = leaves.filter((c) => c.kind === FinanceCategoryKind.EXPENSE).map((c) => c.name);
@@ -540,6 +545,10 @@ export class AiAgentService {
       `你是「元序」的生活助理（使用者現在在${ctx.channel.kind === 'line' ? ' LINE ' : ' App 的 AI 問答'}跟你聊），像一個熟悉使用者生活的真人朋友兼秘書，用自然口語聊天。` +
       '使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、記睡眠運動、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
       `現在是 ${today}（台北時間）。「明天」「下週三」這類說法都以這個日期換算成 YYYY-MM-DD。`,
+      '',
+      '【關於他（長期記憶）】',
+      memoryContext,
+      MEMORY_AI_GUIDE,
       '',
       '【記帳】',
       `帳戶：${accounts.map((a) => a.name).join('、') || '（還沒有帳戶）'}`,
@@ -617,6 +626,7 @@ export class AiAgentService {
     if (DivinationAiService.toolNames.has(name)) return this.divinationTools.execute(ctx.userId, name, args);
     if (JournalAiService.toolNames.has(name)) return this.journalTools.execute(ctx.userId, name, args);
     if (HealthAiService.toolNames.has(name)) return this.healthTools.execute(ctx.userId, name, args);
+    if (MemoryAiService.toolNames.has(name)) return this.memoryTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
     switch (name) {

@@ -17,6 +17,7 @@ import 'models/journal_entry.dart';
 import 'models/health_record.dart';
 import 'models/knowledge.dart';
 import 'models/life_goal.dart';
+import 'models/memory.dart';
 import 'models/project_todo.dart';
 import 'models/stock.dart';
 
@@ -1287,6 +1288,51 @@ class ApiClient {
   }
 
   // --- 日記 ---
+
+  // --- AI 記得的事／重要日子 ---
+
+  Future<List<UserMemory>> listMemories() async {
+    final body = await _getList('/memories');
+    return body.map((e) => UserMemory.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> addMemory(String content) async {
+    await _post('/memories', {'content': content});
+  }
+
+  Future<void> updateMemory(String id, String content) async {
+    await _patch('/memories/$id', {'content': content});
+  }
+
+  Future<void> deleteMemory(String id) async {
+    await _delete('/memories/$id');
+  }
+
+  Future<List<ImportantDate>> listImportantDates() async {
+    final body = await _getList('/important-dates');
+    return body.map((e) => ImportantDate.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> saveImportantDate({
+    String? id,
+    required String title,
+    required int month,
+    required int day,
+    int? year,
+    required bool isLunar,
+    String? note,
+  }) async {
+    final body = {'title': title, 'month': month, 'day': day, 'year': year, 'isLunar': isLunar, 'note': note};
+    if (id == null) {
+      await _post('/important-dates', body);
+    } else {
+      await _patch('/important-dates/$id', body);
+    }
+  }
+
+  Future<void> deleteImportantDate(String id) async {
+    await _delete('/important-dates/$id');
+  }
 
   Future<List<JournalEntry>> listJournalEntries({String? keyword}) async {
     final query = keyword != null && keyword.isNotEmpty ? '?keyword=${Uri.encodeQueryComponent(keyword)}' : '';

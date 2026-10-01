@@ -130,6 +130,8 @@ model User {
   journalEntries             JournalEntry[]
   divinations                DivinationRecord[]
   healthRecords              HealthRecord[]
+  memories                   UserMemory[]
+  importantDates             ImportantDate[]
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
   googleCalendarConnections  GoogleCalendarConnection[]
   appleCalendarConnections   AppleCalendarConnection[]
@@ -1384,4 +1386,36 @@ model HealthRecord {
 
   @@unique([ownerUserId, externalKey])
   @@index([ownerUserId, type, date])
+}
+
+/// AI 長期記憶（2026-10-01）：使用者講過、長期有效的事（喜好、禁忌、家人、
+/// 工作、習慣），每次跟 AI 聊天都會帶進去。
+model UserMemory {
+  id          String   @id @default(uuid())
+  ownerUserId String
+  owner       User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  content     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ownerUserId])
+}
+
+/// 重要日子（2026-10-01）：生日、紀念日…每年重複；isLunar＝農曆（每年換算
+/// 成國曆）。year 有填才算得出幾歲／第幾週年。前 7 天、前 1 天、當天 LINE
+/// 提醒，lastRemindedKey 記「日期:剩幾天」避免重發。
+model ImportantDate {
+  id              String   @id @default(uuid())
+  ownerUserId     String
+  owner           User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  title           String
+  month           Int
+  day             Int
+  year            Int?
+  isLunar         Boolean  @default(false)
+  note            String?
+  lastRemindedKey String?
+  createdAt       DateTime @default(now())
+
+  @@index([ownerUserId])
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_client.dart';
 import '../../../state/auth_provider.dart';
+import '../../widgets/ai_memory_dialog.dart';
 import '../../widgets/ai_settings_dialog.dart';
 
 class _ChatMessage {
@@ -84,6 +85,11 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
       appBar: AppBar(
         title: const Text('AI 問答'),
         actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.psychology_outlined),
+            label: const Text('AI 記得的事'),
+            onPressed: () => showDialog(context: context, builder: (_) => const AiMemoryDialog()),
+          ),
           IconButton(
             tooltip: 'AI 設定',
             icon: const Icon(Icons.settings_outlined),

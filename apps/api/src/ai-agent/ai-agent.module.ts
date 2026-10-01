@@ -12,6 +12,7 @@ import { JournalModule } from '../journal/journal.module';
 import { FinanceReportModule } from '../finance/finance-report.module';
 import { DivinationModule } from '../divination/divination.module';
 import { HealthModule } from '../health/health.module';
+import { MemoryModule } from '../memory/memory.module';
 import { AiAgentService } from './ai-agent.service';
 import { RecordToolsService } from './record-tools.service';
 import { AiAssistantController } from './ai-assistant.controller';
@@ -34,6 +35,7 @@ import { AiAssistantController } from './ai-assistant.controller';
     FinanceReportModule,
     DivinationModule,
     HealthModule,
+    MemoryModule,
   ],
   controllers: [AiAssistantController],
   providers: [AiAgentService, RecordToolsService],
