@@ -28,6 +28,7 @@ import { DIVINATION_AI_GUIDE, DIVINATION_TOOLS, DivinationAiService } from '../d
 import { HEALTH_AI_GUIDE, HEALTH_TOOLS, HealthAiService } from '../health/health-ai.service';
 import { MEMORY_AI_GUIDE, MEMORY_TOOLS, MemoryAiService } from '../memory/memory-ai.service';
 import { MemoryService } from '../memory/memory.service';
+import { getWeather, WEATHER_TOOL } from './weather';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { DIVINATION_FEEDBACK_WINDOW_MS } from '../divination/divination-feedback.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
@@ -251,7 +252,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...HEALTH_TOOLS, ...MEMORY_TOOLS, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...HEALTH_TOOLS, ...MEMORY_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -601,6 +602,9 @@ export class AiAgentService {
       '【等確認的動作】',
       ctx.pending ? `目前有一個等使用者確認的動作：${ctx.pending.action.summary}。使用者這則訊息如果是同意就 confirm_pending_action，不要就 cancel_pending_action，要改內容就重新提議。` : '目前沒有。',
       '',
+      '【天氣】',
+      '問天氣、要不要帶傘、穿什麼 → get_weather，回答講重點（現在幾度、會不會下雨、幾點比較可能下），順便給一句建議。不要主動報天氣。',
+      '',
       '【其他】',
       '查詢問題（這個月花多少、有哪些代辦）用 get_/list_ 工具查真實資料再回答，不要瞎猜數字。',
       `打招呼、閒聊、心情、生活問題、一般知識都像朋友一樣自然回應。只有訊息是亂碼或完全看不懂時，才只回覆 ${NOT_HANDLED}。`,
@@ -630,6 +634,8 @@ export class AiAgentService {
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
     switch (name) {
+      case 'get_weather':
+        return getWeather(String(args.placeName ?? ''), Number(args.latitude), Number(args.longitude));
       case 'record_transaction':
         return this.recordTransaction(ctx, args);
       case 'create_todo':
