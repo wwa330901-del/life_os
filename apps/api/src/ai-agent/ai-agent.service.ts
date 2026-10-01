@@ -272,10 +272,13 @@ export type AgentState = Pick<
 
 const APP_CONVERSATION_WINDOW_MS = 60 * 60 * 1000;
 
-/** 閒聊分流開關：on＝所有人、admin＝只有管理員、off（預設）＝全部走 Agent。 */
-const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'off').toLowerCase();
-/** 輕量 AI 用的模型（預設跟 Agent 一樣；可以換成 flash-lite 之類比較便宜、免費額度比較多的）。 */
-const chatModel = () => process.env.AI_CHAT_MODEL || GEMINI_MODEL;
+/** 閒聊分流開關：on（預設）＝所有人、admin＝只有管理員、off＝全部走 Agent。
+ * 2026-10-02 驗收通過才打開：scripts/eval-chat-router.ts 要做事的 36/36 交給 Agent。 */
+const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'on').toLowerCase();
+/** 輕量 AI 用的模型：驗收是用 flash-lite 跑的（便宜、免費額度跟 Agent 的模型分開算）。
+ * 換模型要重跑 scripts/eval-chat-router.ts。 */
+export const CHAT_MODEL_DEFAULT = 'gemini-3.5-flash-lite';
+const chatModel = () => process.env.AI_CHAT_MODEL || CHAT_MODEL_DEFAULT;
 
 /** LINE 不支援 Markdown：去掉 **粗體**、# 標題，條列改成「・」。 */
 export function plainText(text: string): string {
@@ -308,7 +311,7 @@ export const CHAT_ROUTER_RULES = [
   '你只負責「純聊天」。下面任何一種情況，一律呼叫 use_agent，不要自己回答：',
   '1. 要查他自己的資料：錢（花多少、餘額、預算、帳戶、信用卡、訂閱、借貸、代墊）、代辦、行程、人生目標、日記、股票持股或分析、收藏的知識庫（文章、美食、景點、展覽）、購物車、算過的卦、記住的重要日子、AI 用量。',
   '2. 要他做事或記錄：記帳、花了錢、收入、轉帳、排行程、提醒、代辦、打卡（讀書、運動、體重…）、做完了、寫日記、算命占卜、買賣股票、借錢還錢、繳卡費、想買東西、改或刪任何紀錄、開關提醒、設定任何東西。',
-  '3. 他在講自己做了什麼、發生什麼事、心情或感受（「今天跟家人吃飯很開心」「今天好累」「讀完一本書了」「去跑步了」「心情不好」）——可能要寫日記、打卡或記帳，一律 use_agent。',
+  '3. 只要句子在講「他自己」已經做了、正在做、剛做完的事，或發生在他身上的事、他的心情感受（「剛剛去健身房回來」「今天跟家人吃飯很開心」「今天好累」「讀完一本書了」「去跑步了」「下班了」「心情不好」）——可能要寫日記、打卡或記帳，一律 use_agent。判斷方法：主詞是「我」或省略的我，而且在描述一件事 → use_agent。',
   '4. 他講到關於自己長期有效的事（喜好、不吃什麼、過敏、家人朋友、生日紀念日、工作、住哪、習慣、目標），因為要記下來。',
   '5. 要你沒有工具可查的即時資料：匯率、新聞（股票新聞除外）、交通、營業時間等。（天氣用 get_weather、某檔股票的走勢用 analyze_stock_trend、基本面和新聞用 get_stock_fundamentals，這三個你可以自己查；但問「我的持股、我賺多少」是他的資料，要 use_agent。）',
   '6. 要幫他規劃或給需要看他資料的建議（這週怎麼排、還能花多少、怎麼存錢）。',
