@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { AsyncLocalStorage } from 'async_hooks';
 import { VoiceTranscriberService } from './voice-transcriber.service';
+import { ReceiptReaderService, receiptToAgentText } from './receipt-reader.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
@@ -145,6 +146,7 @@ export class LineService {
     private readonly financePlan: FinancePlanService,
     private readonly health: HealthService,
     private readonly voice: VoiceTranscriberService,
+    private readonly receiptReader: ReceiptReaderService,
   ) {}
 
   /** While handling a 語音訊息, the transcript to show above whatever reply
@@ -189,12 +191,7 @@ export class LineService {
 
         if (event.type === 'message' && event.message?.type === 'image') {
           if (!link) continue;
-          await this.handleImageMessage(
-            link.id,
-            link.userId,
-            event.message.id,
-            replyToken,
-          );
+          await this.handleImageMessage(link, event.message.id, replyToken);
           continue;
         }
 
@@ -299,6 +296,7 @@ export class LineService {
           '',
           '💰 記帳',
           '「午餐 120」「昨天加油 1500 刷卡」',
+          '收據、發票直接拍照傳給我，自動讀金額記帳',
           '「這個月花了多少？」「上週吃飯花多少」',
           '',
           '✅ 代辦',
@@ -1798,15 +1796,28 @@ export class LineService {
 
   /** LINE image messages carry no URL — the bytes have to be pulled from
    * LINE's separate content-hosting API using the message id. */
-  private async handleImageMessage(
-    linkId: string,
-    userId: string,
-    messageId: string | undefined,
-    replyToken: string,
-  ) {
+  private async handleImageMessage(link: LineAccountLink, messageId: string | undefined, replyToken: string) {
     if (!messageId) return;
+    const linkId = link.id;
+    const userId = link.userId;
     try {
       const data = await this.fetchLineMessageContent(messageId);
+      // 拍收據記帳（2026-10-01）：是單據就交給萬用 AI 記帳，不進知識庫。
+      const apiKey = (await this.usersService.findById(userId))?.geminiApiKey ?? null;
+      const receipt = apiKey ? await this.receiptReader.read(userId, apiKey, data) : null;
+      if (apiKey && receipt) {
+        const heading = `🧾 收據：${receipt.merchant ? `${receipt.merchant} ` : ''}${receipt.total.toLocaleString('en-US')} 元`;
+        const handled = await this.replyPrefix.run(heading, () =>
+          this.tryAiAgent(link, receiptToAgentText(receipt), replyToken, apiKey),
+        );
+        if (!handled) {
+          await this.reply(
+            replyToken,
+            `${heading}\n\nAI 現在沒回應，可以直接打「${receipt.items ?? receipt.merchant ?? '消費'} ${receipt.total}」記帳。`,
+          );
+        }
+        return;
+      }
       const item = await this.knowledgeItemsService.createPending(userId, {
         sourcePlatform: '圖片',
       });
