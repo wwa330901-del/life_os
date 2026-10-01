@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
+import { AsyncLocalStorage } from 'async_hooks';
+import { VoiceTranscriberService } from './voice-transcriber.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
@@ -142,7 +144,12 @@ export class LineService {
     private readonly dailyBrief: DailyBriefService,
     private readonly financePlan: FinancePlanService,
     private readonly health: HealthService,
+    private readonly voice: VoiceTranscriberService,
   ) {}
+
+  /** While handling a 語音訊息, the transcript to show above whatever reply
+   * the normal text flow sends — so the user can see what was heard. */
+  private readonly replyPrefix = new AsyncLocalStorage<string>();
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
     if (!signature || !this.channelSecret) return false;
@@ -188,6 +195,12 @@ export class LineService {
             event.message.id,
             replyToken,
           );
+          continue;
+        }
+
+        if (event.type === 'message' && event.message?.type === 'audio') {
+          if (!link) continue;
+          await this.handleAudioMessage(link, event.message.id, replyToken);
           continue;
         }
 
@@ -282,6 +295,7 @@ export class LineService {
     const aiPart = hasAi
       ? [
           '💬 直接跟我講話就好，不用記指令',
+          '🎤 懶得打字就傳語音，效果一樣',
           '',
           '💰 記帳',
           '「午餐 120」「昨天加油 1500 刷卡」',
@@ -1850,6 +1864,31 @@ export class LineService {
     }
   }
 
+  /** 語音訊息（2026-10-01）：Gemini 轉成文字後，跟打字完全走同一條路，
+   * 回覆最上面加一行「🎤 我聽到：…」讓使用者確認有沒有聽錯。 */
+  private async handleAudioMessage(link: LineAccountLink, messageId: string | undefined, replyToken: string) {
+    if (!messageId) return;
+    const apiKey = (await this.usersService.findById(link.userId))?.geminiApiKey ?? null;
+    if (!apiKey) {
+      await this.reply(replyToken, '語音要用 AI 轉成文字，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰；或直接打字給我。');
+      return;
+    }
+    let audio: Buffer;
+    try {
+      audio = await this.fetchLineMessageContent(messageId);
+    } catch (error) {
+      this.logger.warn(`語音下載失敗 link=${link.id}: ${String(error)}`);
+      await this.reply(replyToken, '語音下載失敗，請再傳一次看看。');
+      return;
+    }
+    const text = await this.voice.transcribe(link.userId, apiKey, audio);
+    if (!text) {
+      await this.reply(replyToken, '🎤 我沒聽清楚，可以再說一次，或直接打字給我。');
+      return;
+    }
+    await this.replyPrefix.run(`🎤 我聽到：「${text}」`, () => this.handleTextForLinkedUser(link, text, replyToken));
+  }
+
   private async fetchLineMessageContent(messageId: string): Promise<Buffer> {
     const response = await fetch(
       `https://api-data.line.me/v2/bot/message/${messageId}/content`,
@@ -2632,6 +2671,8 @@ export class LineService {
   }
 
   private async reply(replyToken: string, text: string): Promise<void> {
+    const prefix = this.replyPrefix.getStore();
+    if (prefix) text = `${prefix}\n\n${text}`;
     await this.callReplyApi({ replyToken, messages: [{ type: 'text', text }] });
   }
 

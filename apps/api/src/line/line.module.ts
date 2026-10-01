@@ -11,6 +11,7 @@ import { LineWebhookController } from './line-webhook.controller';
 import { LineLinkController } from './line-link.controller';
 import { LineSettingsController } from './line-settings.controller';
 import { LineService } from './line.service';
+import { VoiceTranscriberService } from './voice-transcriber.service';
 import { AiAgentModule } from '../ai-agent/ai-agent.module';
 import { LifeReviewModule } from '../life-review/life-review.module';
 import { FinanceReportModule } from '../finance/finance-report.module';
@@ -34,6 +35,6 @@ import { HealthModule } from '../health/health.module';
     HealthModule,
   ],
   controllers: [LineWebhookController, LineLinkController, LineSettingsController],
-  providers: [LineService],
+  providers: [LineService, VoiceTranscriberService],
 })
 export class LineModule {}
