@@ -18,6 +18,7 @@ import { LifeReviewModule } from '../life-review/life-review.module';
 import { FinanceReportModule } from '../finance/finance-report.module';
 import { DailyBriefModule } from '../daily-brief/daily-brief.module';
 import { HealthModule } from '../health/health.module';
+import { AdminModule } from '../admin/admin.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { HealthModule } from '../health/health.module';
     FinanceReportModule,
     DailyBriefModule,
     HealthModule,
+    AdminModule,
   ],
   controllers: [LineWebhookController, LineLinkController, LineSettingsController],
   providers: [LineService, VoiceTranscriberService, ReceiptReaderService],

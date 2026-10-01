@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
+import { SentryModule } from '@sentry/nestjs/setup';
+import { SystemTroubleFilter } from './error-report/system-trouble';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -74,8 +75,9 @@ import { SecretMigrationService } from './common/secret-migration.service';
     SecretMigrationService,
     // Must be the first APP_FILTER provider (Sentry's own requirement) so
     // it sees every unhandled exception before any other filter can
+    // (SystemTroubleFilter extends SentryGlobalFilter; 500 錯誤只給使用者看「已通知管理員」)
     // swallow it.
-    { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    { provide: APP_FILTER, useClass: SystemTroubleFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

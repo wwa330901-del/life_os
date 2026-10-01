@@ -85,7 +85,8 @@ class _UsageLogRow extends StatelessWidget {
       title: Text('${entry.model} · \$${entry.costUsd.toStringAsFixed(5)}'),
       subtitle: Text(
         isFailed
-            ? (entry.errorMessage ?? '分析失敗')
+            // 技術細節只給管理員看（App「管理」→「AI 用量」）。
+            ? '失敗（已通知管理員）'
             : '輸入 ${entry.inputTokens} · 輸出 ${entry.outputTokens} tokens · ${(entry.durationMs / 1000).toStringAsFixed(1)}s',
       ),
       trailing: Text(

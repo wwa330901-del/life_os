@@ -21,6 +21,9 @@ import 'models/memory.dart';
 import 'models/project_todo.dart';
 import 'models/stock.dart';
 
+/// 跟後端 SYSTEM_TROUBLE_MESSAGE 同一句。
+const systemTroubleMessage = '系統出了點問題，已經通知管理員，正在修理中，請稍後再試 🙏';
+
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
 
@@ -569,6 +572,12 @@ class ApiClient {
   Future<AiUsageHistory> getAiUsageHistory() async {
     final body = await _get('/knowledge/ai-usage');
     return AiUsageHistory.fromJson(body);
+  }
+
+  /// 管理員：所有使用者的 AI 用量。
+  Future<AdminAiUsage> getAdminAiUsage() async {
+    final body = await _get('/admin/ai-usage');
+    return AdminAiUsage.fromJson(body);
   }
 
   /// [previousInteractionId] carries multi-turn continuity — pass back
@@ -1605,13 +1614,21 @@ class ApiClient {
   }
 
   dynamic _checkStatus(http.Response res) {
-    final decoded = res.body.isEmpty ? null : jsonDecode(res.body);
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      return decoded;
+      return res.body.isEmpty ? null : jsonDecode(res.body);
     }
+    // 伺服器重啟中會回 HTML，不能直接 jsonDecode。
+    dynamic decoded;
+    try {
+      decoded = res.body.isEmpty ? null : jsonDecode(res.body);
+    } on FormatException {
+      decoded = null;
+    }
+    // 500 以上是系統問題：細節後端已經通知管理員，這裡只講「已通知管理員」。
+    if (res.statusCode >= 500) throw ApiException(res.statusCode, systemTroubleMessage);
     final message = (decoded is Map && decoded['message'] != null)
         ? decoded['message'].toString()
-        : 'Request failed (${res.statusCode})';
+        : '操作失敗（${res.statusCode}）';
     throw ApiException(res.statusCode, message);
   }
 }

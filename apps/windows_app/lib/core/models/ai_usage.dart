@@ -87,3 +87,83 @@ class AiUsageHistory {
         .toList(),
   );
 }
+
+/// 管理員看的 AI 用量（GET /admin/ai-usage）。
+class AdminAiUsageStat {
+  const AdminAiUsageStat({required this.count, required this.costUsd, required this.failures});
+
+  final int count;
+  final double costUsd;
+  final int failures;
+
+  factory AdminAiUsageStat.fromJson(Map<String, dynamic> json) => AdminAiUsageStat(
+    count: json['count'] as int,
+    costUsd: (json['costUsd'] as num).toDouble(),
+    failures: json['failures'] as int,
+  );
+}
+
+class AdminAiUsageRow {
+  const AdminAiUsageRow({required this.label, required this.stat});
+
+  final String label;
+  final AdminAiUsageStat stat;
+}
+
+class AdminAiUsageFailure {
+  const AdminAiUsageFailure({required this.at, required this.user, required this.feature, this.error});
+
+  final DateTime at;
+  final String user;
+  final String feature;
+  final String? error;
+}
+
+class AdminAiUsage {
+  const AdminAiUsage({
+    required this.today,
+    required this.thisWeek,
+    required this.thisMonth,
+    required this.users,
+    required this.features,
+    required this.daily,
+    required this.recentFailures,
+  });
+
+  final AdminAiUsageStat today;
+  final AdminAiUsageStat thisWeek;
+  final AdminAiUsageStat thisMonth;
+  final List<AdminAiUsageRow> users;
+  final List<AdminAiUsageRow> features;
+
+  /// 近 14 天，舊到新；label 是 'YYYY-MM-DD'。
+  final List<AdminAiUsageRow> daily;
+  final List<AdminAiUsageFailure> recentFailures;
+
+  factory AdminAiUsage.fromJson(Map<String, dynamic> json) {
+    AdminAiUsageStat stat(dynamic v) => AdminAiUsageStat.fromJson(v as Map<String, dynamic>);
+    List<AdminAiUsageRow> rows(String key, String labelKey) => (json[key] as List<dynamic>)
+        .map((e) => e as Map<String, dynamic>)
+        .map((e) => AdminAiUsageRow(label: e[labelKey] as String, stat: AdminAiUsageStat.fromJson(e)))
+        .toList();
+    return AdminAiUsage(
+      today: stat(json['today']),
+      thisWeek: stat(json['thisWeek']),
+      thisMonth: stat(json['thisMonth']),
+      users: rows('users', 'name'),
+      features: rows('features', 'label'),
+      daily: rows('daily', 'date'),
+      recentFailures: (json['recentFailures'] as List<dynamic>)
+          .map((e) => e as Map<String, dynamic>)
+          .map(
+            (e) => AdminAiUsageFailure(
+              at: DateTime.parse(e['at'] as String).toLocal(),
+              user: e['user'] as String,
+              feature: e['feature'] as String,
+              error: e['error'] as String?,
+            ),
+          )
+          .toList(),
+    );
+  }
+}

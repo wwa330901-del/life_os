@@ -19,6 +19,7 @@ import '../../state/knowledge_provider.dart';
 import '../../state/life_goal_provider.dart';
 import '../../state/space_provider.dart';
 import '../../state/todo_provider.dart';
+import 'admin/admin_ai_usage_screen.dart';
 import 'admin/admin_home_screen.dart';
 import 'home/home_dashboard_widgets.dart';
 
@@ -46,6 +47,14 @@ class SpacePickerScreen extends ConsumerWidget {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const Spacer(),
+                    if (session?.user.isPlatformAdmin ?? false)
+                      IconButton(
+                        tooltip: 'AI 用量',
+                        icon: const Icon(Icons.insights_outlined),
+                        onPressed: () => Navigator.of(
+                          context,
+                        ).push(MaterialPageRoute(builder: (_) => const AdminAiUsageScreen())),
+                      ),
                     if (session?.user.isPlatformAdmin ?? false)
                       IconButton(
                         tooltip: '平台管理後台',

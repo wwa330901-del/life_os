@@ -3,6 +3,9 @@ import * as crypto from 'crypto';
 import { AsyncLocalStorage } from 'async_hooks';
 import { VoiceTranscriberService } from './voice-transcriber.service';
 import { ReceiptReaderService, receiptToAgentText } from './receipt-reader.service';
+import { SYSTEM_TROUBLE_MESSAGE } from '../error-report/system-trouble';
+import { AiUsageService } from '../knowledge/ai-usage.service';
+import { AiUsageAdminService } from '../admin/ai-usage-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
@@ -147,11 +150,16 @@ export class LineService {
     private readonly health: HealthService,
     private readonly voice: VoiceTranscriberService,
     private readonly receiptReader: ReceiptReaderService,
+    private readonly aiUsage: AiUsageService,
+    private readonly aiUsageAdmin: AiUsageAdminService,
   ) {}
 
   /** While handling a 語音訊息, the transcript to show above whatever reply
    * the normal text flow sends — so the user can see what was heard. */
   private readonly replyPrefix = new AsyncLocalStorage<string>();
+
+  /** Per webhook event: whether the 萬用 AI threw while handling it. */
+  private readonly eventState = new AsyncLocalStorage<{ aiFailed: boolean }>();
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
     if (!signature || !this.channelSecret) return false;
@@ -183,6 +191,7 @@ export class LineService {
       const lineUserId = event.source?.userId;
       const replyToken = event.replyToken;
       if (!lineUserId || !replyToken) continue;
+      this.eventState.enterWith({ aiFailed: false });
 
       try {
         const link = await this.prisma.lineAccountLink.findUnique({
@@ -224,6 +233,9 @@ export class LineService {
         }
       } catch (error) {
         this.logger.error('Failed to handle LINE event', error);
+        // 細節已通知管理員；使用者只看到「已通知管理員」（reply 自己會吞錯，
+        // replyToken 已經用過就只是送不出去）。
+        await this.reply(replyToken, SYSTEM_TROUBLE_MESSAGE);
       }
     }
   }
@@ -269,6 +281,7 @@ export class LineService {
   // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
   // 其他都靠直接跟 AI 講，這裡列出可以叫它做什麼。
   private static readonly GUIDE_KEYWORDS = ['我能做什麼', '可以做什麼', '功能', '說明', '使用說明'];
+  private static readonly AI_USAGE_KEYWORDS = ['AI 用量', 'AI用量', 'ai 用量', 'ai用量'];
   private static readonly MENU_COMMANDS = new Set([
     '財務總覽',
     '今日行事曆',
@@ -286,6 +299,7 @@ export class LineService {
     '關閉日記提醒',
     '開啟日記提醒',
     ...LineService.GUIDE_KEYWORDS,
+    ...LineService.AI_USAGE_KEYWORDS,
   ]);
 
   private static buildGuideText(hasAi: boolean): string {
@@ -608,6 +622,10 @@ export class LineService {
       return;
     }
 
+    if (LineService.AI_USAGE_KEYWORDS.includes(text)) {
+      await this.reply(replyToken, await this.aiUsageText(userId));
+      return;
+    }
     if (LineService.GUIDE_KEYWORDS.includes(text)) {
       await this.reply(replyToken, LineService.buildGuideText(geminiApiKey != null));
       return;
@@ -629,6 +647,10 @@ export class LineService {
     // 固定指令都對不上：交給 AI（「午餐 120」「體重現在 72」「下週三下午兩點
     // 跟客戶開會」），它也處理不了才回「看不懂」。前面已經問過 AI 的不再問。
     if (geminiApiKey && !aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey))) return;
+    if (this.eventState.getStore()?.aiFailed) {
+      await this.reply(replyToken, SYSTEM_TROUBLE_MESSAGE);
+      return;
+    }
 
     await this.reply(
       replyToken,
@@ -1819,7 +1841,7 @@ export class LineService {
         if (!handled) {
           await this.reply(
             replyToken,
-            `${heading}\n\nAI 現在沒回應，可以直接打「${receipt.items ?? receipt.merchant ?? '消費'} ${receipt.total}」記帳。`,
+            `${heading}\n\n${SYSTEM_TROUBLE_MESSAGE}\n先直接打「${receipt.items ?? receipt.merchant ?? '消費'} ${receipt.total}」也可以記帳。`,
           );
         }
         return;
@@ -1904,6 +1926,21 @@ export class LineService {
       return;
     }
     await this.replyPrefix.run(`🎤 我聽到：「${text}」`, () => this.handleTextForLinkedUser(link, text, replyToken));
+  }
+
+  /** 「AI 用量」：管理員看所有人；其他人只看自己的。 */
+  private async aiUsageText(userId: string): Promise<string> {
+    const user = await this.usersService.findById(userId);
+    if (user?.isPlatformAdmin) return this.aiUsageAdmin.summaryText();
+    const h = await this.aiUsage.history(userId);
+    const usd = (n: number) => `$${n.toFixed(3)}`;
+    return [
+      '🤖 你的 AI 用量（用你自己的 Gemini 金鑰）',
+      `今天：${h.today.count} 次、約 ${usd(h.today.costUsd)}`,
+      `近 7 天：${h.thisWeek.count} 次、約 ${usd(h.thisWeek.costUsd)}`,
+      `本月：${h.thisMonth.count} 次、約 ${usd(h.thisMonth.costUsd)}`,
+      '（金額是估的，實際以 Google 帳單為準）',
+    ].join('\n');
   }
 
   private async fetchLineMessageContent(messageId: string): Promise<Buffer> {
@@ -2555,6 +2592,10 @@ export class LineService {
       await this.reply(replyToken, result.reply);
       return true;
     } catch {
+      // AiAgentService 已經 logger.error（→ 通知管理員）；記下來，固定指令也
+      // 接不住時回「已通知管理員」而不是「看不懂」。
+      const state = this.eventState.getStore();
+      if (state) state.aiFailed = true;
       return false;
     }
   }

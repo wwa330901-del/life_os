@@ -6,7 +6,7 @@ import {
   FetchedContent,
   INSTAGRAM_UNSUPPORTED_MESSAGE,
 } from './content-fetcher.service';
-import { INSTAGRAM_SESSION_EXPIRED_MESSAGE } from './instagram-fetcher.service';
+import { SYSTEM_TROUBLE_MESSAGE } from '../error-report/system-trouble';
 import { SupabaseStorageService } from './supabase-storage.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -214,11 +214,11 @@ export class KnowledgeAnalysisPipeline {
    * (e.g. "Fetch failed with status 404") doesn't show up unexplained. */
   private userFacingMessage(error: unknown): string {
     const message = this.errorMessage(error);
-    return message === NO_API_KEY_MESSAGE ||
-      message === INSTAGRAM_UNSUPPORTED_MESSAGE ||
-      message === INSTAGRAM_SESSION_EXPIRED_MESSAGE
+    // 使用者自己能處理的照實說；其他（含 IG session 過期）是系統問題，細節
+    // 已經 logger.error 通知管理員，使用者只看到「已通知管理員」。
+    return message === NO_API_KEY_MESSAGE || message === INSTAGRAM_UNSUPPORTED_MESSAGE
       ? message
-      : `這則知識庫內容分析失敗了：${message}`;
+      : `這則知識庫內容分析失敗了。${SYSTEM_TROUBLE_MESSAGE}`;
   }
 
   private async requireApiKey(userId: string): Promise<string> {
