@@ -196,6 +196,7 @@ model Space {
   calendarOwner       User?   @relation("CalendarSpaceOwner", fields: [calendarOwnerUserId], references: [id])
 
   financeAccounts              FinanceAccount[]
+  financeAlertLogs             FinanceAlertLog[]
   financeCategories            FinanceCategory[]
   financeTransactions          FinanceTransaction[]
   financeBudgets               FinanceBudget[]
@@ -944,17 +945,20 @@ model LineAccountLink {
 
   /// 日記（2026-10-01）：每晚 21:30 沒寫日記就問一句「今天過得怎樣？」，
   /// 記下問的時間——之後 3 小時內的回覆交給 AI 記成日記。
-  journalPromptAt        DateTime?
-  journalReminderEnabled Boolean   @default(true)
+  journalPromptAt             DateTime?
+  journalReminderEnabled      Boolean   @default(true)
   /// 每日早報（2026-10-01）：每天 08:00 今天的行程/代辦/昨天花費/預算，傳「關閉早報」可關。
-  morningBriefEnabled    Boolean   @default(true)
+  morningBriefEnabled         Boolean   @default(true)
   /// App「提醒設定」（2026-10-01）：有時間的代辦前 1 小時、週/月回顧、人生目標到期/太久沒更新。
-  todoReminderEnabled    Boolean   @default(true)
-  reviewEnabled          Boolean   @default(true)
-  goalReminderEnabled    Boolean   @default(true)
+  todoReminderEnabled         Boolean   @default(true)
+  reviewEnabled               Boolean   @default(true)
+  goalReminderEnabled         Boolean   @default(true)
+  /// 花費異常提醒、訂閱費續約提醒（2026-10-02）。
+  spendingAlertEnabled        Boolean   @default(true)
+  subscriptionReminderEnabled Boolean   @default(true)
   /// 算命回饋：LINE 剛問過哪一筆算命準不準——24 小時內的回覆交給 AI 記成回饋。
-  divinationFeedbackId   String?
-  divinationFeedbackAt   DateTime?
+  divinationFeedbackId        String?
+  divinationFeedbackAt        DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1423,4 +1427,16 @@ model ImportantDate {
   createdAt       DateTime @default(now())
 
   @@index([ownerUserId])
+}
+
+/// 已經發過的財務提醒（花費異常、訂閱續約），key 同一個空間只發一次，例如
+/// 「cat:<分類id>:2026-10」「tx:<交易id>」「sub:<訂閱key>:2026-10-15」。
+model FinanceAlertLog {
+  id        String   @id @default(uuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  key       String
+  createdAt DateTime @default(now())
+
+  @@unique([spaceId, key])
 }

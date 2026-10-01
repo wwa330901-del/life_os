@@ -77,6 +77,8 @@ const REMINDER_FIELDS = {
   todo: 'todoReminderEnabled',
   review: 'reviewEnabled',
   goal: 'goalReminderEnabled',
+  spending: 'spendingAlertEnabled',
+  subscription: 'subscriptionReminderEnabled',
 } as const;
 
 const AGENT_TOOLS = [
@@ -84,7 +86,7 @@ const AGENT_TOOLS = [
     type: 'function' as const,
     name: 'set_reminder',
     description:
-      '開關 LINE 自動提醒。kind：morning_brief（每天 8 點早報）、journal（每晚 9:30 日記提醒）、todo（有時間的代辦前 1 小時）、review（週日晚上週回顧、每月 1 號月回顧）、goal（人生目標快到期/太久沒更新）。使用者說「不要再傳 X」「打開 X 提醒」時用。',
+      '開關 LINE 自動提醒。kind：morning_brief（每天 8 點早報）、journal（每晚 9:30 日記提醒）、todo（有時間的代辦前 1 小時）、review（週日晚上週回顧、每月 1 號月回顧）、goal（人生目標快到期/太久沒更新）、spending（晚上 9 點花費異常提醒）、subscription（訂閱扣款前 3 天提醒）。使用者說「不要再傳 X」「打開 X 提醒」時用。',
     parameters: {
       type: 'object',
       properties: {

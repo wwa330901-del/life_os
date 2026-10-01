@@ -296,6 +296,10 @@ export class LineService {
     '理財評估',
     '關閉早報',
     '開啟早報',
+    '關閉花費提醒',
+    '開啟花費提醒',
+    '關閉訂閱提醒',
+    '開啟訂閱提醒',
     '關閉日記提醒',
     '開啟日記提醒',
     ...LineService.GUIDE_KEYWORDS,
@@ -607,6 +611,18 @@ export class LineService {
       const enabled = text === '開啟早報';
       await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { morningBriefEnabled: enabled } });
       await this.reply(replyToken, enabled ? '好，每天早上 8 點會傳今天的重點給你 ☀️' : '好，不會再傳早報了。想看的時候傳「早報」就好。');
+      return;
+    }
+    if (text === '關閉花費提醒' || text === '開啟花費提醒') {
+      const enabled = text === '開啟花費提醒';
+      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { spendingAlertEnabled: enabled } });
+      await this.reply(replyToken, enabled ? '好，哪個分類花太兇或有特別大的單筆，晚上 9 點會提醒你。' : '好，不會再傳花費提醒了。');
+      return;
+    }
+    if (text === '關閉訂閱提醒' || text === '開啟訂閱提醒') {
+      const enabled = text === '開啟訂閱提醒';
+      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { subscriptionReminderEnabled: enabled } });
+      await this.reply(replyToken, enabled ? '好，訂閱快扣款前 3 天會提醒你。' : '好，不會再傳訂閱續約提醒了。');
       return;
     }
 
