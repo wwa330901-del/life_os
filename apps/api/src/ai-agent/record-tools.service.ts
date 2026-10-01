@@ -8,6 +8,7 @@ import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { StocksTransactionsService } from '../stocks/stocks-transactions.service';
 import { CreditCardService } from '../finance/credit-card.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
+import { SubscriptionService } from '../finance/subscription.service';
 import { taipeiDateKey, taipeiWallClockToUtc, utcDateKey } from '../common/taipei-date';
 import { FinanceAccountType, FinanceLoanDirection, FinanceTransactionType, StockTransactionType } from '../../generated/prisma/client.js';
 
@@ -35,6 +36,13 @@ export const RECORD_TOOLS = [
     name: 'get_credit_card_bills',
     description:
       '每張設好結帳日/繳款日的信用卡，下一期繳款日、還剩幾天、要繳多少（estimated=true 表示還沒結帳、是用目前欠款估的）、扣款帳戶、有沒有自動扣繳。另外列出還沒設定日期的信用卡。',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
+    name: 'get_subscriptions',
+    description:
+      '從記帳偵測到的固定扣款訂閱（Netflix、健身房、iCloud…）：名稱、金額、每月或每年、下次大約哪天扣、每月合計。問「我有哪些訂閱」「每個月固定花多少」、想省錢時用；可以幫他看哪些可能用不到。',
     parameters: { type: 'object', properties: {} },
   },
   {
@@ -229,6 +237,7 @@ export class RecordToolsService {
     private readonly stockTransactions: StocksTransactionsService,
     private readonly creditCards: CreditCardService,
     private readonly accounts: FinanceAccountsService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   static readonly toolNames = new Set(RECORD_TOOLS.map((t) => t.name));
@@ -248,6 +257,11 @@ export class RecordToolsService {
           select: { name: true },
         });
         return { bills, cardsWithoutDates: unset.map((a) => a.name) };
+      }
+      case 'get_subscriptions': {
+        const subs = await this.subscriptions.list(spaceId, today);
+        const monthly = subs.reduce((s, x) => s + x.monthlyCost, 0);
+        return { subscriptions: subs.map(({ key: _key, ...s }) => s), monthlyTotal: monthly, yearlyTotal: monthly * 12 };
       }
       case 'set_credit_card':
         return this.setCreditCard(userId, spaceId, args);

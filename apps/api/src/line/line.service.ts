@@ -6,6 +6,8 @@ import { ReceiptReaderService, receiptToAgentText } from './receipt-reader.servi
 import { SYSTEM_TROUBLE_MESSAGE } from '../error-report/system-trouble';
 import { AiUsageService } from '../knowledge/ai-usage.service';
 import { AiUsageAdminService } from '../admin/ai-usage-admin.service';
+import { SubscriptionService } from '../finance/subscription.service';
+import { subscriptionsText } from '../finance/subscriptions';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
@@ -152,6 +154,7 @@ export class LineService {
     private readonly receiptReader: ReceiptReaderService,
     private readonly aiUsage: AiUsageService,
     private readonly aiUsageAdmin: AiUsageAdminService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   /** While handling a 語音訊息, the transcript to show above whatever reply
@@ -296,6 +299,8 @@ export class LineService {
     '理財評估',
     '關閉早報',
     '開啟早報',
+    '訂閱',
+    '我的訂閱',
     '關閉花費提醒',
     '開啟花費提醒',
     '關閉訂閱提醒',
@@ -318,6 +323,7 @@ export class LineService {
           '「這個月花了多少？」「上週吃飯花多少」',
           '「國泰卡每月 5 號結帳、20 號繳款，從台新扣」設好會提醒繳卡費',
           '「借小明 5000，他說月底還」到期前會提醒你去收',
+          '傳「訂閱」看每月固定扣的錢；分類花太兇或有特別大的單筆，晚上 9 點會提醒你',
           '',
           '🧠 記住你的事',
           '「記住我不吃牛」「我太太叫小美，喜歡多肉植物」',
@@ -638,6 +644,11 @@ export class LineService {
       return;
     }
 
+    if (text === '訂閱' || text === '我的訂閱') {
+      const subs = await this.subscriptionService.listForUser(userId);
+      await this.reply(replyToken, subs ? subscriptionsText(subs) : '找不到你的個人空間，請先到元序 App 登入一次。');
+      return;
+    }
     if (LineService.AI_USAGE_KEYWORDS.includes(text)) {
       await this.reply(replyToken, await this.aiUsageText(userId));
       return;

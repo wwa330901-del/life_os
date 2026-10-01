@@ -22,6 +22,7 @@ import { FinanceAdvancesService } from './finance-advances.service';
 import { CreditCardService } from './credit-card.service';
 import { LoanDueReminderService } from './loan-due-reminder.service';
 import { SpendingAlertService } from './spending-alert.service';
+import { SubscriptionService } from './subscription.service';
 
 @Module({
   imports: [SpacesModule, LineNotifierModule, UsersModule, FriendsModule],
@@ -47,6 +48,7 @@ import { SpendingAlertService } from './spending-alert.service';
     CreditCardService,
     LoanDueReminderService,
     SpendingAlertService,
+    SubscriptionService,
   ],
   // Reused directly by LineModule so the LINE 財務總覽 command shares the
   // exact same balance/summary logic as the app's own finance screens,
@@ -64,6 +66,8 @@ import { SpendingAlertService } from './spending-alert.service';
     FinanceRecurringTransactionsService,
     // 信用卡繳款：AI 查帳單、繳卡費。
     CreditCardService,
+    // 訂閱費偵測：AI、LINE「訂閱」。
+    SubscriptionService,
   ],
 })
 export class FinanceModule {}
