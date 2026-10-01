@@ -20,6 +20,8 @@ export const AI_FEATURE_LABEL: Record<string, string> = {
   knowledge: '知識庫分析',
   line_ai_agent: 'LINE AI 對話',
   ai_assistant_app: 'App AI 問答',
+  line_ai_chat: 'LINE 閒聊（輕量）',
+  app_ai_chat: 'App 閒聊（輕量）',
   ai_assistant_line: 'LINE 查詢',
   divination: '算命解卦',
   finance_plan: '理財評估',

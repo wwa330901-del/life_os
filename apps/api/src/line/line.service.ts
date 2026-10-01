@@ -501,7 +501,8 @@ export class LineService {
         AiAgentService.isJournalPromptActive(link) ||
         AiAgentService.divinationFeedbackPending(link) != null ||
         LineService.AI_FIRST_HINT.test(text));
-    if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey))) return;
+    // 關鍵字明顯要做事 → 直接 Agent；只是對話進行中 → 讓分流判斷。
+    if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey, LineService.AI_FIRST_HINT.test(text)))) return;
 
     // --- 條列式一次登陸多筆（2026-08-04）：貼多行文字，每行各自當一筆獨立
     // 的記帳／代辦／股票交易／行事曆指令處理，不用一則訊息只能記一筆。編
@@ -545,7 +546,7 @@ export class LineService {
       geminiApiKey &&
       !aiFirst &&
       text.startsWith('新增') &&
-      (await this.tryAiAgent(link, text, replyToken, geminiApiKey))
+      (await this.tryAiAgent(link, text, replyToken, geminiApiKey, true))
     ) {
       return;
     }
@@ -1886,7 +1887,7 @@ export class LineService {
       if (apiKey && receipt) {
         const heading = `🧾 收據：${receipt.merchant ? `${receipt.merchant} ` : ''}${receipt.total.toLocaleString('en-US')} 元`;
         const handled = await this.replyPrefix.run(heading, () =>
-          this.tryAiAgent(link, receiptToAgentText(receipt), replyToken, apiKey),
+          this.tryAiAgent(link, receiptToAgentText(receipt), replyToken, apiKey, true),
         );
         if (!handled) {
           await this.reply(
@@ -2635,9 +2636,9 @@ export class LineService {
 
   /** Returns false (without replying) when the AI says the message isn't
    * something it can act on, or fails — the caller falls through. */
-  private async tryAiAgent(link: LineAccountLink, text: string, replyToken: string, apiKey: string): Promise<boolean> {
+  private async tryAiAgent(link: LineAccountLink, text: string, replyToken: string, apiKey: string, forceAgent = false): Promise<boolean> {
     try {
-      const result = await this.aiAgent.handleLine({ link, apiKey, text });
+      const result = await this.aiAgent.handleLine({ link, apiKey, text, forceAgent });
       if (!result.handled) return false;
       await this.reply(replyToken, result.reply);
       return true;

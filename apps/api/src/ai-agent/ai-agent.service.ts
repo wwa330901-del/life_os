@@ -35,6 +35,7 @@ import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { DIVINATION_FEEDBACK_WINDOW_MS } from '../divination/divination-feedback.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
+import { activeTurns, agentInput, appendTurns, parseTurns, transcript, type ChatTurn } from './chat-router';
 
 const MAX_TOOL_ROUNDS = 6;
 export const CONVERSATION_WINDOW_MS = 10 * 60 * 1000;
@@ -272,6 +273,30 @@ export type AgentState = Pick<
 
 const APP_CONVERSATION_WINDOW_MS = 60 * 60 * 1000;
 
+/** 閒聊分流開關：on＝所有人、admin＝只有管理員、off（預設）＝全部走 Agent。 */
+const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'off').toLowerCase();
+
+/** 輕量 AI 唯一的工具：判斷這則需要 Agent 就呼叫它。 */
+const USE_AGENT_TOOL = {
+  type: 'function' as const,
+  name: 'use_agent',
+  description: '這則訊息需要查使用者的資料、幫他做事或記住東西 → 呼叫這個，交給有完整工具的助理處理。',
+  parameters: { type: 'object', properties: { reason: { type: 'string' } } },
+};
+
+/** 什麼時候一定要交給 Agent——寧可多交，不能漏（漏了就少一個功能）。 */
+export const CHAT_ROUTER_RULES = [
+  '你只負責「純聊天」。下面任何一種情況，一律呼叫 use_agent，不要自己回答：',
+  '1. 要查他自己的資料：錢（花多少、餘額、預算、帳戶、信用卡、訂閱、借貸、代墊）、代辦、行程、人生目標、日記、健康（睡眠運動體重）、股票持股或分析、收藏的知識庫（文章、美食、景點、展覽）、購物車、算過的卦、記住的重要日子、AI 用量。',
+  '2. 要他做事或記錄：記帳、花了錢、收入、轉帳、排行程、提醒、代辦、打卡、做完了、記睡眠運動體重、寫日記、算命占卜、買賣股票、借錢還錢、繳卡費、想買東西、改或刪任何紀錄、開關提醒、設定任何東西。',
+  '3. 他講到關於自己長期有效的事（喜好、不吃什麼、過敏、家人朋友、生日紀念日、工作、住哪、習慣、目標），因為要記下來。',
+  '4. 要即時或外部資料：天氣、股價、新聞、匯率、現在幾點以外的即時資訊。',
+  '5. 要幫他規劃或給需要看他資料的建議（這週怎麼排、還能花多少、怎麼存錢）。',
+  '6. 問元序（這個系統）怎麼用、有什麼功能。',
+  '7. 看不懂、亂碼，或你不確定是不是上面這些。',
+  '其他（打招呼、閒聊、心情、抒發、一般知識、翻譯、寫東西、不需要他個人資料的意見）就直接回答。',
+].join('\n');
+
 interface AgentContext {
   userId: string;
   channel: AgentChannel;
@@ -330,11 +355,8 @@ export class AiAgentService {
     state: Pick<AgentState, 'aiInteractionId' | 'aiInteractionAt'>,
     windowMs = CONVERSATION_WINDOW_MS,
   ): boolean {
-    return (
-      state.aiInteractionId != null &&
-      state.aiInteractionAt != null &&
-      Date.now() - state.aiInteractionAt.getTime() < windowMs
-    );
+    // 只看時間：閒聊分流那幾輪沒有 Agent 的 interaction id，但對話一樣是進行中。
+    return state.aiInteractionAt != null && Date.now() - state.aiInteractionAt.getTime() < windowMs;
   }
 
   /** The reading LINE just asked 「準不準？」about, while a reply still counts as the answer. */
@@ -357,28 +379,152 @@ export class AiAgentService {
     const continuing =
       session != null &&
       params.previousInteractionId != null &&
-      session.aiInteractionId === params.previousInteractionId &&
+      (session.lastTurnId ?? session.aiInteractionId) === params.previousInteractionId &&
       AiAgentService.isConversationActive(session, APP_CONVERSATION_WINDOW_MS);
-    return this.handle({
+    return this.route({
       userId: params.userId,
       apiKey: params.apiKey,
       text: params.text,
       channel: { kind: 'app' },
       state: continuing ? session : null,
+      turns: continuing ? activeTurns(parseTurns(session.aiRecentTurns), new Date(), APP_CONVERSATION_WINDOW_MS) : [],
     });
   }
 
-  handleLine(params: { link: LineAccountLink; apiKey: string; text: string }): Promise<AgentResult> {
+  /** forceAgent：訊息明顯要做事（LINE 的關鍵字判斷、收據），不用先問輕量 AI。 */
+  handleLine(params: { link: LineAccountLink; apiKey: string; text: string; forceAgent?: boolean }): Promise<AgentResult> {
     const { link } = params;
-    return this.handle({
+    const active = AiAgentService.isConversationActive(link);
+    return this.route({
       userId: link.userId,
       apiKey: params.apiKey,
       text: params.text,
       channel: { kind: 'line', linkId: link.id },
-      state: AiAgentService.isConversationActive(link) ? link : null,
+      state: active ? link : null,
+      turns: active ? activeTurns(parseTurns(link.aiRecentTurns), new Date(), CONVERSATION_WINDOW_MS) : [],
       journalPrompted: AiAgentService.isJournalPromptActive(link),
       divinationFeedbackId: AiAgentService.divinationFeedbackPending(link),
+      forceAgent: params.forceAgent,
     });
+  }
+
+  /** 閒聊分流：純聊天用輕量 AI 回答；要查資料、做事、要記住東西，或輕量 AI
+   * 出錯、不確定，一律交給 Agent——功能跟以前完全一樣，只是閒聊比較省。 */
+  private async route(params: {
+    userId: string;
+    apiKey: string;
+    text: string;
+    channel: AgentChannel;
+    state: AgentState | null;
+    turns: ChatTurn[];
+    journalPrompted?: boolean;
+    divinationFeedbackId?: string | null;
+    forceAgent?: boolean;
+  }): Promise<AgentResult> {
+    const now = new Date();
+    const mustUseAgent =
+      params.forceAgent ||
+      params.journalPrompted ||
+      params.divinationFeedbackId != null ||
+      params.state?.pendingAiAction != null ||
+      !(await this.chatRouterOn(params.userId));
+    if (!mustUseAgent) {
+      const reply = await this.chatOnce(params.userId, params.apiKey, params.channel, params.text, params.turns);
+      if (reply != null) {
+        const turnId = `chat-${randomUUID()}`;
+        await this.saveTurns(params.channel, params.userId, appendTurns(params.turns, params.text, reply, 'chat', now), now, turnId);
+        return { handled: true, reply, interactionId: turnId };
+      }
+    }
+    const result = await this.handle({
+      userId: params.userId,
+      apiKey: params.apiKey,
+      text: agentInput(params.text, params.turns),
+      channel: params.channel,
+      state: params.state,
+      journalPrompted: params.journalPrompted,
+      divinationFeedbackId: params.divinationFeedbackId,
+    });
+    if (result.handled) {
+      await this.saveTurns(params.channel, params.userId, appendTurns(params.turns, params.text, result.reply, 'agent', now), null, result.interactionId);
+    }
+    return result;
+  }
+
+  private async chatRouterOn(userId: string): Promise<boolean> {
+    const mode = chatRouterMode();
+    if (mode === 'on') return true;
+    if (mode !== 'admin') return false;
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { isPlatformAdmin: true } });
+    return user?.isPlatformAdmin === true;
+  }
+
+  /** 記下最近對話；`touchedAt` 有給（閒聊那輪）就順便把對話時間往後延。 */
+  private async saveTurns(channel: AgentChannel, userId: string, turns: ChatTurn[], touchedAt: Date | null, turnId: string) {
+    const data = {
+      aiRecentTurns: turns as unknown as Prisma.InputJsonValue,
+      ...(touchedAt && { aiInteractionAt: touchedAt }),
+    };
+    if (channel.kind === 'line') {
+      await this.prisma.lineAccountLink.update({ where: { id: channel.linkId }, data });
+    } else {
+      await this.prisma.appAiSession.upsert({
+        where: { userId },
+        create: { userId, ...data, lastTurnId: turnId },
+        update: { ...data, lastTurnId: turnId },
+      });
+    }
+  }
+
+  /** 輕量 AI 回一句；需要 Agent、看不懂或出錯就回 null。 */
+  private async chatOnce(userId: string, apiKey: string, channel: AgentChannel, text: string, turns: ChatTurn[]): Promise<string | null> {
+    const startedAt = Date.now();
+    const feature = channel.kind === 'line' ? 'line_ai_chat' : 'app_ai_chat';
+    try {
+      const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const [memoryContext, location] = await Promise.all([this.memory.contextText(userId), this.userLocation.get(userId)]);
+      const system = [
+        `你是「元序」的生活助理（使用者現在在${channel.kind === 'line' ? ' LINE ' : ' App 的 AI 問答'}跟你聊），像一個熟悉使用者生活的真人朋友，用自然口語聊天。`,
+        `現在是 ${taipeiDateKey(new Date())}（星期${WEEKDAYS[shifted.getUTCDay()]}）${String(shifted.getUTCHours()).padStart(2, '0')}:${String(shifted.getUTCMinutes()).padStart(2, '0')}（台北時間）。`,
+        location ? `他目前大概在：${location.name}。` : '',
+        '',
+        '【關於他】',
+        memoryContext,
+        '',
+        CHAT_ROUTER_RULES,
+        '',
+        '回覆一律繁體中文、口語、簡短（聊天訊息，畫面不支援 Markdown，不要用 ** 或 #）。',
+      ].join('\n');
+      const input = turns.length ? `最近的對話：\n${transcript(turns)}\n\n使用者現在說：${text}` : text;
+      const client = new GoogleGenAI({ apiKey });
+      const interaction = await client.interactions.create({ model: GEMINI_MODEL, system_instruction: system, tools: [USE_AGENT_TOOL], input });
+      await this.aiUsage.record({
+        userId,
+        feature,
+        model: GEMINI_MODEL,
+        inputTokens: interaction.usage?.total_input_tokens ?? 0,
+        outputTokens: interaction.usage?.total_output_tokens ?? 0,
+        durationMs: Date.now() - startedAt,
+        status: AiUsageStatus.SUCCESS,
+      });
+      if ((interaction.steps ?? []).some((s) => s.type === 'function_call')) return null;
+      const reply = (interaction.output_text ?? '').trim();
+      return reply && reply !== NOT_HANDLED ? reply : null;
+    } catch (error) {
+      await this.aiUsage.record({
+        userId,
+        feature,
+        model: GEMINI_MODEL,
+        inputTokens: 0,
+        outputTokens: 0,
+        durationMs: Date.now() - startedAt,
+        status: AiUsageStatus.FAILED,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      // 不算系統錯誤：直接交給 Agent，使用者感覺不到。
+      this.logger.warn(`閒聊 AI 失敗，改用 Agent：${String(error)}`);
+      return null;
+    }
   }
 
   /** `state` is null when this message starts a new conversation. */
@@ -408,7 +554,8 @@ export class AiAgentService {
         model: GEMINI_MODEL,
         system_instruction: await this.systemInstruction(ctx),
         tools: ALL_TOOLS,
-        ...(active && { previous_interaction_id: state.aiInteractionId! }),
+        // 前幾輪可能都是閒聊（沒有 Agent 對話串），那就從頭開始。
+        ...(active && state.aiInteractionId && { previous_interaction_id: state.aiInteractionId }),
         input: params.text,
       });
       inputTokens += interaction.usage?.total_input_tokens ?? 0;

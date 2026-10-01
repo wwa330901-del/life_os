@@ -953,6 +953,9 @@ model LineAccountLink {
   /// 另一則訊息，AI 不能自己提議又自己確認。
   pendingAiAction     Json?
   pendingAiActionTurn String?
+  /// 閒聊分流（2026-10-02）：最近幾輪對話 [{role,text,via,at}]，閒聊走輕量 AI、
+  /// 要做事才交給 Agent，兩邊靠這份紀錄接上下文。
+  aiRecentTurns       Json?
 
   /// 日記（2026-10-01）：每晚 21:30 沒寫日記就問一句「今天過得怎樣？」，
   /// 記下問的時間——之後 3 小時內的回覆交給 AI 記成日記。
@@ -1322,6 +1325,11 @@ model AppAiSession {
   aiInteractionAt     DateTime?
   pendingAiAction     Json?
   pendingAiActionTurn String?
+  /// 閒聊分流（2026-10-02）：最近幾輪對話 [{role,text,via,at}]，閒聊走輕量 AI、
+  /// 要做事才交給 Agent，兩邊靠這份紀錄接上下文。
+  aiRecentTurns       Json?
+  /// App 上一則回覆給的對話 id（閒聊那輪沒有 Gemini interaction id）。
+  lastTurnId          String?
 
   updatedAt DateTime @updatedAt
 }
