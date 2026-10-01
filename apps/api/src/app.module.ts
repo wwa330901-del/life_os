@@ -28,6 +28,7 @@ import { DailyBriefModule } from './daily-brief/daily-brief.module';
 import { DivinationModule } from './divination/divination.module';
 import { HealthModule } from './health/health.module';
 import { ExportModule } from './export/export.module';
+import { ErrorReportModule } from './error-report/error-report.module';
 import { SecretMigrationService } from './common/secret-migration.service';
 
 @Module({
@@ -63,6 +64,7 @@ import { SecretMigrationService } from './common/secret-migration.service';
     DivinationModule,
     HealthModule,
     ExportModule,
+    ErrorReportModule,
   ],
   controllers: [AppController],
   providers: [
