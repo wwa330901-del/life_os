@@ -246,6 +246,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
             accountId: result.accountId,
             date: result.date,
             note: result.note,
+            dueDate: result.dueDate,
           );
       _invalidate();
     } on ApiException catch (e) {
@@ -273,6 +274,8 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
             accountId: result.accountId,
             date: result.date,
             note: result.note ?? '',
+            setDueDate: true,
+            dueDate: result.dueDate,
           );
       _invalidate();
     } on ApiException catch (e) {
@@ -412,6 +415,22 @@ class _LoanCard extends StatelessWidget {
               '${loan.settled ? '' : ' · 還剩 ${formatAmount(loan.outstanding)}'}',
               style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
             ),
+            if (loan.dueDate != null && !loan.settled)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Builder(
+                  builder: (context) {
+                    final due = loan.dueDate!;
+                    final now = DateTime.now();
+                    final daysLeft = DateTime(due.year, due.month, due.day).difference(DateTime(now.year, now.month, now.day)).inDays;
+                    final when = daysLeft > 0 ? '還有 $daysLeft 天' : daysLeft == 0 ? '今天' : '已過 ${-daysLeft} 天';
+                    return Text(
+                      '約好 ${due.month}/${due.day} 還（$when）',
+                      style: TextStyle(color: daysLeft < 0 ? scheme.error : scheme.onSurface.withValues(alpha: 0.7)),
+                    );
+                  },
+                ),
+              ),
             if (loan.note != null && loan.note!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
@@ -480,6 +499,7 @@ class _LoanCreateResult {
     required this.accountId,
     required this.date,
     this.note,
+    this.dueDate,
   });
 
   final FinanceLoanDirection direction;
@@ -488,6 +508,7 @@ class _LoanCreateResult {
   final String accountId;
   final DateTime date;
   final String? note;
+  final DateTime? dueDate;
 }
 
 class _LoanCreateDialog extends StatefulWidget {
@@ -514,6 +535,7 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
   );
   late final _noteController = TextEditingController(text: widget.existing?.note ?? '');
   late DateTime _date = widget.existing?.date ?? DateTime.now();
+  late DateTime? _dueDate = widget.existing?.dueDate;
 
   @override
   void dispose() {
@@ -533,6 +555,16 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
     if (picked != null) setState(() => _date = picked);
   }
 
+  Future<void> _pickDueDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate ?? _date.add(const Duration(days: 30)),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _dueDate = picked);
+  }
+
   void _submit() {
     final accountId = _accountId;
     final counterpartyName = _counterpartyController.text.trim();
@@ -547,6 +579,7 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
         accountId: accountId,
         date: _date,
         note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+        dueDate: _dueDate,
       ),
     );
   }
@@ -604,6 +637,23 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
                     suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
                   ),
                   child: Text('${_date.year}/${_date.month}/${_date.day}'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: _pickDueDate,
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: '約定還款日（選填，到期前 LINE 提醒）',
+                    suffixIcon: _dueDate == null
+                        ? const Icon(Icons.event_outlined, size: 18)
+                        : IconButton(
+                            tooltip: '不設定',
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed: () => setState(() => _dueDate = null),
+                          ),
+                  ),
+                  child: Text(_dueDate == null ? '不設定' : '${_dueDate!.year}/${_dueDate!.month}/${_dueDate!.day}'),
                 ),
               ),
               const SizedBox(height: 12),

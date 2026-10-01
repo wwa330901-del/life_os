@@ -575,6 +575,11 @@ model FinanceLoan {
   /// the list is paginated instead of loaded whole.
   settled Boolean @default(false)
 
+  /// 約定還款日（2026-10-01，可不填）：前 3 天、當天、過期後每 7 天 LINE
+  /// 提醒，dueReminderKey 記最後一次（「日期:天數」）避免重發。
+  dueDate        DateTime? @db.Date
+  dueReminderKey String?
+
   initialTransaction FinanceTransaction?    @relation("LoanInitialTransaction")
   repayments         FinanceLoanRepayment[]
 

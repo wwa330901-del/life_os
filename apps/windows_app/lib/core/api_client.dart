@@ -882,6 +882,7 @@ class ApiClient {
     required String accountId,
     required DateTime date,
     String? note,
+    DateTime? dueDate,
   }) async {
     await _post('/spaces/$spaceId/finance/loans', {
       'direction': direction.toJson(),
@@ -890,6 +891,7 @@ class ApiClient {
       'accountId': accountId,
       'date': _dateOnly(date),
       if (note != null && note.isNotEmpty) 'note': note,
+      if (dueDate != null) 'dueDate': _dateOnly(dueDate),
     });
   }
 
@@ -917,6 +919,8 @@ class ApiClient {
     String? accountId,
     DateTime? date,
     String? note,
+    bool setDueDate = false,
+    DateTime? dueDate,
   }) async {
     await _patch('/spaces/$spaceId/finance/loans/$id', {
       if (counterpartyName != null) 'counterpartyName': counterpartyName,
@@ -924,6 +928,8 @@ class ApiClient {
       if (accountId != null) 'accountId': accountId,
       if (date != null) 'date': _dateOnly(date),
       if (note != null) 'note': note,
+      // [setDueDate] 才送：dueDate 是 null 代表清掉約定還款日。
+      if (setDueDate) 'dueDate': dueDate == null ? null : _dateOnly(dueDate),
     });
   }
 

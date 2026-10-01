@@ -263,7 +263,7 @@ export class LineService {
    * while no AI conversation is active — routed to it before the
    * batch/command parsers so e.g. a multi-line book reflection isn't split
    * into per-line 記帳 commands. */
-  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年/;
+  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我/;
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
   // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
@@ -298,6 +298,12 @@ export class LineService {
           '「午餐 120」「昨天加油 1500 刷卡」',
           '收據、發票直接拍照傳給我，自動讀金額記帳',
           '「這個月花了多少？」「上週吃飯花多少」',
+          '「國泰卡每月 5 號結帳、20 號繳款，從台新扣」設好會提醒繳卡費',
+          '「借小明 5000，他說月底還」到期前會提醒你去收',
+          '',
+          '🧠 記住你的事',
+          '「記住我不吃牛」「我太太叫小美，喜歡多肉植物」',
+          '「媽媽生日是農曆 9 月 1 號」前 7 天、前 1 天、當天提醒',
           '',
           '✅ 代辦',
           '「提醒我週五交報告」「報告做完了」',

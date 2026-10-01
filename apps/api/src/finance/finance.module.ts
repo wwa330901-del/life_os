@@ -20,6 +20,7 @@ import { FinanceLoansService } from './finance-loans.service';
 import { FinanceAdvancesController } from './finance-advances.controller';
 import { FinanceAdvancesService } from './finance-advances.service';
 import { CreditCardService } from './credit-card.service';
+import { LoanDueReminderService } from './loan-due-reminder.service';
 
 @Module({
   imports: [SpacesModule, LineNotifierModule, UsersModule, FriendsModule],
@@ -43,6 +44,7 @@ import { CreditCardService } from './credit-card.service';
     FinanceLoansService,
     FinanceAdvancesService,
     CreditCardService,
+    LoanDueReminderService,
   ],
   // Reused directly by LineModule so the LINE 財務總覽 command shares the
   // exact same balance/summary logic as the app's own finance screens,

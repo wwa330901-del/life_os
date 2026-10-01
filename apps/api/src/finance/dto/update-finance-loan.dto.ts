@@ -22,4 +22,9 @@ export class UpdateFinanceLoanDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  /// 約定還款日 YYYY-MM-DD；null＝清掉。
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string | null;
 }

@@ -83,6 +83,7 @@ export class FinanceLoansService {
         spaceId,
         direction: dto.direction,
         counterpartyName: dto.counterpartyName,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         initialTransaction: {
           create: {
             spaceId,
@@ -157,10 +158,14 @@ export class FinanceLoansService {
     const loan = await this.getOrThrow(spaceId, loanId);
     if (dto.accountId) await this.assertAccount(spaceId, dto.accountId);
 
-    if (dto.counterpartyName !== undefined) {
+    if (dto.counterpartyName !== undefined || dto.dueDate !== undefined) {
       await this.prisma.financeLoan.update({
         where: { id: loanId },
-        data: { counterpartyName: dto.counterpartyName },
+        data: {
+          ...(dto.counterpartyName !== undefined && { counterpartyName: dto.counterpartyName }),
+          // 改日期就重新開始提醒。
+          ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null, dueReminderKey: null }),
+        },
       });
     }
 

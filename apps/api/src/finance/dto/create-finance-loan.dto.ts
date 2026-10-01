@@ -22,4 +22,9 @@ export class CreateFinanceLoanDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  /// 約定還款日 YYYY-MM-DD（可不填）。
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
 }

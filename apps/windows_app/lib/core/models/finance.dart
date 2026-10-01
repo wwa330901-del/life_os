@@ -435,9 +435,13 @@ class FinanceLoan {
     required this.settled,
     required this.repayments,
     this.note,
+    this.dueDate,
     this.inviteSentToName,
     this.inviteAccepted,
   });
+
+  /// 約定還款日（可不填），到期前 LINE 會提醒。
+  final DateTime? dueDate;
 
   final String id;
   final FinanceLoanDirection direction;
@@ -467,6 +471,7 @@ class FinanceLoan {
       note: initial['note'] as String?,
       outstanding: (json['outstanding'] as num).toDouble(),
       settled: json['settled'] as bool,
+      dueDate: json['dueDate'] == null ? null : DateTime.parse(json['dueDate'] as String),
       repayments: (json['repayments'] as List<dynamic>? ?? const [])
           .map((e) => FinanceSettlementEntry.fromJson(e as Map<String, dynamic>))
           .toList(),

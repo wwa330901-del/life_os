@@ -8,7 +8,7 @@ import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { StocksTransactionsService } from '../stocks/stocks-transactions.service';
 import { CreditCardService } from '../finance/credit-card.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
-import { taipeiDateKey, taipeiWallClockToUtc } from '../common/taipei-date';
+import { taipeiDateKey, taipeiWallClockToUtc, utcDateKey } from '../common/taipei-date';
 import { FinanceAccountType, FinanceLoanDirection, FinanceTransactionType, StockTransactionType } from '../../generated/prisma/client.js';
 
 type Args = Record<string, unknown>;
@@ -16,7 +16,7 @@ type Args = Record<string, unknown>;
 /** A write that only runs after the user confirms in a later message —
  * the agent stores it as its `pendingAiAction`. */
 export type RecordPending =
-  | { kind: 'loan'; summary: string; data: { direction: FinanceLoanDirection; counterpartyName: string; amount: number; accountId: string; date: string; note?: string } }
+  | { kind: 'loan'; summary: string; data: { direction: FinanceLoanDirection; counterpartyName: string; amount: number; accountId: string; date: string; note?: string; dueDate?: string } }
   | { kind: 'loan_repayment'; summary: string; data: { loanId: string; amount: number; accountId: string; date: string } }
   | { kind: 'advance'; summary: string; data: { title: string; amount: number; accountId: string; date: string; note?: string } }
   | { kind: 'advance_repayment'; summary: string; data: { advanceId: string; amount: number; accountId: string; date: string } }
@@ -73,7 +73,8 @@ export const RECORD_TOOLS = [
   {
     type: 'function' as const,
     name: 'propose_loan',
-    description: '登記一筆借貸：LEND＝我借錢給別人，BORROW＝我跟別人借錢。回傳 needsConfirmation，要問使用者確認。',
+    description:
+      '登記一筆借貸：LEND＝我借錢給別人，BORROW＝我跟別人借錢。有講什麼時候還就填 dueDate（約定還款日，會提醒）。回傳 needsConfirmation，要問使用者確認。',
     parameters: {
       type: 'object',
       properties: {
@@ -81,10 +82,22 @@ export const RECORD_TOOLS = [
         counterpartyName: { type: 'string' },
         amount: { type: 'number' },
         note: { type: 'string' },
+        dueDate: { type: 'string', description: '約定還款日 YYYY-MM-DD，沒講就不填' },
         ...optionalAccount,
         ...optionalDate,
       },
       required: ['direction', 'counterpartyName', 'amount'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'set_loan_due_date',
+    description:
+      '設定或改借貸的約定還款日（loanId 從 list_loans_and_advances 取得），dueDate 給空字串＝取消。設好後前 3 天、當天、過期每 7 天會 LINE 提醒。',
+    parameters: {
+      type: 'object',
+      properties: { loanId: { type: 'string' }, dueDate: { type: 'string', description: 'YYYY-MM-DD' } },
+      required: ['loanId', 'dueDate'],
     },
   },
   {
@@ -251,6 +264,7 @@ export class RecordToolsService {
             direction: l.direction === FinanceLoanDirection.LEND ? '我借出' : '我借入',
             counterparty: l.counterpartyName,
             outstanding: l.outstanding,
+            dueDate: l.dueDate ? utcDateKey(l.dueDate) : null,
           })),
           advances: advances.items.map((a) => ({ id: a.id, title: a.title, outstanding: a.outstanding })),
         };
@@ -261,8 +275,15 @@ export class RecordToolsService {
         const direction = args.direction === 'BORROW' ? FinanceLoanDirection.BORROW : FinanceLoanDirection.LEND;
         const who = String(args.counterpartyName ?? '').trim();
         if (!who) throw new Error('要知道是跟誰借貸');
-        const summary = `${direction === FinanceLoanDirection.LEND ? `借出 ${fmt(amount)} 給${who}，從` : `跟${who}借 ${fmt(amount)}，存進`}「${account.name}」（${date}）`;
-        return { pending: { kind: 'loan', summary, data: { direction, counterpartyName: who, amount, accountId: account.id, date, ...(typeof args.note === 'string' && args.note && { note: args.note }) } } };
+        const dueDate = typeof args.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.dueDate) ? args.dueDate : undefined;
+        const summary = `${direction === FinanceLoanDirection.LEND ? `借出 ${fmt(amount)} 給${who}，從` : `跟${who}借 ${fmt(amount)}，存進`}「${account.name}」（${date}）${dueDate ? `，約好 ${dueDate} 還` : ''}`;
+        return { pending: { kind: 'loan', summary, data: { direction, counterpartyName: who, amount, accountId: account.id, date, ...(typeof args.note === 'string' && args.note && { note: args.note }), ...(dueDate && { dueDate }) } } };
+      }
+      case 'set_loan_due_date': {
+        const raw = String(args.dueDate ?? '').trim();
+        if (raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new Error('日期要是 YYYY-MM-DD');
+        const loan = await this.loans.update(userId, spaceId, String(args.loanId ?? ''), { dueDate: raw || null });
+        return { saved: true, counterparty: loan.counterpartyName, dueDate: raw || '已取消', reminders: raw ? '前 3 天、當天、過期每 7 天提醒' : null };
       }
       case 'propose_loan_repayment': {
         if (!(amount > 0)) throw new Error('金額要大於 0');
