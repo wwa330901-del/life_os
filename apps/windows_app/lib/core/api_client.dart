@@ -1428,6 +1428,13 @@ class ApiClient {
     await _delete('/life-goals/$id');
   }
 
+  /// 匯出全部資料：一個 Excel 檔的內容。
+  Future<List<int>> downloadExport() async {
+    final res = await http.get(Uri.parse('$baseUrl/export/xlsx'), headers: _headers);
+    if (res.statusCode != 200) _decodeObject(res);
+    return res.bodyBytes;
+  }
+
   /// 提醒設定 — `{linked, morningBriefEnabled, journalReminderEnabled, todoReminderEnabled, reviewEnabled, goalReminderEnabled}`.
   Future<Map<String, dynamic>> getReminderSettings() => _get('/line/settings');
 

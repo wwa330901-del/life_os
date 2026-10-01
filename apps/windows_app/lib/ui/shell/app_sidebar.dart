@@ -9,6 +9,7 @@ import '../../state/auth_provider.dart';
 import '../../state/ui_prefs_provider.dart';
 import '../widgets/ai_settings_dialog.dart';
 import '../widgets/reminder_settings_dialog.dart';
+import '../widgets/export_backup.dart';
 import '../screens/friends/friends_dialog.dart';
 import 'space_switcher_list.dart';
 
@@ -191,6 +192,12 @@ class _SidebarPanel extends ConsumerWidget {
               label: 'AI 設定',
               selected: false,
               onTap: () => showDialog(context: context, builder: (_) => const AiSettingsDialog()),
+            ),
+            _NavItem(
+              icon: Icons.download_outlined,
+              label: '匯出備份',
+              selected: false,
+              onTap: () => exportBackup(context, ref),
             ),
             _NavItem(
               icon: Icons.people_outline,
