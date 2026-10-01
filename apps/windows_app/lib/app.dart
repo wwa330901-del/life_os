@@ -6,6 +6,7 @@ import 'state/ai_assistant_provider.dart';
 import 'state/auth_provider.dart';
 import 'state/divination_provider.dart';
 import 'state/journal_provider.dart';
+import 'state/health_provider.dart';
 import 'state/knowledge_provider.dart';
 import 'state/life_goal_provider.dart';
 import 'state/space_provider.dart';
@@ -16,6 +17,7 @@ import 'ui/screens/space_picker_screen.dart';
 import 'ui/shell/ai_assistant_shell.dart';
 import 'ui/shell/divination_shell.dart';
 import 'ui/shell/journal_shell.dart';
+import 'ui/shell/health_shell.dart';
 import 'ui/shell/knowledge_shell.dart';
 import 'ui/shell/life_goals_shell.dart';
 import 'ui/shell/space_shell.dart';
@@ -94,6 +96,9 @@ class _RootRouter extends ConsumerWidget {
     }
     if (ref.watch(showJournalProvider)) {
       return const JournalShell();
+    }
+    if (ref.watch(showHealthProvider)) {
+      return const HealthShell();
     }
     if (ref.watch(showDivinationProvider)) {
       return const DivinationShell();

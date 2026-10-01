@@ -5,6 +5,8 @@ import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
 import { FinanceBudgetsService } from '../finance/finance-budgets.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
+import { HealthService } from '../health/health.service';
+import { formatMinutes } from '../health/health-parse';
 import { formatTaipeiDateTime, taipeiCurrentMonth, taipeiDateKey, taipeiDateKeyToUtcMidnight, taipeiTodayRange } from '../common/taipei-date';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -12,6 +14,8 @@ const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 const LIST_MAX = 6;
 const BUDGET_WARN_RATIO = 0.8;
 const DUE_REMINDER_LEAD_MS = 60 * 60 * 1000;
+const SHORT_SLEEP_MINUTES = 6 * 60;
+const SHORT_SLEEP_STREAK = 3;
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
@@ -30,6 +34,7 @@ export class DailyBriefService {
     private readonly transactions: FinanceTransactionsService,
     private readonly budgets: FinanceBudgetsService,
     private readonly lineNotifier: LineNotifierService,
+    private readonly health: HealthService,
   ) {}
 
   @Cron('0 8 * * *', { timeZone: 'Asia/Taipei' })
@@ -105,10 +110,25 @@ export class DailyBriefService {
       if (lines.length > 0) sections.push(['💰 錢', ...lines].join('\n'));
     }
 
+    const sleep = await this.sleepSection(userId, now);
+    if (sleep) sections.push(sleep);
+
     if (sections.length === 0) return null;
     const shifted = new Date(now.getTime() + 8 * 60 * 60 * 1000);
     const title = `☀️ 早安！${shifted.getUTCMonth() + 1}/${shifted.getUTCDate()}（${WEEKDAYS[shifted.getUTCDay()]}）`;
     return [title, '', sections.join('\n\n'), '', '（不想收到早報就傳「關閉早報」）'].join('\n');
+  }
+
+  /** 昨晚睡多久；連續 3 晚不到 6 小時就提醒早點睡。 */
+  private async sleepSection(userId: string, now: Date): Promise<string | null> {
+    const nights = await this.health.recentSleeps(userId, SHORT_SLEEP_STREAK);
+    const last = nights[0];
+    if (!last || last.date.toISOString().slice(0, 10) !== taipeiDateKey(now)) return null;
+    const lines = ['😴 睡眠', `昨晚睡了 ${formatMinutes(last.minutes!)}`];
+    if (nights.length === SHORT_SLEEP_STREAK && nights.every((n) => n.minutes! < SHORT_SLEEP_MINUTES)) {
+      lines.push(`已經連續 ${SHORT_SLEEP_STREAK} 晚睡不到 6 小時了，今晚早點睡吧`);
+    }
+    return lines.join('\n');
   }
 
   /** Every 5 minutes: timed todos due within the next hour, once each. */

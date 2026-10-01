@@ -109,6 +109,10 @@ model User {
   birthDate DateTime? @db.Date
   birthTime String?
 
+  /// 健康（2026-10-01）：iPhone 捷徑自動上傳睡眠/步數/體重用的私人金鑰
+  /// （POST /health/ingest 帶 Authorization: Bearer <這個>），App 可重新產生。
+  healthIngestToken String? @unique
+
   /// This user's 首頁 widget layout — which widgets are shown and in what
   /// order, e.g. `{ widgets: [{ type: "personalFinance", visible: true },
   /// ...] }`. Null means "use the default layout" (all widgets, default
@@ -125,6 +129,7 @@ model User {
   appAiSession               AppAiSession?
   journalEntries             JournalEntry[]
   divinations                DivinationRecord[]
+  healthRecords              HealthRecord[]
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")
   googleCalendarConnections  GoogleCalendarConnection[]
   appleCalendarConnections   AppleCalendarConnection[]
@@ -1318,4 +1323,42 @@ model DivinationRecord {
   createdAt DateTime @default(now())
 
   @@index([ownerUserId, createdAt])
+}
+
+enum HealthRecordType {
+  SLEEP
+  EXERCISE
+  WEIGHT
+  STEPS
+}
+
+/// 健康（2026-10-01）——睡眠、運動、體重、步數。LINE 用講的、App 手動、
+/// 或 iPhone 捷徑自動上傳（source＝SHORTCUT）。
+/// - SLEEP：date＝起床那天；startAt/endAt＝幾點睡幾點起；minutes＝睡多久。
+///   捷徑「睡覺」事件先建一筆只有 startAt 的，「起床」再補上 endAt。
+/// - EXERCISE：activity（跑步/重訓…）＋minutes。
+/// - WEIGHT：value＝公斤。STEPS：value＝當天步數。
+/// externalKey：捷徑同一天同一種資料重傳時用來覆蓋，不會重複。
+model HealthRecord {
+  id          String @id @default(uuid())
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  type     HealthRecordType
+  date     DateTime         @db.Date
+  startAt  DateTime?
+  endAt    DateTime?
+  minutes  Int?
+  value    Float?
+  activity String?
+  note     String?
+  source   String           @default("MANUAL")
+
+  externalKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerUserId, externalKey])
+  @@index([ownerUserId, type, date])
 }

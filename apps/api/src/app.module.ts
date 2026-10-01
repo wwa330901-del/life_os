@@ -26,6 +26,7 @@ import { LifeReviewModule } from './life-review/life-review.module';
 import { JournalModule } from './journal/journal.module';
 import { DailyBriefModule } from './daily-brief/daily-brief.module';
 import { DivinationModule } from './divination/divination.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { DivinationModule } from './divination/divination.module';
     JournalModule,
     DailyBriefModule,
     DivinationModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [

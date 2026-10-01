@@ -25,6 +25,7 @@ import { JOURNAL_AI_GUIDE, JOURNAL_TOOLS, JournalAiService } from '../journal/jo
 import { FinanceHealthService } from '../finance/finance-health.service';
 import { FinancePlanService } from '../finance/finance-plan.service';
 import { DIVINATION_AI_GUIDE, DIVINATION_TOOLS, DivinationAiService } from '../divination/divination-ai.service';
+import { HEALTH_AI_GUIDE, HEALTH_TOOLS, HealthAiService } from '../health/health-ai.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
@@ -225,7 +226,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...HEALTH_TOOLS, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -286,6 +287,7 @@ export class AiAgentService {
     private readonly recordTools: RecordToolsService,
     private readonly divinationTools: DivinationAiService,
     private readonly financePlan: FinancePlanService,
+    private readonly healthTools: HealthAiService,
   ) {}
 
   static isConversationActive(
@@ -498,7 +500,7 @@ export class AiAgentService {
 
     return [
       `你是「元序」的生活助理（使用者現在在${ctx.channel.kind === 'line' ? ' LINE ' : ' App 的 AI 問答'}跟你聊），像一個熟悉使用者生活的真人朋友兼秘書，用自然口語聊天。` +
-      '使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
+      '使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、記睡眠運動、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
       `現在是 ${today}（台北時間）。「明天」「下週三」這類說法都以這個日期換算成 YYYY-MM-DD。`,
       '',
       '【記帳】',
@@ -522,6 +524,9 @@ export class AiAgentService {
       '【日記】',
       JOURNAL_AI_GUIDE,
       ...(ctx.journalPrompted ? ['今晚你剛用 LINE 問過他「今天過得怎樣？」——這則訊息如果是在講今天，就記成日記。'] : []),
+      '',
+      '【健康】',
+      HEALTH_AI_GUIDE,
       '',
       '【股票】',
       STOCK_AI_GUIDE,
@@ -570,6 +575,7 @@ export class AiAgentService {
     }
     if (DivinationAiService.toolNames.has(name)) return this.divinationTools.execute(ctx.userId, name, args);
     if (JournalAiService.toolNames.has(name)) return this.journalTools.execute(ctx.userId, name, args);
+    if (HealthAiService.toolNames.has(name)) return this.healthTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
     switch (name) {
