@@ -40,6 +40,8 @@ class DivinationRecord {
     required this.hexagram,
     required this.interpretation,
     required this.summary,
+    this.accuracy,
+    this.feedback,
   });
 
   final String id;
@@ -50,6 +52,10 @@ class DivinationRecord {
 
   /// 本卦／互卦／變卦／體用 one-liners for display.
   final List<String> summary;
+
+  /// 事後準不準：3＝準、2＝部分準、1＝不準，null＝還沒回饋。
+  final int? accuracy;
+  final String? feedback;
 
   factory DivinationRecord.fromJson(Map<String, dynamic> json) {
     final r = json['reading'] as Map<String, dynamic>;
@@ -67,6 +73,10 @@ class DivinationRecord {
         '本卦 ${name('original')}（第 ${r['movingLine']} 爻動）→ 互卦 ${name('mutual')} → 變卦 ${name('changed')}',
         '體 ${ti['trigram']}${ti['element']}、用 ${yong['trigram']}${yong['element']}：${r['relation']}',
       ],
+      accuracy: json['accuracy'] as int?,
+      feedback: json['feedback'] as String?,
     );
   }
 }
+
+const divinationAccuracyLabel = {3: '準', 2: '部分準', 1: '不準'};

@@ -90,6 +90,14 @@ class _DivinationScreenState extends ConsumerState<DivinationScreen> {
           ),
           const SizedBox(height: 24),
           Text('算過的卦', style: Theme.of(context).textTheme.titleMedium),
+          if (historyAsync.value case final records? when records.any((r) => r.accuracy != null))
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _accuracySummary(records),
+                style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+              ),
+            ),
           const SizedBox(height: 8),
           historyAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -107,7 +115,9 @@ class _DivinationScreenState extends ConsumerState<DivinationScreen> {
                               '${record.hexagram}　${record.castAt.year}/${record.castAt.month}/${record.castAt.day} '
                               '${record.castAt.hour.toString().padLeft(2, '0')}:${record.castAt.minute.toString().padLeft(2, '0')}',
                             ),
-                            trailing: const Icon(Icons.chevron_right),
+                            trailing: record.accuracy == null
+                                ? const Icon(Icons.chevron_right)
+                                : Chip(label: Text(divinationAccuracyLabel[record.accuracy]!), visualDensity: VisualDensity.compact),
                             onTap: () => showDialog<void>(context: context, builder: (_) => _ReadingDialog(record: record)),
                           ),
                         ),
@@ -261,13 +271,53 @@ class _BirthDialogState extends ConsumerState<_BirthDialog> {
   }
 }
 
-class _ReadingDialog extends ConsumerWidget {
+String _accuracySummary(List<DivinationRecord> records) {
+  final rated = records.where((r) => r.accuracy != null).toList();
+  int count(int a) => rated.where((r) => r.accuracy == a).length;
+  return '回饋過 ${rated.length} 次：準 ${count(3)}、部分準 ${count(2)}、不準 ${count(1)}（解卦會參考）';
+}
+
+class _ReadingDialog extends ConsumerStatefulWidget {
   const _ReadingDialog({required this.record});
 
   final DivinationRecord record;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ReadingDialog> createState() => _ReadingDialogState();
+}
+
+class _ReadingDialogState extends ConsumerState<_ReadingDialog> {
+  late int? _accuracy = widget.record.accuracy;
+  late final _feedbackController = TextEditingController(text: widget.record.feedback ?? '');
+  bool _saving = false;
+
+  DivinationRecord get record => widget.record;
+
+  @override
+  void dispose() {
+    _feedbackController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveFeedback() async {
+    final accuracy = _accuracy;
+    if (accuracy == null) return;
+    setState(() => _saving = true);
+    try {
+      final text = _feedbackController.text.trim();
+      await ref.read(apiClientProvider).setDivinationFeedback(record.id, accuracy, text.isEmpty ? null : text);
+      ref.invalidate(divinationHistoryProvider);
+      if (mounted) Navigator.of(context).pop();
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Text('${record.hexagram}・${record.question}'),
@@ -281,6 +331,25 @@ class _ReadingDialog extends ConsumerWidget {
                 Text(line, style: TextStyle(fontSize: 13, color: scheme.onSurface.withValues(alpha: 0.7))),
               const Divider(height: 24),
               SelectableText(record.interpretation),
+              const Divider(height: 24),
+              Text('後來準不準？', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final a in const [3, 2, 1])
+                    ChoiceChip(
+                      label: Text(divinationAccuracyLabel[a]!),
+                      selected: _accuracy == a,
+                      onSelected: (_) => setState(() => _accuracy = a),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _feedbackController,
+                decoration: const InputDecoration(hintText: '實際發生了什麼？（可不填）'),
+              ),
             ],
           ),
         ),
@@ -294,7 +363,8 @@ class _ReadingDialog extends ConsumerWidget {
           },
           child: const Text('刪除'),
         ),
-        FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉')),
+        FilledButton(onPressed: _saving || _accuracy == null ? null : _saveFeedback, child: const Text('儲存回饋')),
       ],
     );
   }

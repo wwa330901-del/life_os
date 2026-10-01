@@ -7,6 +7,10 @@ import { AiUsageStatus, Prisma } from '../../generated/prisma/client.js';
 import { birthChart, castByTime, MeihuaReading } from './meihua';
 
 const HISTORY_LIMIT = 30;
+/** How many past readings with feedback the interpreter gets to calibrate on. */
+const FEEDBACK_CONTEXT = 5;
+
+export const ACCURACY_LABEL: Record<number, string> = { 3: '準', 2: '部分準', 1: '不準' };
 
 export function formatReading(r: MeihuaReading): string {
   return [
@@ -62,6 +66,33 @@ export class DivinationService {
     return { deleted: true };
   }
 
+  /** 準不準：3＝準、2＝部分準、1＝不準。Also ends any LINE「準不準？」question about it. */
+  async setFeedback(userId: string, id: string, accuracy: number, feedback?: string | null) {
+    if (![1, 2, 3].includes(accuracy)) throw new BadRequestException('準不準要是 1～3');
+    const record = await this.prisma.divinationRecord.findFirst({ where: { id, ownerUserId: userId } });
+    if (!record) throw new BadRequestException('找不到這筆算命紀錄');
+    await this.prisma.lineAccountLink.updateMany({
+      where: { userId, divinationFeedbackId: id },
+      data: { divinationFeedbackId: null, divinationFeedbackAt: null },
+    });
+    return this.prisma.divinationRecord.update({
+      where: { id },
+      data: { accuracy, feedback: feedback?.trim() || null, feedbackAt: new Date() },
+    });
+  }
+
+  /** 回饋過幾次、各幾次。 */
+  async feedbackStats(userId: string) {
+    const groups = await this.prisma.divinationRecord.groupBy({
+      by: ['accuracy'],
+      where: { ownerUserId: userId, accuracy: { not: null } },
+      _count: true,
+    });
+    const count = (a: number) => groups.find((g) => g.accuracy === a)?._count ?? 0;
+    const total = count(1) + count(2) + count(3);
+    return { total, accurate: count(3), partly: count(2), inaccurate: count(1) };
+  }
+
   /** 用現在的時間起卦並解卦。 */
   async cast(userId: string, question: string, now = new Date()) {
     const q = question.trim();
@@ -76,7 +107,12 @@ export class DivinationService {
 
     const reading = castByTime(now);
     const chart = user.birthDate ? birthChart(user.birthDate.toISOString().slice(0, 10), user.birthTime) : null;
-    const interpretation = await this.interpret(userId, user.geminiApiKey, q, reading, chart);
+    const past = await this.prisma.divinationRecord.findMany({
+      where: { ownerUserId: userId, accuracy: { not: null } },
+      orderBy: { feedbackAt: 'desc' },
+      take: FEEDBACK_CONTEXT,
+    });
+    const interpretation = await this.interpret(userId, user.geminiApiKey, q, reading, chart, past);
 
     return this.prisma.divinationRecord.create({
       data: {
@@ -96,6 +132,7 @@ export class DivinationService {
     question: string,
     reading: MeihuaReading,
     chart: ReturnType<typeof birthChart> | null,
+    past: Array<{ question: string; hexagram: string; interpretation: string; accuracy: number | null; feedback: string | null }> = [],
   ): Promise<string> {
     const prompt = [
       '你是精通梅花易數的老師。以下卦象是依「年月日時起卦法」用問事當下的時間算出來的，請針對問題解卦。',
@@ -104,6 +141,17 @@ export class DivinationService {
       chart
         ? `問卦人：農曆生日 ${chart.lunarBirthday}，生肖${chart.zodiac}，八字 ${chart.pillars}，日主 ${chart.dayMaster}`
         : '問卦人沒有提供生辰。',
+      '',
+      ...(past.length > 0
+        ? [
+            '',
+            '這個人過去算過、事後回報準不準（參考哪種判斷方式對他比較準，但這次仍以這次卦象為主）：',
+            ...past.map(
+              (p) =>
+                `- 問「${p.question}」得${p.hexagram}，當時結論：${p.interpretation.split('\n')[0].slice(0, 60)} → 事後：${ACCURACY_LABEL[p.accuracy ?? 0] ?? '?'}${p.feedback ? `（${p.feedback.slice(0, 60)}）` : ''}`,
+            ),
+          ]
+        : []),
       '',
       '解卦方式：以體用生剋為主、參考體卦旺衰；本卦看現況、互卦看過程、變卦看結果；可引用本卦卦辭與動爻爻辭的意思。',
       '回答格式（繁體中文、不要用 Markdown 符號、300 字以內）：',

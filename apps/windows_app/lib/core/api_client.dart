@@ -1260,6 +1260,11 @@ class ApiClient {
     return DivinationRecord.fromJson(await _post('/divination/cast', {'question': question}));
   }
 
+  /// [accuracy]：3＝準、2＝部分準、1＝不準。
+  Future<void> setDivinationFeedback(String id, int accuracy, String? feedback) async {
+    await _post('/divination/$id/feedback', {'accuracy': accuracy, 'feedback': ?feedback});
+  }
+
   Future<void> deleteDivination(String id) async {
     await _delete('/divination/$id');
   }

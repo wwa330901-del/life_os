@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { DivinationService } from './divination.service';
+import { ACCURACY_LABEL, DivinationService } from './divination.service';
+
+const ACCURACY_BY_NAME: Record<string, number> = { accurate: 3, partly: 2, inaccurate: 1 };
 
 export const DIVINATION_TOOLS = [
   {
@@ -25,13 +27,28 @@ export const DIVINATION_TOOLS = [
   {
     type: 'function' as const,
     name: 'list_divinations',
-    description: '看使用者之前算過的卦（題目、卦名、解卦）。',
+    description: '看使用者之前算過的卦（id、題目、卦名、解卦、事後準不準）。',
     parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
+    name: 'record_divination_feedback',
+    description:
+      '記下之前算的卦事後準不準。accuracy：accurate（準）、partly（部分準）、inaccurate（不準）；feedback 用他的話簡短記下實際發生什麼。不知道是哪一筆就先 list_divinations 找（依題目對）。',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        accuracy: { type: 'string', enum: ['accurate', 'partly', 'inaccurate'] },
+        feedback: { type: 'string' },
+      },
+      required: ['id', 'accuracy'],
+    },
   },
 ];
 
 export const DIVINATION_AI_GUIDE =
-  '只說「算命」「占卜」沒講要算什麼 → 先問他想算哪件事（例如「這次面試會不會上」），不要直接起卦；他回答後再起卦。使用者說想算什麼、問運勢、要占卜 → cast_meihua，把回傳的 interpretation 完整轉述給他（可以前面加一句卦名）。他講自己的生日 → set_birth_info。還沒有生辰也可以直接算，算完順便提醒可以告訴你生日讓解卦更準。';
+  '只說「算命」「占卜」沒講要算什麼 → 先問他想算哪件事（例如「這次面試會不會上」），不要直接起卦；他回答後再起卦。使用者說想算什麼、問運勢、要占卜 → cast_meihua，把回傳的 interpretation 完整轉述給他（可以前面加一句卦名）。他講自己的生日 → set_birth_info。還沒有生辰也可以直接算，算完順便提醒可以告訴你生日讓解卦更準。使用者講之前算的事後來怎樣（「上次算的面試真的上了」）→ record_divination_feedback。';
 
 @Injectable()
 export class DivinationAiService {
@@ -56,11 +73,25 @@ export class DivinationAiService {
       case 'list_divinations': {
         const records = await this.divination.list(userId);
         return records.slice(0, 10).map((r) => ({
+          id: r.id,
           date: r.createdAt.toISOString().slice(0, 10),
+          result: r.accuracy ? `${ACCURACY_LABEL[r.accuracy]}${r.feedback ? `：${r.feedback}` : ''}` : '還沒回饋',
           question: r.question,
           hexagram: r.hexagram,
           interpretation: r.interpretation.slice(0, 200),
         }));
+      }
+      case 'record_divination_feedback': {
+        const accuracy = ACCURACY_BY_NAME[String(args.accuracy)];
+        if (!accuracy) return { error: 'accuracy 要是 accurate/partly/inaccurate' };
+        const record = await this.divination.setFeedback(
+          userId,
+          String(args.id),
+          accuracy,
+          typeof args.feedback === 'string' ? args.feedback : null,
+        );
+        const stats = await this.divination.feedbackStats(userId);
+        return { saved: true, question: record.question, result: ACCURACY_LABEL[accuracy], overall: stats };
       }
       default:
         throw new Error(`未知的工具：${name}`);

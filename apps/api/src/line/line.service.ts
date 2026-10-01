@@ -438,6 +438,7 @@ export class LineService {
       !LineService.MENU_COMMANDS.has(text) &&
       (AiAgentService.isConversationActive(link) ||
         AiAgentService.isJournalPromptActive(link) ||
+        AiAgentService.divinationFeedbackPending(link) != null ||
         LineService.AI_FIRST_HINT.test(text));
     if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey))) return;
 

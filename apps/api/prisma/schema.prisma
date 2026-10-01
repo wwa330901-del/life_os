@@ -936,6 +936,9 @@ model LineAccountLink {
   todoReminderEnabled    Boolean   @default(true)
   reviewEnabled          Boolean   @default(true)
   goalReminderEnabled    Boolean   @default(true)
+  /// 算命回饋：LINE 剛問過哪一筆算命準不準——24 小時內的回覆交給 AI 記成回饋。
+  divinationFeedbackId   String?
+  divinationFeedbackAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1323,6 +1326,13 @@ model DivinationRecord {
   hexagram       String
   reading        Json
   interpretation String
+
+  /// 準不準（2026-10-01）：3＝準、2＝部分準、1＝不準；算完 7 天 LINE 會問一次
+  /// （feedbackAskedAt），也可以在 App 自己按。之後解卦會參考過去的回饋。
+  accuracy        Int?
+  feedback        String?
+  feedbackAt      DateTime?
+  feedbackAskedAt DateTime?
 
   createdAt DateTime @default(now())
 

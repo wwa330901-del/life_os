@@ -27,6 +27,7 @@ import { FinancePlanService } from '../finance/finance-plan.service';
 import { DIVINATION_AI_GUIDE, DIVINATION_TOOLS, DivinationAiService } from '../divination/divination-ai.service';
 import { HEALTH_AI_GUIDE, HEALTH_TOOLS, HealthAiService } from '../health/health-ai.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
+import { DIVINATION_FEEDBACK_WINDOW_MS } from '../divination/divination-feedback.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
 
@@ -269,6 +270,8 @@ interface AgentContext {
   channel: AgentChannel;
   /** LINE 剛在 21:30 問過「今天過得怎樣？」 */
   journalPrompted: boolean;
+  /** LINE 剛問過這筆算命準不準。 */
+  divinationFeedbackId: string | null;
   turnId: string;
   personalSpaceId: string | null;
   calendarSpaceId: string | null;
@@ -323,6 +326,15 @@ export class AiAgentService {
     );
   }
 
+  /** The reading LINE just asked 「準不準？」about, while a reply still counts as the answer. */
+  static divinationFeedbackPending(link: Pick<LineAccountLink, 'divinationFeedbackId' | 'divinationFeedbackAt'>): string | null {
+    return link.divinationFeedbackId != null &&
+      link.divinationFeedbackAt != null &&
+      Date.now() - link.divinationFeedbackAt.getTime() < DIVINATION_FEEDBACK_WINDOW_MS
+      ? link.divinationFeedbackId
+      : null;
+  }
+
   static isJournalPromptActive(link: Pick<LineAccountLink, 'journalPromptAt'>): boolean {
     return link.journalPromptAt != null && Date.now() - link.journalPromptAt.getTime() < JOURNAL_PROMPT_WINDOW_MS;
   }
@@ -354,6 +366,7 @@ export class AiAgentService {
       channel: { kind: 'line', linkId: link.id },
       state: AiAgentService.isConversationActive(link) ? link : null,
       journalPrompted: AiAgentService.isJournalPromptActive(link),
+      divinationFeedbackId: AiAgentService.divinationFeedbackPending(link),
     });
   }
 
@@ -365,11 +378,13 @@ export class AiAgentService {
     channel: AgentChannel;
     state: AgentState | null;
     journalPrompted?: boolean;
+    divinationFeedbackId?: string | null;
   }): Promise<AgentResult> {
     const { state, channel } = params;
     const active = state != null;
     const ctx = await this.buildContext(params.userId, channel, state);
     ctx.journalPrompted = params.journalPrompted ?? false;
+    ctx.divinationFeedbackId = params.divinationFeedbackId ?? null;
     const client = new GoogleGenAI({ apiKey: params.apiKey });
     const startedAt = Date.now();
     let inputTokens = 0;
@@ -491,6 +506,7 @@ export class AiAgentService {
       userId,
       channel,
       journalPrompted: false,
+      divinationFeedbackId: null,
       turnId: randomUUID(),
       personalSpaceId: personal?.id ?? null,
       calendarSpaceId: calendar?.id ?? null,
@@ -566,6 +582,9 @@ export class AiAgentService {
       '',
       '【算命】',
       DIVINATION_AI_GUIDE,
+      ...(ctx.divinationFeedbackId
+        ? [`你剛用 LINE 問過他之前算的卦後來準不準（id=${ctx.divinationFeedbackId}）——這則訊息如果在回答（準/不準/講發生了什麼），就用這個 id 呼叫 record_divination_feedback。`]
+        : []),
       '',
       '【借貸／代墊／修改／刪除】',
       RECORD_AI_GUIDE,
