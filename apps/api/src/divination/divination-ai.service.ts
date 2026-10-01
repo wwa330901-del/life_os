@@ -31,7 +31,7 @@ export const DIVINATION_TOOLS = [
 ];
 
 export const DIVINATION_AI_GUIDE =
-  '使用者說想算什麼、問運勢、要占卜 → cast_meihua，把回傳的 interpretation 完整轉述給他（可以前面加一句卦名）。他講自己的生日 → set_birth_info。還沒有生辰也可以直接算，算完順便提醒可以告訴你生日讓解卦更準。';
+  '只說「算命」「占卜」沒講要算什麼 → 先問他想算哪件事（例如「這次面試會不會上」），不要直接起卦；他回答後再起卦。使用者說想算什麼、問運勢、要占卜 → cast_meihua，把回傳的 interpretation 完整轉述給他（可以前面加一句卦名）。他講自己的生日 → set_birth_info。還沒有生辰也可以直接算，算完順便提醒可以告訴你生日讓解卦更準。';
 
 @Injectable()
 export class DivinationAiService {
