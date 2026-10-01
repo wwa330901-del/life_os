@@ -30,6 +30,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     api.setToken(token);
     try {
       final user = await api.me();
+      api.reportLocation();
       return AuthSession(token: token, user: user);
     } catch (_) {
       // Stored token is stale or invalid — fall back to logged-out state.
@@ -106,6 +107,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   Future<AuthSession> _persist(AuthResult result) async {
     ref.read(apiClientProvider).setToken(result.accessToken);
     await ref.read(tokenStorageProvider).write(result.accessToken);
+    ref.read(apiClientProvider).reportLocation();
     return AuthSession(token: result.accessToken, user: result.user);
   }
 }

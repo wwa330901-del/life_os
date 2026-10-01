@@ -5,7 +5,7 @@ export const WEATHER_TOOL = {
   type: 'function' as const,
   name: 'get_weather',
   description:
-    '查天氣：現在的溫度、體感、天氣狀況，加上今天起 3 天的高低溫和降雨機率、今天接下來每 3 小時的降雨機率。latitude/longitude 你自己填該地點的經緯度；使用者沒講地點就用你記得他住/上班的地方，都不知道就用台北（25.04, 121.56）。',
+    '查天氣：現在的溫度、體感、天氣狀況，加上今天起 3 天的高低溫和降雨機率、今天接下來每 3 小時的降雨機率。latitude/longitude 你自己填該地點的經緯度；使用者沒講地點就用系統提示裡「他目前大概在」的經緯度；沒有的話用你記得他住/上班的地方，都不知道就用台北（25.04, 121.56）。',
   parameters: {
     type: 'object',
     properties: {

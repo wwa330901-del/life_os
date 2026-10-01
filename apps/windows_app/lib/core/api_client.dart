@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -104,6 +105,12 @@ class ApiClient {
   Future<AppUser> me() async {
     final body = await _get('/auth/me');
     return AppUser.fromJson(body);
+  }
+
+  /// 開 App／登入時回報：後端用連線 IP 估城市（問天氣沒講地點用）。
+  /// 不等結果、失敗也不影響使用。
+  void reportLocation() {
+    unawaited(_post('/auth/me/location', const {}).then<void>((_) {}, onError: (_) {}));
   }
 
   Future<AppUser> updateMe({required String name}) async {
@@ -1328,7 +1335,7 @@ class ApiClient {
   }
 
   Future<void> markWishlistBought(String id, {double? actualPrice}) async {
-    await _post('/wishlist/$id/bought', {if (actualPrice != null) 'actualPrice': actualPrice});
+    await _post('/wishlist/$id/bought', {'actualPrice': ?actualPrice});
   }
 
   Future<void> deleteWishlistItem(String id) async {

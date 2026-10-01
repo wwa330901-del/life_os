@@ -130,6 +130,14 @@ model User {
   journalEntries             JournalEntry[]
   divinations                DivinationRecord[]
   healthRecords              HealthRecord[]
+  /// 目前位置（2026-10-02）：App 開啟時用網路 IP 估城市（source=ip），或 LINE 傳
+  /// 位置資訊（source=line，比較準，3 天內不會被 IP 蓋掉）。問天氣沒講地點就用這裡。
+  locationLat                Float?
+  locationLon                Float?
+  locationName               String?
+  locationSource             String?
+  locationIp                 String?
+  locationUpdatedAt          DateTime?
   memories                   UserMemory[]
   importantDates             ImportantDate[]
   personalTodos              ProjectTodo[]              @relation("TodoPersonalOwner")

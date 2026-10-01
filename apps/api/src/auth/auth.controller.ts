@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -11,12 +12,14 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { AuthenticatedUser } from './jwt-payload';
 import { UsersService } from '../users/users.service';
+import { clientIp, UserLocationService } from '../users/user-location.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
+    private readonly location: UserLocationService,
   ) {}
 
   // 帳號相關端點（註冊/驗證/登入）比全域預設（每分鐘 100 次）收得更緊——
@@ -63,6 +66,16 @@ export class AuthController {
       name: user!.name,
       isPlatformAdmin: user!.isPlatformAdmin,
     };
+  }
+
+  /** App 開啟時呼叫：用連線的公網 IP 估使用者在哪個城市（問天氣沒講地點用）。
+   * 不回傳座標，只回城市名稱。 */
+  @UseGuards(JwtAuthGuard)
+  @Post('me/location')
+  async reportLocation(@CurrentUser() currentUser: AuthenticatedUser, @Req() req: Request) {
+    const ip = clientIp(req.headers['x-forwarded-for'], req.socket?.remoteAddress);
+    const location = await this.location.updateFromIp(currentUser.id, ip);
+    return { name: location?.name ?? null, source: location?.source ?? null };
   }
 
   /** Self-service display-name change — any logged-in user, not just a

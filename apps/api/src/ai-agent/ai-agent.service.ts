@@ -11,7 +11,7 @@ import { TodosService } from '../todos/todos.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { KNOWLEDGE_AI_GUIDE, KNOWLEDGE_TOOLS, KnowledgeAiService } from '../knowledge/knowledge-ai.service';
 import { STOCK_AI_GUIDE, STOCK_TOOLS, StockAiService } from '../stocks/stock-ai.service';
-import { taipeiDateKey, taipeiWallClockToUtc } from '../common/taipei-date';
+import { formatTaipeiDateTime, taipeiDateKey, taipeiWallClockToUtc } from '../common/taipei-date';
 import {
   AiUsageStatus,
   CalendarSyncTarget,
@@ -29,6 +29,7 @@ import { HEALTH_AI_GUIDE, HEALTH_TOOLS, HealthAiService } from '../health/health
 import { MEMORY_AI_GUIDE, MEMORY_TOOLS, MemoryAiService } from '../memory/memory-ai.service';
 import { MemoryService } from '../memory/memory.service';
 import { getWeather, WEATHER_TOOL } from './weather';
+import { UserLocationService } from '../users/user-location.service';
 import { WISHLIST_AI_GUIDE, WISHLIST_TOOLS, WishlistAiService } from '../finance/wishlist-ai.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { DIVINATION_FEEDBACK_WINDOW_MS } from '../divination/divination-feedback.service';
@@ -322,6 +323,7 @@ export class AiAgentService {
     private readonly memoryTools: MemoryAiService,
     private readonly memory: MemoryService,
     private readonly wishlistTools: WishlistAiService,
+    private readonly userLocation: UserLocationService,
   ) {}
 
   static isConversationActive(
@@ -529,7 +531,7 @@ export class AiAgentService {
     const shifted = new Date(now.getTime() + 8 * 60 * 60 * 1000);
     const today = `${taipeiDateKey(now)}（星期${WEEKDAYS[shifted.getUTCDay()]}）${String(shifted.getUTCHours()).padStart(2, '0')}:${String(shifted.getUTCMinutes()).padStart(2, '0')}`;
 
-    const [accounts, categories, goalCategories, memoryContext] = await Promise.all([
+    const [accounts, categories, goalCategories, memoryContext, location] = await Promise.all([
       ctx.personalSpaceId
         ? this.prisma.financeAccount.findMany({ where: { spaceId: ctx.personalSpaceId }, orderBy: { sortOrder: 'asc' } })
         : [],
@@ -540,6 +542,7 @@ export class AiAgentService {
         distinct: ['category'],
       }),
       this.memory.contextText(ctx.userId),
+      this.userLocation.get(ctx.userId),
     ]);
     const leaves = leafCategories(categories);
     const expense = leaves.filter((c) => c.kind === FinanceCategoryKind.EXPENSE).map((c) => c.name);
@@ -550,6 +553,10 @@ export class AiAgentService {
       `你是「元序」的生活助理（使用者現在在${ctx.channel.kind === 'line' ? ' LINE ' : ' App 的 AI 問答'}跟你聊），像一個熟悉使用者生活的真人朋友兼秘書，用自然口語聊天。` +
       '使用者跟你說要記帳、新增代辦、排行程、記錄人生目標、記睡眠運動、找收藏的內容、規劃生活，或只是閒聊、問意見，你都接得住；需要動到資料就用工具完成。',
       `現在是 ${today}（台北時間）。「明天」「下週三」這類說法都以這個日期換算成 YYYY-MM-DD。`,
+      '',
+      location
+        ? `他目前大概在：${location.name}（緯度 ${location.lat.toFixed(4)}、經度 ${location.lon.toFixed(4)}，${location.source === 'line' ? '他用 LINE 傳的位置' : 'App 用網路估的城市'}，${formatTaipeiDateTime(location.updatedAt, false)} 更新）。問天氣、找附近的店沒講地點就用這裡。`
+        : '還不知道他在哪裡（他可以在 LINE 按「＋」→「位置資訊」傳給你）。',
       '',
       '【關於他（長期記憶）】',
       memoryContext,

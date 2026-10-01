@@ -9,6 +9,7 @@ import { AiUsageAdminService } from '../admin/ai-usage-admin.service';
 import { SubscriptionService } from '../finance/subscription.service';
 import { subscriptionsText } from '../finance/subscriptions';
 import { WishlistService } from '../finance/wishlist.service';
+import { UserLocationService } from '../users/user-location.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
@@ -58,7 +59,7 @@ interface LineWebhookEvent {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
-  message?: { type: string; id?: string; text?: string };
+  message?: { type: string; id?: string; text?: string; latitude?: number; longitude?: number; address?: string; title?: string };
   postback?: { data?: string };
 }
 
@@ -157,6 +158,7 @@ export class LineService {
     private readonly aiUsageAdmin: AiUsageAdminService,
     private readonly subscriptionService: SubscriptionService,
     private readonly wishlist: WishlistService,
+    private readonly userLocation: UserLocationService,
   ) {}
 
   /** While handling a 語音訊息, the transcript to show above whatever reply
@@ -206,6 +208,17 @@ export class LineService {
         if (event.type === 'message' && event.message?.type === 'image') {
           if (!link) continue;
           await this.handleImageMessage(link, event.message.id, replyToken);
+          continue;
+        }
+
+        // 「＋」→「位置資訊」：記成使用者目前的位置（問天氣、找附近的用）。
+        if (event.type === 'message' && event.message?.type === 'location') {
+          if (!link) continue;
+          const { latitude, longitude, address, title } = event.message;
+          if (typeof latitude !== 'number' || typeof longitude !== 'number') continue;
+          const name = (title || address || '你傳的位置').replace(/^\d{3,6}/, '').replace(/^(台灣|臺灣)/, '').slice(0, 60);
+          await this.userLocation.updateFromLine(link.userId, latitude, longitude, name);
+          await this.reply(replyToken, `📍 記住你現在在「${name}」了。問天氣、找附近吃的沒講地點，就用這裡。`);
           continue;
         }
 
