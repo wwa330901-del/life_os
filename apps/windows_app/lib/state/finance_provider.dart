@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/finance.dart';
+import '../core/models/finance_plan.dart';
 import '../core/models/finance_report.dart';
 import '../core/models/wishlist.dart';
 import 'auth_provider.dart';
@@ -209,4 +210,9 @@ final financeAdvancesProvider = AsyncNotifierProvider.autoDispose
 /// 購物車（想買的東西＋什麼時候買得起）。
 final wishlistProvider = FutureProvider.autoDispose<WishlistOverview>((ref) {
   return ref.read(apiClientProvider).getWishlist();
+});
+
+/// 最近一次的財務規劃（還沒做過是 null）。
+final financePlanProvider = FutureProvider.autoDispose.family<FinancePlan?, String>((ref, spaceId) {
+  return ref.read(apiClientProvider).getLatestFinancePlan(spaceId);
 });

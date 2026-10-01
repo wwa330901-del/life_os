@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/api_client.dart';
 import '../../../core/models/life_goal.dart';
+import '../../../state/auth_provider.dart';
 import '../../../state/life_goal_provider.dart';
 
 /// How the editor presents 追蹤方式 — [LifeGoalTrackingType] plus 「不追蹤數字」,
@@ -180,6 +182,69 @@ class _LifeGoalEditorDialogState extends ConsumerState<_LifeGoalEditorDialog> {
     });
   }
 
+  bool _planning = false;
+  Map<String, dynamic>? _plan;
+
+  /// AI 幫我規劃：用目標欄寫的願望（加上備註）產生具體規劃，填進表單；
+  /// 可行性、里程碑、每週行動放進備註，建立後一直看得到。
+  Future<void> _aiPlan() async {
+    final wish = _title.text.trim();
+    if (wish.isEmpty) return;
+    setState(() => _planning = true);
+    try {
+      final api = ref.read(apiClientProvider);
+      final plan = await api.planLifeGoal(title: wish, notes: _notes.text.trim().isEmpty ? null : _notes.text.trim());
+      final accounts = await ref.read(lifeGoalTrackingOptionsProvider.future);
+      if (!mounted) return;
+      final type = LifeGoalTrackingTypeJson.fromJson(plan['trackingType'] as String?);
+      final target = (plan['targetValue'] as num?)?.toDouble();
+      final accountName = plan['trackingAccountName'] as String?;
+      final category = plan['category'] as String?;
+      final milestones = (plan['milestones'] as List<dynamic>? ?? const []).cast<Map<String, dynamic>>();
+      final actions = (plan['weeklyActions'] as List<dynamic>? ?? const []).cast<String>();
+      setState(() {
+        _plan = plan;
+        _title.text = plan['title'] as String? ?? wish;
+        if (category != null) {
+          if (_categories.contains(category)) {
+            _customCategoryMode = false;
+            _category = category;
+          } else {
+            _customCategoryMode = true;
+            _customCategory.text = category;
+          }
+        }
+        _mode = switch (type) {
+          LifeGoalTrackingType.manual => target == null ? _Mode.none : _Mode.manual,
+          LifeGoalTrackingType.accountBalance => _Mode.accountBalance,
+          LifeGoalTrackingType.netWorth => _Mode.netWorth,
+          LifeGoalTrackingType.noteKeywordSum => _Mode.noteKeywordSum,
+          LifeGoalTrackingType.stockValue => _Mode.stockValue,
+          LifeGoalTrackingType.checkIn => _Mode.checkIn,
+        };
+        _target.text = _numText(target);
+        _unit.text = plan['unit'] as String? ?? '';
+        final date = plan['targetDate'] as String?;
+        if (date != null) _targetDate = DateTime.parse(date);
+        _period = LifeGoalPeriodJson.fromJson(plan['checkInPeriod'] as String?);
+        _requireNote = plan['requireCheckInNote'] == true;
+        _keyword.text = plan['trackingKeyword'] as String? ?? '';
+        if (accountName != null) {
+          _accountId = accounts.where((a) => a.name == accountName).map((a) => a.id).firstOrNull ?? _accountId;
+        }
+        _notes.text = [
+          plan['feasibility'] as String? ?? '',
+          if (milestones.isNotEmpty) '里程碑：${milestones.map((m) => '${(m['date'] as String).substring(5).replaceAll('-', '/')} ${m['text']}').join('；')}',
+          if (actions.isNotEmpty) '每週：${actions.join('；')}',
+        ].where((s) => s.isNotEmpty).join('\n');
+      });
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _planning = false);
+    }
+  }
+
   double? get _targetValue => double.tryParse(_target.text.trim());
 
   String? get _error {
@@ -277,9 +342,52 @@ class _LifeGoalEditorDialogState extends ConsumerState<_LifeGoalEditorDialog> {
               TextField(
                 controller: _title,
                 autofocus: !isNew,
-                decoration: const InputDecoration(labelText: '目標', hintText: '例如：年底前存到 15 萬'),
+                decoration: const InputDecoration(labelText: '目標', hintText: '例如：年底前存到 15 萬、想開始運動'),
                 onChanged: (_) => setState(() {}),
               ),
+              if (isNew) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: _planning || _title.text.trim().isEmpty ? null : _aiPlan,
+                      icon: _planning
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.auto_awesome_outlined, size: 18),
+                      label: Text(_planning ? 'AI 規劃中…' : 'AI 幫我規劃'),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '寫下想達成什麼，AI 幫你訂數字、期限、追蹤方式和每週行動，存錢目標會用你的收支算每月要存多少',
+                        style: textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_plan != null) ...[
+                  const SizedBox(height: 8),
+                  Card(
+                    color: Theme.of(context).colorScheme.secondaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_plan!['monthlyNeeded'] != null)
+                            Text(
+                              '每月要存：${formatGoalNumber((_plan!['monthlyNeeded'] as num).toDouble())} 元',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          Text(_plan!['feasibility'] as String? ?? ''),
+                          const SizedBox(height: 4),
+                          Text('已經幫你填好下面的欄位，里程碑和每週行動放在備註，可以再改。', style: textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
               sectionLabel('分類'),
               Wrap(
                 spacing: 6,

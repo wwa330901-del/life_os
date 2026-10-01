@@ -17,6 +17,7 @@ import 'models/home_dashboard.dart';
 import 'models/journal_entry.dart';
 import 'models/knowledge.dart';
 import 'models/life_goal.dart';
+import 'models/finance_plan.dart';
 import 'models/memory.dart';
 import 'models/wishlist.dart';
 import 'models/project_todo.dart';
@@ -1304,9 +1305,23 @@ class ApiClient {
 
   // --- 理財評估 ---
 
-  Future<String> generateFinancePlan(String spaceId) async {
+  /// 產生新的財務規劃（AI，大約 10 秒）。
+  Future<FinancePlan> generateFinancePlan(String spaceId) async {
     final body = await _post('/spaces/$spaceId/finance/report/plan', {});
-    return body['plan'] as String;
+    return FinancePlan.fromJson(body['structured'] as Map<String, dynamic>);
+  }
+
+  /// 最近一次的財務規劃；還沒做過是 null。
+  Future<FinancePlan?> getLatestFinancePlan(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/finance/report/plan');
+    final plan = body['plan'];
+    return plan == null ? null : FinancePlan.fromJson(plan as Map<String, dynamic>);
+  }
+
+  /// 套用最近一次規劃的建議預算；回傳設好的「分類 金額」。
+  Future<List<String>> applyFinancePlanBudgets(String spaceId) async {
+    final body = await _post('/spaces/$spaceId/finance/report/plan/apply-budgets', {});
+    return (body['applied'] as List<dynamic>).cast<String>();
   }
 
   // --- 日記 ---
@@ -1485,6 +1500,11 @@ class ApiClient {
       if (category != null) 'category': category,
     });
     return body['category'] as String?;
+  }
+
+  /// AI 幫我規劃：把想達成的事變成具體目標（欄位可以直接填進表單）。
+  Future<Map<String, dynamic>> planLifeGoal({required String title, String? notes}) async {
+    return _post('/life-goals/plan', {'title': title, 'notes': ?notes});
   }
 
   Future<void> deleteLifeGoal(String id) async {

@@ -274,6 +274,18 @@ const APP_CONVERSATION_WINDOW_MS = 60 * 60 * 1000;
 
 /** 閒聊分流開關：on＝所有人、admin＝只有管理員、off（預設）＝全部走 Agent。 */
 const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'off').toLowerCase();
+/** 輕量 AI 用的模型（預設跟 Agent 一樣；可以換成 flash-lite 之類比較便宜、免費額度比較多的）。 */
+const chatModel = () => process.env.AI_CHAT_MODEL || GEMINI_MODEL;
+
+/** LINE 不支援 Markdown：去掉 **粗體**、# 標題，條列改成「・」。 */
+export function plainText(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^\s*[*-]\s+/gm, '・')
+    .replace(/\*/g, '')
+    .trim();
+}
 
 /** 輕量 AI 唯一的工具：判斷這則需要 Agent 就呼叫它。 */
 const USE_AGENT_TOOL = {
@@ -296,12 +308,13 @@ export const CHAT_ROUTER_RULES = [
   '你只負責「純聊天」。下面任何一種情況，一律呼叫 use_agent，不要自己回答：',
   '1. 要查他自己的資料：錢（花多少、餘額、預算、帳戶、信用卡、訂閱、借貸、代墊）、代辦、行程、人生目標、日記、股票持股或分析、收藏的知識庫（文章、美食、景點、展覽）、購物車、算過的卦、記住的重要日子、AI 用量。',
   '2. 要他做事或記錄：記帳、花了錢、收入、轉帳、排行程、提醒、代辦、打卡（讀書、運動、體重…）、做完了、寫日記、算命占卜、買賣股票、借錢還錢、繳卡費、想買東西、改或刪任何紀錄、開關提醒、設定任何東西。',
-  '3. 他講到關於自己長期有效的事（喜好、不吃什麼、過敏、家人朋友、生日紀念日、工作、住哪、習慣、目標），因為要記下來。',
-  '4. 要你沒有工具可查的即時資料：匯率、新聞（股票新聞除外）、交通、營業時間等。（天氣用 get_weather、某檔股票的走勢用 analyze_stock_trend、基本面和新聞用 get_stock_fundamentals，這三個你可以自己查；但問「我的持股、我賺多少」是他的資料，要 use_agent。）',
-  '5. 要幫他規劃或給需要看他資料的建議（這週怎麼排、還能花多少、怎麼存錢）。',
-  '6. 問元序（這個系統）怎麼用、有什麼功能。',
-  '7. 看不懂、亂碼，或你不確定是不是上面這些。',
-  '其他（打招呼、閒聊、心情、抒發、一般知識、翻譯、寫東西、不需要他個人資料的意見）就直接回答。',
+  '3. 他在講自己做了什麼、發生什麼事、心情或感受（「今天跟家人吃飯很開心」「今天好累」「讀完一本書了」「去跑步了」「心情不好」）——可能要寫日記、打卡或記帳，一律 use_agent。',
+  '4. 他講到關於自己長期有效的事（喜好、不吃什麼、過敏、家人朋友、生日紀念日、工作、住哪、習慣、目標），因為要記下來。',
+  '5. 要你沒有工具可查的即時資料：匯率、新聞（股票新聞除外）、交通、營業時間等。（天氣用 get_weather、某檔股票的走勢用 analyze_stock_trend、基本面和新聞用 get_stock_fundamentals，這三個你可以自己查；但問「我的持股、我賺多少」是他的資料，要 use_agent。）',
+  '6. 要幫他規劃或給需要看他資料的建議（這週怎麼排、還能花多少、怎麼存錢）。',
+  '7. 問元序（這個系統）怎麼用、有什麼功能。',
+  '8. 看不懂、亂碼，或你不確定是不是上面這些。',
+  '其他（打招呼、道謝、開玩笑、一般知識、翻譯、幫忙寫東西、不需要他個人資料的意見）就直接回答，回答不要用 * 或 # 這種符號。',
 ].join('\n');
 
 interface AgentContext {
@@ -503,7 +516,7 @@ export class AiAgentService {
       ].join('\n');
       const input = turns.length ? `最近的對話：\n${transcript(turns)}\n\n使用者現在說：${text}` : text;
       const client = new GoogleGenAI({ apiKey });
-      let interaction = await client.interactions.create({ model: GEMINI_MODEL, system_instruction: system, tools: CHAT_TOOLS, input });
+      let interaction = await client.interactions.create({ model: chatModel(), system_instruction: system, tools: CHAT_TOOLS, input });
       let inputTokens = interaction.usage?.total_input_tokens ?? 0;
       let outputTokens = interaction.usage?.total_output_tokens ?? 0;
       let escalate = false;
@@ -542,27 +555,27 @@ export class AiAgentService {
             });
           }
         }
-        interaction = await client.interactions.create({ model: GEMINI_MODEL, tools: CHAT_TOOLS, previous_interaction_id: interaction.id, input: results });
+        interaction = await client.interactions.create({ model: chatModel(), tools: CHAT_TOOLS, previous_interaction_id: interaction.id, input: results });
         inputTokens += interaction.usage?.total_input_tokens ?? 0;
         outputTokens += interaction.usage?.total_output_tokens ?? 0;
       }
       await this.aiUsage.record({
         userId,
         feature,
-        model: GEMINI_MODEL,
+        model: chatModel(),
         inputTokens,
         outputTokens,
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
       if (escalate || (interaction.steps ?? []).some((s) => s.type === 'function_call')) return null;
-      const reply = (interaction.output_text ?? '').trim();
+      const reply = plainText(interaction.output_text ?? '');
       return reply && reply !== NOT_HANDLED ? reply : null;
     } catch (error) {
       await this.aiUsage.record({
         userId,
         feature,
-        model: GEMINI_MODEL,
+        model: chatModel(),
         inputTokens: 0,
         outputTokens: 0,
         durationMs: Date.now() - startedAt,
@@ -770,6 +783,7 @@ export class AiAgentService {
       '',
       '【人生目標】',
       `使用者已有的目標分類：${goalCategories.map((g) => g.category).join('、') || '（無）'}`,
+      '他說想訂新目標、想達成什麼（「我想今年存到 50 萬」「想開始運動」）→ 先 plan_life_goal 給具體建議（可行性、里程碑、每週行動），問他要不要照這樣建立，同意才 create_goal。他講得很明確只是要你建立也可以直接 create_goal。',
       '先 list_life_goals 看有哪些目標再判斷對應哪一個；說法不同但意思一樣（「看完一本設計書」對「一年讀12本書」）就對應同一個，不要另開新目標。打卡要心得而使用者沒給，先問「最喜歡的一句話或心得是什麼？」。',
       '',
       '【知識庫】',

@@ -1,3 +1,4 @@
+import { plainText } from './ai-agent.service';
 import { activeTurns, agentInput, appendTurns, parseTurns, transcript, unsyncedChatTurns, type ChatTurn } from './chat-router';
 
 const now = new Date('2026-10-02T10:00:00Z');
@@ -29,5 +30,11 @@ describe('chat router turns', () => {
   it('ignores malformed stored data', () => {
     expect(parseTurns(null)).toEqual([]);
     expect(parseTurns([{ role: 'x' }, { role: 'user', text: 'a', via: 'chat', at: now.toISOString() }])).toHaveLength(1);
+  });
+});
+
+describe('plainText', () => {
+  it('strips markdown LINE cannot show', () => {
+    expect(plainText('## 台北\n* **28 度**\n- 午後雷陣雨')).toBe('台北\n・28 度\n・午後雷陣雨');
   });
 });

@@ -10,7 +10,8 @@ import { AiUsageService } from '../knowledge/ai-usage.service';
 import { WishlistService } from './wishlist.service';
 import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
 import { taipeiCurrentMonth } from '../common/taipei-date';
-import { AiUsageStatus, FinanceCategoryKind, FinanceTransactionType } from '../../generated/prisma/client.js';
+import { AiUsageStatus, FinanceCategoryKind, FinanceTransactionType, Prisma } from '../../generated/prisma/client.js';
+import { FINANCE_PLAN_SCHEMA, financePlanText, parseFinancePlan, type FinancePlanResult } from './finance-plan-format';
 
 function shiftMonth(month: string, delta: number): string {
   const [year, m] = month.split('-').map(Number);
@@ -101,7 +102,9 @@ export class FinancePlanService {
   }
 
   /** 一次產生整份理財評估（LINE「理財評估」、App 財務報表的按鈕）。 */
-  async generate(userId: string): Promise<{ plan: string; hasFixedIncome: boolean }> {
+  /** 產生財務規劃（結構化），存起來給 App「規劃」分頁和 LINE「套用預算」用。
+   * `plan` 是轉好的文字（LINE、舊版 App 用）。 */
+  async generate(userId: string): Promise<{ plan: string; hasFixedIncome: boolean; structured: FinancePlanResult }> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { geminiApiKey: true } });
     const apiKey = decryptSecret(user.geminiApiKey);
     if (!apiKey) throw new BadRequestException('理財評估需要 AI，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰');
@@ -115,22 +118,25 @@ export class FinancePlanService {
         : `他還沒設定固定薪資，先用近 3 個月平均收入 ${data.averageMonthlyIncome} 元估算。`,
       JSON.stringify(data),
       '',
-      '請用繁體中文、不要用 Markdown 符號，分成以下段落，每段簡短、講具體數字：',
-      '【現況】收入、固定支出、平均花費、每月大概能存多少；財務健檢分數與最弱的一項。',
-      `【每月分配建議】把每月 ${income} 元分成：固定支出／生活費／儲蓄（預備金）／投資，各多少錢、佔幾%，並說明理由（可參考 50/30/20，但要依他的實際狀況調整）。`,
-      '【建議預算】挑 3～5 個花費最多的分類，各建議每月預算多少（比現在平均少一點但做得到），用「分類：金額」列出。',
+      '',
+      '用繁體中文，回傳 JSON（每個文字欄位簡短、講具體數字、不要 Markdown 符號）：',
+      '- summary：現況 2～3 句——收入、固定支出、平均花費、每月大概能存多少；財務健檢分數與最弱的一項。' + (data.fixedMonthlyIncome > 0 ? '' : '最後提醒他可以設定固定薪資，評估會更準。'),
+      `- allocation：把每月 ${income} 元分成 固定支出／生活費／儲蓄（預備金）／投資${data.wishlist.items.length ? '／購物車' : ''}，每項 name、amount（元）、percent、reason（一句理由；可參考 50/30/20，但要依他的實際狀況調整）。amount 加起來等於 ${income}。`,
+      `- budgets：挑 3～5 個花費最多的分類建議每月預算（比現在平均少一點但做得到），category 一定要是 budgetableCategories 裡的名稱，amount 是元，reason 一句。`,
+      '- steps：接下來 3 步，依優先順序的具體行動（例如先把預備金存到多少、每月定期定額多少、哪個分類要控制）。',
       ...(data.wishlist.items.length
-        ? ['【購物車】他想買的東西（wishlist）也要排進每月分配：建議每月撥多少買東西、哪樣先買、哪樣可以等或不急，用 affordableMonth 講大概幾月買得起；預備金不夠時先顧預備金。']
+        ? ['- wishlistAdvice：購物車（wishlist）的建議 1～2 句——每月撥多少買東西、哪樣先買、哪樣可以等，用 affordableMonth 講大概幾月買得起；預備金不夠時先顧預備金。']
         : []),
-      '【接下來 3 步】依優先順序的具體行動（例如先把預備金存到多少、每月定期定額多少、哪個分類要控制）。',
-      data.fixedMonthlyIncome > 0 ? '' : '最後提醒他可以設定固定薪資，評估會更準。',
-      `全部 ${data.wishlist.items.length ? 550 : 450} 字以內。`,
     ].join('\n');
 
     const startedAt = Date.now();
     try {
       const client = new GoogleGenAI({ apiKey });
-      const interaction = await client.interactions.create({ model: GEMINI_MODEL, input: prompt });
+      const interaction = await client.interactions.create({
+        model: GEMINI_MODEL,
+        input: prompt,
+        response_format: { type: 'text', mime_type: 'application/json', schema: FINANCE_PLAN_SCHEMA },
+      });
       await this.aiUsage.record({
         userId,
         feature: 'finance_plan',
@@ -140,9 +146,15 @@ export class FinancePlanService {
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      const plan = interaction.output_text?.trim();
-      if (!plan) throw new Error('AI 沒有回應');
-      return { plan, hasFixedIncome: data.fixedMonthlyIncome > 0 };
+      const raw = interaction.output_text?.trim();
+      if (!raw) throw new Error('AI 沒有回應');
+      const structured = parseFinancePlan(raw, { monthlyIncome: income, budgetableCategories: data.budgetableCategories, categoryAverages: data.categoryAverages });
+      const spaceId = await this.spaceIdOf(userId);
+      await this.prisma.space.update({
+        where: { id: spaceId },
+        data: { financePlan: structured as unknown as Prisma.InputJsonValue, financePlanAt: new Date() },
+      });
+      return { plan: financePlanText(structured), hasFixedIncome: data.fixedMonthlyIncome > 0, structured };
     } catch (error) {
       await this.aiUsage.record({
         userId,
@@ -191,6 +203,20 @@ export class FinancePlanService {
   }
 
   /** 依名稱設多個分類的每月預算。 */
+  /** 最近一次的財務規劃（沒做過就 null）。 */
+  async latest(userId: string): Promise<FinancePlanResult | null> {
+    const spaceId = await this.spaceIdOf(userId);
+    const space = await this.prisma.space.findUniqueOrThrow({ where: { id: spaceId }, select: { financePlan: true } });
+    return (space.financePlan as unknown as FinancePlanResult | null) ?? null;
+  }
+
+  /** 套用最近一次規劃的建議預算（App 按鈕、LINE「套用預算」）。 */
+  async applyLatestBudgets(userId: string): Promise<string[]> {
+    const plan = await this.latest(userId);
+    if (!plan || plan.budgets.length === 0) throw new BadRequestException('還沒有可以套用的預算建議，先做一次理財評估');
+    return this.applyBudgets(userId, plan.budgets.map((b) => ({ categoryName: b.category, monthlyAmount: b.amount })));
+  }
+
   async applyBudgets(userId: string, items: Array<{ categoryName: string; monthlyAmount: number }>) {
     const spaceId = await this.spaceIdOf(userId);
     const categories = await this.prisma.financeCategory.findMany({ where: { spaceId, kind: FinanceCategoryKind.EXPENSE } });

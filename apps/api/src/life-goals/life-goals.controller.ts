@@ -9,6 +9,18 @@ import { UpdateLifeGoalDto } from './dto/update-life-goal.dto';
 import { CreateLifeGoalCheckInDto } from './dto/create-life-goal-check-in.dto';
 import { SuggestLifeGoalCategoryDto } from './dto/suggest-life-goal-category.dto';
 import { LifeGoalCategoryService } from './life-goal-category.service';
+import { LifeGoalPlanService } from './life-goal-plan.service';
+import { IsOptional, IsString, MinLength } from 'class-validator';
+
+class PlanLifeGoalDto {
+  @IsString()
+  @MinLength(1)
+  title: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
 
 @UseGuards(JwtAuthGuard)
 @Controller('life-goals')
@@ -16,6 +28,7 @@ export class LifeGoalsController {
   constructor(
     private readonly service: LifeGoalsService,
     private readonly categories: LifeGoalCategoryService,
+    private readonly planner: LifeGoalPlanService,
   ) {}
 
   @Get()
@@ -32,6 +45,12 @@ export class LifeGoalsController {
   @Post('suggest-category')
   suggestCategory(@CurrentUser() user: AuthenticatedUser, @Body() dto: SuggestLifeGoalCategoryDto) {
     return this.categories.suggest(user.id, dto.title, dto.category);
+  }
+
+  /** AI 幫我規劃：把想達成的事變成具體目標（App 新增目標畫面用，回傳可以直接填進表單的欄位）。 */
+  @Post('plan')
+  plan(@CurrentUser() user: AuthenticatedUser, @Body() dto: PlanLifeGoalDto) {
+    return this.planner.plan(user.id, dto);
   }
 
   @Get(':id/check-ins')

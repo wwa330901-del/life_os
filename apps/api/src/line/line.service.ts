@@ -308,6 +308,8 @@ export class LineService {
     '財務健檢',
     '早報',
     '理財評估',
+    '財務規劃',
+    '套用預算',
     '關閉早報',
     '開啟早報',
     '購物車',
@@ -372,7 +374,7 @@ export class LineService {
       '',
       '🩺 財務',
       '傳「財務健檢」看 0～100 分跟改善建議',
-      '說「我月薪 5 萬，5 號發薪」設定固定薪資，再傳「理財評估」拿分配建議跟推薦預算',
+      '說「我月薪 5 萬，5 號發薪」設定固定薪資，再傳「財務規劃」拿每月分配跟建議預算（回「套用預算」一鍵設好）',
       '',
       '⏰ 提醒',
       '每天 8 點早報（今天行程、代辦、預算），有時間的代辦前 1 小時提醒；傳「早報」隨時看',
@@ -609,12 +611,22 @@ export class LineService {
       return;
     }
 
-    if (text === '理財評估') {
+    if (text === '理財評估' || text === '財務規劃') {
       try {
-        const { plan } = await this.financePlan.generate(userId);
-        await this.reply(replyToken, ['💼 理財評估', '', plan, '', '想照建議設預算，直接跟我說「幫我設好預算」'].join('\n'));
+        const { plan, structured } = await this.financePlan.generate(userId);
+        const tail = structured.budgets.length ? '想照建議設預算，回我「套用預算」就幫你設好。' : '';
+        await this.reply(replyToken, ['💼 財務規劃', '', plan, ...(tail ? ['', tail] : [])].join('\n'));
       } catch (error) {
-        await this.reply(replyToken, error instanceof Error ? error.message : '理財評估產生失敗');
+        await this.reply(replyToken, error instanceof Error ? error.message : '財務規劃產生失敗');
+      }
+      return;
+    }
+    if (text === '套用預算') {
+      try {
+        const applied = await this.financePlan.applyLatestBudgets(userId);
+        await this.reply(replyToken, applied.length ? `✅ 預算設好了：\n${applied.map((a) => `・${a}`).join('\n')}\n超過 80% 和超支時會提醒你。` : '建議的分類找不到，沒有設定任何預算。');
+      } catch (error) {
+        await this.reply(replyToken, error instanceof Error ? error.message : '套用失敗');
       }
       return;
     }

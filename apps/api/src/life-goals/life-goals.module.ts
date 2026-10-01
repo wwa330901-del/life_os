@@ -11,6 +11,7 @@ import { LifeGoalProgressService } from './life-goal-progress.service';
 import { LifeGoalReminderService } from './life-goal-reminder.service';
 import { LifeGoalAiService } from './life-goal-ai.service';
 import { LifeGoalCategoryService } from './life-goal-category.service';
+import { LifeGoalPlanService } from './life-goal-plan.service';
 
 @Module({
   // KnowledgeModule for AiUsageService, UsersModule for the Gemini key (AI 自動分類).
@@ -22,6 +23,7 @@ import { LifeGoalCategoryService } from './life-goal-category.service';
     LifeGoalReminderService,
     LifeGoalAiService,
     LifeGoalCategoryService,
+    LifeGoalPlanService,
   ],
   exports: [LifeGoalsService, LifeGoalProgressService, LifeGoalAiService],
 })

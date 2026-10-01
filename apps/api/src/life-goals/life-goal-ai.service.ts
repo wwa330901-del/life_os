@@ -5,6 +5,7 @@ import {
   LifeGoalTrackingType,
 } from '../../generated/prisma/client.js';
 import { LifeGoalsService } from './life-goals.service';
+import { goalPlanText, LifeGoalPlanService } from './life-goal-plan.service';
 
 const TRACKING_LABEL: Record<LifeGoalTrackingType, string> = {
   MANUAL: '手動更新數字',
@@ -18,6 +19,17 @@ const TRACKING_LABEL: Record<LifeGoalTrackingType, string> = {
 /** Gemini Interactions API tool declarations for 人生目標 — composed into
  * the LINE 萬用 AI (`AiAgentService`) alongside every other module's tools. */
 export const LIFE_GOAL_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'plan_life_goal',
+    description:
+      '使用者想訂目標、問目標怎麼規劃時先用：把他想達成的事變成具體目標建議（目標數字、期限、追蹤方式、里程碑、每週行動；存錢類用他真實收支算每月要存多少、做不做得到）。回傳的欄位可以直接拿去 create_goal。',
+    parameters: {
+      type: 'object',
+      properties: { wish: { type: 'string', description: '他想達成什麼（用他的話）' }, notes: { type: 'string' } },
+      required: ['wish'],
+    },
+  },
   {
     type: 'function' as const,
     name: 'list_life_goals',
@@ -102,12 +114,19 @@ export const LIFE_GOAL_TOOLS = [
  * exactly the same when the change comes from LINE. */
 @Injectable()
 export class LifeGoalAiService {
-  constructor(private readonly goals: LifeGoalsService) {}
+  constructor(
+    private readonly goals: LifeGoalsService,
+    private readonly planner: LifeGoalPlanService,
+  ) {}
 
   static readonly toolNames = new Set(LIFE_GOAL_TOOLS.map((t) => t.name));
 
   async execute(userId: string, name: string, args: Record<string, unknown>): Promise<unknown> {
     switch (name) {
+      case 'plan_life_goal': {
+        const plan = await this.planner.plan(userId, { title: String(args.wish ?? ''), notes: typeof args.notes === 'string' ? args.notes : null });
+        return { plan, text: goalPlanText(plan), next: '把建議講給他聽，問要不要照這樣建立（可以調整），他同意再 create_goal' };
+      }
       case 'list_life_goals': {
         const goals = await this.goals.listAll(userId, LifeGoalStatus.ACTIVE);
         return goals.map((g) => ({

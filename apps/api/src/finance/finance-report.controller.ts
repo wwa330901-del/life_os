@@ -35,4 +35,18 @@ export class FinanceReportController {
     await this.access.assertPersonalSpace(user.id, spaceId);
     return this.plan.generate(user.id);
   }
+
+  /** 最近一次的財務規劃（App「規劃」分頁一打開就顯示）。 */
+  @Get('plan')
+  async latestPlan(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string) {
+    await this.access.assertPersonalSpace(user.id, spaceId);
+    return { plan: await this.plan.latest(user.id) };
+  }
+
+  /** 一鍵套用最近一次規劃的建議預算。 */
+  @Post('plan/apply-budgets')
+  async applyPlanBudgets(@CurrentUser() user: AuthenticatedUser, @Param('spaceId') spaceId: string) {
+    await this.access.assertPersonalSpace(user.id, spaceId);
+    return { applied: await this.plan.applyLatestBudgets(user.id) };
+  }
 }

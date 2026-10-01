@@ -26,6 +26,7 @@ export const AI_FEATURE_LABEL: Record<string, string> = {
   divination: '算命解卦',
   finance_plan: '理財評估',
   life_goal_category: '目標分類',
+  life_goal_plan: '目標規劃',
   life_review: '週/月回顧總結',
   receipt: '收據辨識',
   voice: '語音轉文字',

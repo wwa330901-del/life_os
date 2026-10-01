@@ -193,6 +193,9 @@ model Space {
   name                  String
   /// 購物車每月撥多少（null＝用近 3 個月平均結餘的 30%）。
   wishlistMonthlyBudget Float?
+  /// 最近一次財務規劃（AI 結構化結果：分配、建議預算、步驟），App「規劃」分頁與 LINE「套用預算」用。
+  financePlan           Json?
+  financePlanAt         DateTime?
   createdAt             DateTime  @default(now())
 
   // Only set when type = PERSONAL. Each user has exactly one personal space.

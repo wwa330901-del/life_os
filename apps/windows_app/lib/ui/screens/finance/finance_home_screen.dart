@@ -6,6 +6,7 @@ import 'tabs/finance_budgets_tab.dart';
 import 'tabs/finance_categories_tab.dart';
 import 'tabs/finance_loans_tab.dart';
 import 'tabs/finance_overview_tab.dart';
+import 'tabs/finance_plan_tab.dart';
 import 'tabs/finance_recurring_tab.dart';
 import 'tabs/finance_report_tab.dart';
 import 'tabs/finance_transactions_tab.dart';
@@ -27,7 +28,7 @@ class FinanceHomeScreen extends StatefulWidget {
 }
 
 class _FinanceHomeScreenState extends State<FinanceHomeScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 10, vsync: this);
+  late final TabController _tabController = TabController(length: 11, vsync: this);
 
   @override
   void dispose() {
@@ -46,6 +47,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> with SingleTicker
           tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(text: '總覽'),
+            Tab(text: '規劃'),
             Tab(text: '交易'),
             Tab(text: '帳戶'),
             Tab(text: '分類'),
@@ -62,6 +64,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> with SingleTicker
             controller: _tabController,
             children: [
               FinanceOverviewTab(spaceId: widget.spaceId),
+              FinancePlanTab(spaceId: widget.spaceId),
               FinanceTransactionsTab(spaceId: widget.spaceId),
               FinanceAccountsTab(spaceId: widget.spaceId),
               FinanceCategoriesTab(spaceId: widget.spaceId),
