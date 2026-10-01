@@ -1,3 +1,4 @@
+import { encryptSecret } from '../common/secret-box';
 import {
   BadGatewayException,
   BadRequestException,
@@ -78,14 +79,14 @@ export class AppleCalendarConnectionController {
       create: {
         spaceId,
         appleId: dto.appleId,
-        appPassword: dto.appPassword,
+        appPassword: encryptSecret(dto.appPassword),
         selectedCalendarUrls: dto.selectedCalendarUrls,
         writeCalendarUrl,
         connectedByUserId: user.id,
       },
       update: {
         appleId: dto.appleId,
-        appPassword: dto.appPassword,
+        appPassword: encryptSecret(dto.appPassword),
         selectedCalendarUrls: dto.selectedCalendarUrls,
         writeCalendarUrl,
         connectedByUserId: user.id,

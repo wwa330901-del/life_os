@@ -1,3 +1,4 @@
+import { decryptSecret } from '../common/secret-box';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { GoogleGenAI } from '@google/genai';
@@ -377,7 +378,8 @@ export class LifeReviewService {
 
   private async aiSummary(userId: string, period: ReviewPeriod, sections: Section[]): Promise<string | null> {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { geminiApiKey: true } });
-    if (!user?.geminiApiKey) return null;
+    const apiKey = decryptSecret(user?.geminiApiKey);
+    if (!apiKey) return null;
     const prompt = [
       `以下是使用者${period.kind === 'week' ? '這週' : period.label}的生活數據（JSON）。`,
       '用繁體中文、像朋友一樣寫 2～3 句總結：先講一個做得好的地方，再點出最值得注意的一件事（例如某分類花太多、代辦拖太久、目標落後），最後給一個下一期可以做的具體小建議。',
@@ -387,7 +389,7 @@ export class LifeReviewService {
 
     const startedAt = Date.now();
     try {
-      const client = new GoogleGenAI({ apiKey: user.geminiApiKey });
+      const client = new GoogleGenAI({ apiKey });
       const interaction = await client.interactions.create({ model: GEMINI_MODEL, input: prompt });
       await this.aiUsage.record({
         userId,

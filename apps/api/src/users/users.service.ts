@@ -1,3 +1,4 @@
+import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -13,8 +14,10 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { username } });
   }
 
-  findById(id: string) {
-    return this.prisma.user.findUnique({ where: { id } });
+  /** `geminiApiKey` comes back decrypted (it's stored encrypted, see common/secret-box). */
+  async findById(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    return user && { ...user, geminiApiKey: decryptSecret(user.geminiApiKey) };
   }
 
   /** null/undefined and '' are both treated as "cleared" — the App's clear
@@ -22,7 +25,7 @@ export class UsersService {
   async setGeminiApiKey(userId: string, apiKey: string | null): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },
-      data: { geminiApiKey: apiKey || null },
+      data: { geminiApiKey: encryptSecret(apiKey || null) },
     });
   }
 
@@ -31,7 +34,7 @@ export class UsersService {
       where: { id: userId },
       select: { geminiApiKey: true },
     });
-    return Boolean(user?.geminiApiKey);
+    return Boolean(decryptSecret(user?.geminiApiKey));
   }
 
   /** Used to resolve a KnowledgeCategory.blacklistedUserIds array back into

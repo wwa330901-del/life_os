@@ -1,3 +1,4 @@
+import { decryptSecret } from '../common/secret-box';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createDAVClient } from 'tsdav';
 import type { DAVCalendar } from 'tsdav';
@@ -40,7 +41,8 @@ export class AppleCalendarService {
     try {
       return await createDAVClient({
         serverUrl: ICLOUD_CALDAV_SERVER,
-        credentials: { username: appleId, password: appPassword },
+        // Stored encrypted; a freshly typed password (connect/discover) passes through as-is.
+        credentials: { username: appleId, password: decryptSecret(appPassword) ?? '' },
         authMethod: 'Basic',
         defaultAccountType: 'caldav',
       });

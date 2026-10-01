@@ -1,3 +1,4 @@
+import { decryptSecret } from '../common/secret-box';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../prisma/prisma.service';
@@ -89,7 +90,8 @@ export class FinancePlanService {
   /** 一次產生整份理財評估（LINE「理財評估」、App 財務報表的按鈕）。 */
   async generate(userId: string): Promise<{ plan: string; hasFixedIncome: boolean }> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { geminiApiKey: true } });
-    if (!user.geminiApiKey) throw new BadRequestException('理財評估需要 AI，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰');
+    const apiKey = decryptSecret(user.geminiApiKey);
+    if (!apiKey) throw new BadRequestException('理財評估需要 AI，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰');
     const data = await this.inputs(userId);
     const income = data.fixedMonthlyIncome || data.averageMonthlyIncome;
 
@@ -111,7 +113,7 @@ export class FinancePlanService {
 
     const startedAt = Date.now();
     try {
-      const client = new GoogleGenAI({ apiKey: user.geminiApiKey });
+      const client = new GoogleGenAI({ apiKey });
       const interaction = await client.interactions.create({ model: GEMINI_MODEL, input: prompt });
       await this.aiUsage.record({
         userId,

@@ -1,3 +1,4 @@
+import { decryptSecret } from '../common/secret-box';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../prisma/prisma.service';
@@ -101,7 +102,8 @@ export class DivinationService {
       where: { id: userId },
       select: { geminiApiKey: true, birthDate: true, birthTime: true },
     });
-    if (!user.geminiApiKey) {
+    const apiKey = decryptSecret(user.geminiApiKey);
+    if (!apiKey) {
       throw new BadRequestException('解卦需要 AI，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰');
     }
 
@@ -112,7 +114,7 @@ export class DivinationService {
       orderBy: { feedbackAt: 'desc' },
       take: FEEDBACK_CONTEXT,
     });
-    const interpretation = await this.interpret(userId, user.geminiApiKey, q, reading, chart, past);
+    const interpretation = await this.interpret(userId, apiKey, q, reading, chart, past);
 
     return this.prisma.divinationRecord.create({
       data: {

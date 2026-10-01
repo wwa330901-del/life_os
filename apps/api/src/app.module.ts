@@ -28,6 +28,7 @@ import { DailyBriefModule } from './daily-brief/daily-brief.module';
 import { DivinationModule } from './divination/divination.module';
 import { HealthModule } from './health/health.module';
 import { ExportModule } from './export/export.module';
+import { SecretMigrationService } from './common/secret-migration.service';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { ExportModule } from './export/export.module';
   controllers: [AppController],
   providers: [
     AppService,
+    SecretMigrationService,
     // Must be the first APP_FILTER provider (Sentry's own requirement) so
     // it sees every unhandled exception before any other filter can
     // swallow it.
