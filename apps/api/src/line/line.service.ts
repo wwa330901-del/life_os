@@ -502,7 +502,9 @@ export class LineService {
         AiAgentService.divinationFeedbackPending(link) != null ||
         LineService.AI_FIRST_HINT.test(text));
     // 關鍵字明顯要做事 → 直接 Agent；只是對話進行中 → 讓分流判斷。
-    if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey, LineService.AI_FIRST_HINT.test(text)))) return;
+    // （天氣字眼只讓 AI 先接，不強制 Agent——輕量 AI 自己會查天氣。）
+    const forceAgent = LineService.AI_FIRST_HINT.test(text.replace(/天氣|下雨|帶傘|氣溫/g, ''));
+    if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey, forceAgent))) return;
 
     // --- 條列式一次登陸多筆（2026-08-04）：貼多行文字，每行各自當一筆獨立
     // 的記帳／代辦／股票交易／行事曆指令處理，不用一則訊息只能記一筆。編

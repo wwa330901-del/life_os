@@ -284,13 +284,21 @@ const USE_AGENT_TOOL = {
   parameters: { type: 'object', properties: { reason: { type: 'string' } } },
 };
 
+/** 輕量 AI 可以自己用的工具：都不碰元序的資料庫（天氣、某檔股票的公開資料）。 */
+const CHAT_TOOL_NAMES = new Set(['get_weather', 'analyze_stock_trend', 'get_stock_fundamentals']);
+const CHAT_TOOLS = [
+  USE_AGENT_TOOL,
+  WEATHER_TOOL,
+  ...STOCK_TOOLS.filter((t) => CHAT_TOOL_NAMES.has(t.name)),
+];
+
 /** 什麼時候一定要交給 Agent——寧可多交，不能漏（漏了就少一個功能）。 */
 export const CHAT_ROUTER_RULES = [
   '你只負責「純聊天」。下面任何一種情況，一律呼叫 use_agent，不要自己回答：',
   '1. 要查他自己的資料：錢（花多少、餘額、預算、帳戶、信用卡、訂閱、借貸、代墊）、代辦、行程、人生目標、日記、健康（睡眠運動體重）、股票持股或分析、收藏的知識庫（文章、美食、景點、展覽）、購物車、算過的卦、記住的重要日子、AI 用量。',
   '2. 要他做事或記錄：記帳、花了錢、收入、轉帳、排行程、提醒、代辦、打卡、做完了、記睡眠運動體重、寫日記、算命占卜、買賣股票、借錢還錢、繳卡費、想買東西、改或刪任何紀錄、開關提醒、設定任何東西。',
   '3. 他講到關於自己長期有效的事（喜好、不吃什麼、過敏、家人朋友、生日紀念日、工作、住哪、習慣、目標），因為要記下來。',
-  '4. 要即時或外部資料：天氣、股價、新聞、匯率、現在幾點以外的即時資訊。',
+  '4. 要你沒有工具可查的即時資料：匯率、新聞（股票新聞除外）、交通、營業時間等。（天氣用 get_weather、某檔股票的走勢用 analyze_stock_trend、基本面和新聞用 get_stock_fundamentals，這三個你可以自己查；但問「我的持股、我賺多少」是他的資料，要 use_agent。）',
   '5. 要幫他規劃或給需要看他資料的建議（這週怎麼排、還能花多少、怎麼存錢）。',
   '6. 問元序（這個系統）怎麼用、有什麼功能。',
   '7. 看不懂、亂碼，或你不確定是不是上面這些。',
@@ -497,17 +505,59 @@ export class AiAgentService {
       ].join('\n');
       const input = turns.length ? `最近的對話：\n${transcript(turns)}\n\n使用者現在說：${text}` : text;
       const client = new GoogleGenAI({ apiKey });
-      const interaction = await client.interactions.create({ model: GEMINI_MODEL, system_instruction: system, tools: [USE_AGENT_TOOL], input });
+      let interaction = await client.interactions.create({ model: GEMINI_MODEL, system_instruction: system, tools: CHAT_TOOLS, input });
+      let inputTokens = interaction.usage?.total_input_tokens ?? 0;
+      let outputTokens = interaction.usage?.total_output_tokens ?? 0;
+      let escalate = false;
+      // 不用元序資料的工具（天氣、股票走勢/基本面）輕量 AI 自己查；碰到 use_agent 就交出去。
+      for (let round = 0; round < 3 && !escalate; round++) {
+        const calls = (interaction.steps ?? []).filter(
+          (step): step is typeof step & { type: 'function_call' } => step.type === 'function_call',
+        );
+        if (calls.length === 0) break;
+        if (calls.some((c) => c.name === USE_AGENT_TOOL.name || !CHAT_TOOL_NAMES.has(c.name))) {
+          escalate = true;
+          break;
+        }
+        const results: Array<{
+          type: 'function_result';
+          name: string;
+          call_id: string;
+          is_error?: boolean;
+          result: Array<{ type: 'text'; text: string }>;
+        }> = [];
+        for (const call of calls) {
+          const args = (call.arguments ?? {}) as ToolArgs;
+          try {
+            const output =
+              call.name === WEATHER_TOOL.name
+                ? await getWeather(String(args.placeName ?? ''), Number(args.latitude), Number(args.longitude))
+                : await this.stockTools.execute(userId, call.name, args);
+            results.push({ type: 'function_result' as const, name: call.name, call_id: call.id, result: [{ type: 'text' as const, text: JSON.stringify(output) }] });
+          } catch (error) {
+            results.push({
+              type: 'function_result' as const,
+              name: call.name,
+              call_id: call.id,
+              is_error: true,
+              result: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
+            });
+          }
+        }
+        interaction = await client.interactions.create({ model: GEMINI_MODEL, tools: CHAT_TOOLS, previous_interaction_id: interaction.id, input: results });
+        inputTokens += interaction.usage?.total_input_tokens ?? 0;
+        outputTokens += interaction.usage?.total_output_tokens ?? 0;
+      }
       await this.aiUsage.record({
         userId,
         feature,
         model: GEMINI_MODEL,
-        inputTokens: interaction.usage?.total_input_tokens ?? 0,
-        outputTokens: interaction.usage?.total_output_tokens ?? 0,
+        inputTokens,
+        outputTokens,
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      if ((interaction.steps ?? []).some((s) => s.type === 'function_call')) return null;
+      if (escalate || (interaction.steps ?? []).some((s) => s.type === 'function_call')) return null;
       const reply = (interaction.output_text ?? '').trim();
       return reply && reply !== NOT_HANDLED ? reply : null;
     } catch (error) {
