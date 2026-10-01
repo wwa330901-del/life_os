@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StocksHoldingsService } from './stocks-holdings.service';
 import { StocksTransactionsService } from './stocks-transactions.service';
 import { StockHistoryService, summarizeTrend } from './stock-history.service';
+import { StockFundamentalsService } from './stock-fundamentals.service';
 
 const DEFAULT_TREND_MONTHS = 4; // 夠算 60 日均線
 const MAX_TREND_MONTHS = 12;
@@ -34,11 +35,23 @@ export const STOCK_TOOLS = [
       required: ['stockCode'],
     },
   },
+  {
+    type: 'function' as const,
+    name: 'get_stock_fundamentals',
+    description:
+      '某檔台股的基本面與新聞：本益比、殖利率、股價淨值比，最新月營收（月增/年增/今年累計年增、公司說明），最新一季累計 EPS、營收、營業利益、稅後淨利（億元），以及最近 7 天新聞標題。ETF 沒有營收財報。',
+    parameters: {
+      type: 'object',
+      properties: { stockCode: { type: 'string', description: '4-6 位數股票代碼' } },
+      required: ['stockCode'],
+    },
+  },
 ];
 
 export const STOCK_AI_GUIDE = [
   '問持股、損益、賺多少 → get_stock_portfolio。問某檔（或全部持股）走勢、怎麼看、要不要續抱 → analyze_stock_trend（全部持股就每檔都查），用算好的數據分析：短中期漲跌、股價在均線上還是下（多頭/空頭排列）、離高點多遠、波動大不大、量有沒有放大、跟他的成本比。',
-  '分析要具體、講數字，可以說偏多/偏空/盤整以及要留意的價位，但最後提醒一句這是依過去價格的分析、不保證未來，決定權在他。不要編造新聞或財報數字，工具沒給的就說沒有資料。',
+  '要分析一檔股票（怎麼看、要不要續抱/加碼）時，analyze_stock_trend 看價格，再 get_stock_fundamentals 看基本面和新聞：本益比貴不貴、殖利率、營收是成長還是衰退、EPS、最近新聞是利多還利空，把價格面和基本面一起講。問「X 最近有什麼新聞」「營收怎樣」也用它。',
+  '分析要具體、講數字，可以說偏多/偏空/盤整以及要留意的價位，但最後提醒一句這是依過去資料的分析、不保證未來，決定權在他。不要編造新聞或財報數字，工具沒給的就說沒有資料；新聞只有標題，不要自己補內容。',
 ].join('\n');
 
 @Injectable()
@@ -48,6 +61,7 @@ export class StockAiService {
     private readonly holdings: StocksHoldingsService,
     private readonly transactions: StocksTransactionsService,
     private readonly history: StockHistoryService,
+    private readonly fundamentals: StockFundamentalsService,
   ) {}
 
   static readonly toolNames = new Set(STOCK_TOOLS.map((t) => t.name));
@@ -61,6 +75,11 @@ export class StockAiService {
         return this.portfolio(userId, space.id);
       case 'analyze_stock_trend':
         return this.trend(userId, space.id, args);
+      case 'get_stock_fundamentals': {
+        const stockCode = String(args.stockCode ?? '').trim();
+        if (!/^\d{4,6}[A-Z]?$/.test(stockCode)) throw new Error('股票代碼要是 4-6 位數字，例如 2330');
+        return this.fundamentals.get(stockCode);
+      }
       default:
         throw new Error(`未知的工具：${name}`);
     }

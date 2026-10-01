@@ -12,6 +12,7 @@ import { StocksRecurringService } from './stocks-recurring.service';
 import { StocksPriceService } from './stocks-price.service';
 import { StocksSettlementService } from './stocks-settlement.service';
 import { StockHistoryService } from './stock-history.service';
+import { StockFundamentalsService } from './stock-fundamentals.service';
 import { StockAiService } from './stock-ai.service';
 
 @Module({
