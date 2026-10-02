@@ -9,7 +9,7 @@ const token = process.env.LINE_TOKEN;
 if (!token) throw new Error('請設定 LINE_TOKEN');
 
 const W = 2500, H = 1686, COLS = 4, ROWS = 2;
-const TEXTS = ['財務總覽', '今日行事曆', '代辦事項總覽', '人生目標', '知識庫', '健康', '算命', '我能做什麼'];
+const TEXTS = ['財務總覽', '今日行事曆', '代辦事項總覽', '人生目標', '知識庫', '購物車', '算命', '我能做什麼'];
 const cw = W / COLS, ch = H / ROWS;
 
 const menu = {

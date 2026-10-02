@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { AiAgentService } from './ai-agent.service';
+import { AiRateLimitedError, rateLimitMessage } from './gemini-rate-limit';
 import { UsersService } from '../users/users.service';
 import { AskAiAssistantDto } from '../ai-assistant/dto/ask-ai-assistant.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -25,12 +26,18 @@ export class AiAssistantController {
     if (!fullUser?.geminiApiKey) {
       throw new BadRequestException(NO_API_KEY_MESSAGE);
     }
-    const result = await this.agent.handleApp({
-      userId: user.id,
-      apiKey: fullUser.geminiApiKey,
-      text: dto.question,
-      previousInteractionId: dto.previousInteractionId,
-    });
+    let result;
+    try {
+      result = await this.agent.handleApp({
+        userId: user.id,
+        apiKey: fullUser.geminiApiKey,
+        text: dto.question,
+        previousInteractionId: dto.previousInteractionId,
+      });
+    } catch (error) {
+      if (error instanceof AiRateLimitedError) return { answer: rateLimitMessage(error), interactionId: dto.previousInteractionId };
+      throw error;
+    }
     return { answer: result.handled ? result.reply : NOT_UNDERSTOOD, interactionId: result.interactionId };
   }
 }

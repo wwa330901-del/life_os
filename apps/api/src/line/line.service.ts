@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { VoiceTranscriberService } from './voice-transcriber.service';
 import { ReceiptReaderService, receiptToAgentText } from './receipt-reader.service';
 import { SYSTEM_TROUBLE_MESSAGE } from '../error-report/system-trouble';
+import { AiRateLimitedError, rateLimitMessage } from '../ai-agent/gemini-rate-limit';
 import { AiUsageService } from '../knowledge/ai-usage.service';
 import { AiUsageAdminService } from '../admin/ai-usage-admin.service';
 import { SubscriptionService } from '../finance/subscription.service';
@@ -2626,7 +2627,11 @@ export class LineService {
       if (!result.handled) return false;
       await this.reply(replyToken, result.reply);
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof AiRateLimitedError) {
+        await this.reply(replyToken, rateLimitMessage(error));
+        return true;
+      }
       // AiAgentService 已經 logger.error（→ 通知管理員）；記下來，固定指令也
       // 接不住時回「已通知管理員」而不是「看不懂」。
       const state = this.eventState.getStore();

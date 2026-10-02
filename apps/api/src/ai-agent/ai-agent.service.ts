@@ -34,6 +34,7 @@ import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { DIVINATION_FEEDBACK_WINDOW_MS } from '../divination/divination-feedback.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
+import { AiRateLimitedError, withModelFallback } from './gemini-rate-limit';
 import { activeTurns, agentInput, appendTurns, parseTurns, transcript, type ChatTurn } from './chat-router';
 
 const MAX_TOOL_ROUNDS = 6;
@@ -612,16 +613,23 @@ export class AiAgentService {
     let outputTokens = 0;
     let status: AiUsageStatus = AiUsageStatus.SUCCESS;
     let errorMessage: string | undefined;
+    // 主要模型額度用完（免費層每分鐘 5 次）就換輕量模型接著做，這一輪之後都用它。
+    let model = GEMINI_MODEL;
 
     try {
-      let interaction = await client.interactions.create({
-        model: GEMINI_MODEL,
-        system_instruction: await this.systemInstruction(ctx),
-        tools: ALL_TOOLS,
-        // 前幾輪可能都是閒聊（沒有 Agent 對話串），那就從頭開始。
-        ...(active && state.aiInteractionId && { previous_interaction_id: state.aiInteractionId }),
-        input: params.text,
-      });
+      const systemInstruction = await this.systemInstruction(ctx);
+      const first = await withModelFallback(model, chatModel(), (m) =>
+        client.interactions.create({
+          model: m,
+          system_instruction: systemInstruction,
+          tools: ALL_TOOLS,
+          // 前幾輪可能都是閒聊（沒有 Agent 對話串），那就從頭開始。
+          ...(active && state.aiInteractionId && { previous_interaction_id: state.aiInteractionId }),
+          input: params.text,
+        }),
+      );
+      let interaction = first.result;
+      model = first.model;
       inputTokens += interaction.usage?.total_input_tokens ?? 0;
       outputTokens += interaction.usage?.total_output_tokens ?? 0;
 
@@ -655,12 +663,12 @@ export class AiAgentService {
           }
         }
 
-        interaction = await client.interactions.create({
-          model: GEMINI_MODEL,
-          tools: ALL_TOOLS,
-          previous_interaction_id: interaction.id,
-          input: results,
-        });
+        const previousId = interaction.id;
+        const next = await withModelFallback(model, chatModel(), (m) =>
+          client.interactions.create({ model: m, tools: ALL_TOOLS, previous_interaction_id: previousId, input: results }),
+        );
+        interaction = next.result;
+        model = next.model;
         inputTokens += interaction.usage?.total_input_tokens ?? 0;
         outputTokens += interaction.usage?.total_output_tokens ?? 0;
       }
@@ -687,13 +695,18 @@ export class AiAgentService {
     } catch (error) {
       status = AiUsageStatus.FAILED;
       errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error('萬用 AI 處理失敗', error as Error);
+      if (error instanceof AiRateLimitedError) {
+        // 額度用完不是系統壞掉：不通知管理員，呼叫端跟使用者說等一下。
+        this.logger.warn(`萬用 AI 額度用完（${error.daily ? '今天' : '這分鐘'}）：${error.message}`);
+      } else {
+        this.logger.error('萬用 AI 處理失敗', error as Error);
+      }
       throw error;
     } finally {
       await this.aiUsage.record({
         userId: params.userId,
         feature: channel.kind === 'line' ? 'line_ai_agent' : 'ai_assistant_app',
-        model: GEMINI_MODEL,
+        model,
         inputTokens,
         outputTokens,
         durationMs: Date.now() - startedAt,
