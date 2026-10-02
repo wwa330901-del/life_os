@@ -31,7 +31,7 @@ export class JournalReminderService {
       where: {
         lineUserId: { not: null },
         journalReminderEnabled: true,
-        user: { geminiApiKey: { not: null }, journalEntries: { none: { date: today } } },
+        user: { claudeApiKey: { not: null }, journalEntries: { none: { date: today } } },
       },
       select: { id: true, userId: true },
     });

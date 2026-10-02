@@ -1,6 +1,5 @@
 import { decryptSecret } from '../common/secret-box';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceTransactionsService } from './finance-transactions.service';
 import { FinanceBudgetsService } from './finance-budgets.service';
@@ -8,7 +7,8 @@ import { FinanceRecurringTransactionsService } from './finance-recurring-transac
 import { FinanceHealthService } from './finance-health.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
 import { WishlistService } from './wishlist.service';
-import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
+import { aiUnavailableMessage, AiUnavailableError } from '../ai/ai-errors';
+import { agentModel, claudeJson, needClaudeKey, usageFields } from '../ai/claude';
 import { taipeiCurrentMonth } from '../common/taipei-date';
 import { AiUsageStatus, FinanceCategoryKind, FinanceTransactionType, Prisma } from '../../generated/prisma/client.js';
 import { FINANCE_PLAN_SCHEMA, financePlanText, parseFinancePlan, type FinancePlanResult } from './finance-plan-format';
@@ -105,9 +105,9 @@ export class FinancePlanService {
   /** 產生財務規劃（結構化），存起來給 App「規劃」分頁和 LINE「套用預算」用。
    * `plan` 是轉好的文字（LINE、舊版 App 用）。 */
   async generate(userId: string): Promise<{ plan: string; hasFixedIncome: boolean; structured: FinancePlanResult }> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { geminiApiKey: true } });
-    const apiKey = decryptSecret(user.geminiApiKey);
-    if (!apiKey) throw new BadRequestException('理財評估需要 AI，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰');
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { claudeApiKey: true } });
+    const apiKey = decryptSecret(user.claudeApiKey);
+    if (!apiKey) throw new BadRequestException(needClaudeKey('理財評估'));
     const data = await this.inputs(userId);
     const income = data.fixedMonthlyIncome || data.averageMonthlyIncome;
 
@@ -130,24 +130,18 @@ export class FinancePlanService {
     ].join('\n');
 
     const startedAt = Date.now();
+    const model = agentModel();
     try {
-      const client = new GoogleGenAI({ apiKey });
-      const interaction = await client.interactions.create({
-        model: GEMINI_MODEL,
-        input: prompt,
-        response_format: { type: 'text', mime_type: 'application/json', schema: FINANCE_PLAN_SCHEMA },
-      });
+      const res = await claudeJson<unknown>({ apiKey, model, content: prompt, schema: FINANCE_PLAN_SCHEMA });
       await this.aiUsage.record({
         userId,
         feature: 'finance_plan',
-        model: GEMINI_MODEL,
-        inputTokens: interaction.usage?.total_input_tokens ?? 0,
-        outputTokens: interaction.usage?.total_output_tokens ?? 0,
+        model,
+        ...usageFields(res.usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      const raw = interaction.output_text?.trim();
-      if (!raw) throw new Error('AI 沒有回應');
+      const raw = res.text;
       const structured = parseFinancePlan(raw, { monthlyIncome: income, budgetableCategories: data.budgetableCategories, categoryAverages: data.categoryAverages });
       const spaceId = await this.spaceIdOf(userId);
       await this.prisma.space.update({
@@ -159,13 +153,14 @@ export class FinancePlanService {
       await this.aiUsage.record({
         userId,
         feature: 'finance_plan',
-        model: GEMINI_MODEL,
+        model,
         inputTokens: 0,
         outputTokens: 0,
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.FAILED,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
+      if (error instanceof AiUnavailableError) throw new BadRequestException(aiUnavailableMessage(error));
       this.logger.warn(`理財評估失敗（userId=${userId}）：${String(error)}`);
       throw new BadRequestException('理財評估產生失敗，請稍後再試一次');
     }

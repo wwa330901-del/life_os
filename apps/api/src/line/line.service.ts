@@ -4,7 +4,8 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { VoiceTranscriberService } from './voice-transcriber.service';
 import { ReceiptReaderService, receiptToAgentText } from './receipt-reader.service';
 import { SYSTEM_TROUBLE_MESSAGE } from '../error-report/system-trouble';
-import { AiRateLimitedError, rateLimitMessage } from '../ai-agent/gemini-rate-limit';
+import { aiUnavailableMessage, AiUnavailableError } from '../ai/ai-errors';
+import { needClaudeKey } from '../ai/claude';
 import { AiUsageService } from '../knowledge/ai-usage.service';
 import { AiUsageAdminService } from '../admin/ai-usage-admin.service';
 import { SubscriptionService } from '../finance/subscription.service';
@@ -27,7 +28,6 @@ import { computeSettlementDate } from '../stocks/stock-settlement-schedule';
 import { KnowledgeItemsService } from '../knowledge/knowledge-items.service';
 import { KnowledgeAnalysisPipeline } from '../knowledge/knowledge-analysis-pipeline.service';
 import { InstagramFetcherService } from '../knowledge/instagram-fetcher.service';
-import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
 import { UsersService } from '../users/users.service';
 import { TodosService } from '../todos/todos.service';
 import { LifeGoalsService } from '../life-goals/life-goals.service';
@@ -144,7 +144,6 @@ export class LineService {
     private readonly knowledgeItemsService: KnowledgeItemsService,
     private readonly knowledgeAnalysisPipeline: KnowledgeAnalysisPipeline,
     private readonly instagramFetcherService: InstagramFetcherService,
-    private readonly aiAssistantService: AiAssistantService,
     private readonly usersService: UsersService,
     private readonly todosService: TodosService,
     private readonly lifeGoalsService: LifeGoalsService,
@@ -409,7 +408,7 @@ export class LineService {
         ]
       : [
           '⚠️ 還沒設定 AI 金鑰，只能用固定指令。',
-          '到元序 App 左側「AI 設定」填 Gemini 金鑰後，就能直接跟我講話。',
+          '到元序 App 左側「AI 設定」貼上 Claude 金鑰後，就能直接跟我講話。',
           '',
         ];
     return [
@@ -502,13 +501,13 @@ export class LineService {
       return;
     }
 
-    // LINE 萬用 AI（2026-09-30）：沒設 Gemini 金鑰的人完全走原本的固定指令。
+    // LINE 萬用 AI（2026-09-30）：沒設 Claude 金鑰的人完全走原本的固定指令。
     // 正在跟 AI 一問一答（它剛問「存到 Google 還是 iPhone？」「記在現金可以
     // 嗎？」），或訊息明顯是要 AI 幫忙時，優先交給 AI。
-    const geminiApiKey = (await this.usersService.findById(userId))?.geminiApiKey ?? null;
+    const claudeApiKey = (await this.usersService.findById(userId))?.claudeApiKey ?? null;
     // 選單按鈕送出的文字永遠走固定回覆，就算正在跟 AI 聊天也一樣。
     const aiFirst =
-      geminiApiKey != null &&
+      claudeApiKey != null &&
       !LineService.MENU_COMMANDS.has(text) &&
       (AiAgentService.isConversationActive(link) ||
         AiAgentService.isJournalPromptActive(link) ||
@@ -517,7 +516,7 @@ export class LineService {
     // 關鍵字明顯要做事 → 直接 Agent；只是對話進行中 → 讓分流判斷。
     // （天氣字眼只讓 AI 先接，不強制 Agent——輕量 AI 自己會查天氣。）
     const forceAgent = LineService.AI_FIRST_HINT.test(text.replace(/天氣|下雨|帶傘|氣溫/g, ''));
-    if (aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey, forceAgent))) return;
+    if (aiFirst && (await this.tryAiAgent(link, text, replyToken, claudeApiKey, forceAgent))) return;
 
     // --- 條列式一次登陸多筆（2026-08-04）：貼多行文字，每行各自當一筆獨立
     // 的記帳／代辦／股票交易／行事曆指令處理，不用一則訊息只能記一筆。編
@@ -558,10 +557,10 @@ export class LineService {
     // 新增行程／代辦現在一定要選存到 Google 還是 iPhone，固定指令沒辦法問，
     // 有 AI 的人交給 AI（它會問）；沒有的維持原本行為。
     if (
-      geminiApiKey &&
+      claudeApiKey &&
       !aiFirst &&
       text.startsWith('新增') &&
-      (await this.tryAiAgent(link, text, replyToken, geminiApiKey, true))
+      (await this.tryAiAgent(link, text, replyToken, claudeApiKey, true))
     ) {
       return;
     }
@@ -712,17 +711,17 @@ export class LineService {
       return;
     }
     if (LineService.GUIDE_KEYWORDS.includes(text)) {
-      await this.reply(replyToken, LineService.buildGuideText(geminiApiKey != null));
+      await this.reply(replyToken, LineService.buildGuideText(claudeApiKey != null));
       return;
     }
 
     if (text.startsWith('查詢')) {
-      await this.handleAiQuery(userId, text, replyToken);
+      await this.handleAiQuery(link, text, replyToken);
       return;
     }
 
     const replyOnce: Responder = (msg) => this.reply(replyToken, msg);
-    if (await this.tryFinanceCommand(userId, text, replyOnce, geminiApiKey != null)) return;
+    if (await this.tryFinanceCommand(userId, text, replyOnce, claudeApiKey != null)) return;
     if (await this.tryTransferCommand(userId, text, replyOnce)) return;
     if (await this.tryLoanCommand(userId, text, replyOnce)) return;
     if (await this.tryAdvanceCommand(userId, text, replyOnce)) return;
@@ -731,7 +730,7 @@ export class LineService {
 
     // 固定指令都對不上：交給 AI（「午餐 120」「體重現在 72」「下週三下午兩點
     // 跟客戶開會」），它也處理不了才回「看不懂」。前面已經問過 AI 的不再問。
-    if (geminiApiKey && !aiFirst && (await this.tryAiAgent(link, text, replyToken, geminiApiKey))) return;
+    if (claudeApiKey && !aiFirst && (await this.tryAiAgent(link, text, replyToken, claudeApiKey))) return;
     if (this.eventState.getStore()?.aiFailed) {
       await this.reply(replyToken, SYSTEM_TROUBLE_MESSAGE);
       return;
@@ -1916,8 +1915,15 @@ export class LineService {
     try {
       const data = await this.fetchLineMessageContent(messageId);
       // 拍收據記帳（2026-10-01）：是單據就交給萬用 AI 記帳，不進知識庫。
-      const apiKey = (await this.usersService.findById(userId))?.geminiApiKey ?? null;
-      const receipt = apiKey ? await this.receiptReader.read(userId, apiKey, data) : null;
+      const apiKey = (await this.usersService.findById(userId))?.claudeApiKey ?? null;
+      let receipt: Awaited<ReturnType<ReceiptReaderService['read']>> = null;
+      try {
+        receipt = apiKey ? await this.receiptReader.read(userId, apiKey, data) : null;
+      } catch (error) {
+        if (!(error instanceof AiUnavailableError)) throw error;
+        await this.reply(replyToken, aiUnavailableMessage(error));
+        return;
+      }
       if (apiKey && receipt) {
         const heading = `🧾 收據：${receipt.merchant ? `${receipt.merchant} ` : ''}${receipt.total.toLocaleString('en-US')} 元`;
         const handled = await this.replyPrefix.run(heading, () =>
@@ -1988,13 +1994,13 @@ export class LineService {
     }
   }
 
-  /** 語音訊息（2026-10-01）：Gemini 轉成文字後，跟打字完全走同一條路，
+  /** 語音訊息（2026-10-01）：Gemini 轉成文字後（2026-10-02 AI 改 Claude 後語音還是用 Gemini，Claude 聽不到聲音），跟打字完全走同一條路，
    * 回覆最上面加一行「🎤 我聽到：…」讓使用者確認有沒有聽錯。 */
   private async handleAudioMessage(link: LineAccountLink, messageId: string | undefined, replyToken: string) {
     if (!messageId) return;
     const apiKey = (await this.usersService.findById(link.userId))?.geminiApiKey ?? null;
     if (!apiKey) {
-      await this.reply(replyToken, '語音要用 AI 轉成文字，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰；或直接打字給我。');
+      await this.reply(replyToken, '語音要用 Gemini 轉成文字，請先到 App 左側「AI 設定」貼上 Gemini 金鑰（免費的就可以）；或直接打字給我。');
       return;
     }
     let audio: Buffer;
@@ -2005,7 +2011,14 @@ export class LineService {
       await this.reply(replyToken, '語音下載失敗，請再傳一次看看。');
       return;
     }
-    const text = await this.voice.transcribe(link.userId, apiKey, audio);
+    let text: string | null;
+    try {
+      text = await this.voice.transcribe(link.userId, apiKey, audio);
+    } catch (error) {
+      if (!(error instanceof AiUnavailableError)) throw error;
+      await this.reply(replyToken, `🎤 語音轉文字用的是 Gemini：${aiUnavailableMessage(error)}`);
+      return;
+    }
     if (!text) {
       await this.reply(replyToken, '🎤 我沒聽清楚，可以再說一次，或直接打字給我。');
       return;
@@ -2043,11 +2056,11 @@ export class LineService {
     const h = await this.aiUsage.history(userId);
     const usd = (n: number) => `$${n.toFixed(3)}`;
     return [
-      '🤖 你的 AI 用量（用你自己的 Gemini 金鑰）',
+      '🤖 你的 AI 用量（用你自己的 Claude／Gemini 金鑰）',
       `今天：${h.today.count} 次、約 ${usd(h.today.costUsd)}`,
       `近 7 天：${h.thisWeek.count} 次、約 ${usd(h.thisWeek.costUsd)}`,
       `本月：${h.thisMonth.count} 次、約 ${usd(h.thisMonth.costUsd)}`,
-      '（金額是估的，實際以 Google 帳單為準）',
+      '（金額是估的，實際以 Anthropic／Google 帳單為準）',
     ].join('\n');
   }
 
@@ -2284,40 +2297,24 @@ export class LineService {
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  /** "查詢 <問題>" — free-text Q&A over the user's own 記帳/代辦/專案/行事曆
-   * data via `AiAssistantService` (Gemini function-calling). Deliberately
-   * stateless on the LINE side (no `previousInteractionId` carried between
-   * messages) — unlike the App's chat screen, there's no open "session" to
-   * anchor continuity to here, so every 查詢 starts a fresh conversation.
-   * Requires the explicit "查詢" prefix (not a no-match fallback) — the
+  /** "查詢 <問題>" — 2026-10-02 起交給萬用 AI（跟直接講話一樣），不再有獨立的
+   * 查詢 AI。Requires the explicit "查詢" prefix (not a no-match fallback) — the
    * user's own choice, to avoid an ordinary unrecognized command silently
    * turning into an AI call. */
-  private async handleAiQuery(userId: string, text: string, replyToken: string): Promise<void> {
+  private async handleAiQuery(link: LineAccountLink, text: string, replyToken: string): Promise<void> {
     const question = text.replace(/^查詢/, '').replace(LEADING_SEPARATORS, '').trim();
     if (!question) {
       await this.reply(replyToken, '請在「查詢」後面接你想問的問題，例如「查詢 這個月餐飲花多少」。');
       return;
     }
 
-    const user = await this.usersService.findById(userId);
-    if (!user?.geminiApiKey) {
-      await this.reply(
-        replyToken,
-        '你還沒有設定自己的 Gemini API 金鑰，請先到 App 的「AI 設定」貼上你自己的金鑰才能使用查詢功能。',
-      );
+    const apiKey = (await this.usersService.findById(link.userId))?.claudeApiKey ?? null;
+    if (!apiKey) {
+      await this.reply(replyToken, needClaudeKey('查詢'));
       return;
     }
-
-    try {
-      const result = await this.aiAssistantService.ask({
-        userId,
-        apiKey: user.geminiApiKey,
-        question,
-        feature: 'ai_assistant_line',
-      });
-      await this.reply(replyToken, result.answer);
-    } catch {
-      await this.reply(replyToken, '這次查詢失敗了，稍後再試一次看看。');
+    if (!(await this.tryAiAgent(link, question, replyToken, apiKey, true))) {
+      await this.reply(replyToken, `這次查詢失敗了。${SYSTEM_TROUBLE_MESSAGE}`);
     }
   }
 
@@ -2683,8 +2680,8 @@ export class LineService {
       await this.reply(replyToken, result.reply);
       return true;
     } catch (error) {
-      if (error instanceof AiRateLimitedError) {
-        await this.reply(replyToken, rateLimitMessage(error));
+      if (error instanceof AiUnavailableError) {
+        await this.reply(replyToken, aiUnavailableMessage(error));
         return true;
       }
       // AiAgentService 已經 logger.error（→ 通知管理員）；記下來，固定指令也

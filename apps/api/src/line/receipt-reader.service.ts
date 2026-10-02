@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
+import type Anthropic from '@anthropic-ai/sdk';
 import { AiUsageService } from '../knowledge/ai-usage.service';
-import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
+import { agentModel, claudeJson, emptyUsage, usageFields } from '../ai/claude';
+import { AiUnavailableError } from '../ai/ai-errors';
 import { AiUsageStatus } from '../../generated/prisma/client.js';
 
 export interface Receipt {
@@ -36,7 +37,7 @@ const PROMPT = [
   '不是的話 isReceipt=false，其他都不填。一律繁體中文。',
 ].join('\n');
 
-/** 拍收據記帳（2026-10-01）：LINE 收到的照片先問 Gemini 是不是單據，是的
+/** 拍收據記帳（2026-10-01）：LINE 收到的照片先問 Claude（2026-10-02 前是 Gemini）是不是單據，是的
  * 話讀出金額店家，交給萬用 AI 照原本的記帳流程（猜帳戶→問確認）；不是就
  * 照舊進知識庫。 */
 @Injectable()
@@ -48,37 +49,42 @@ export class ReceiptReaderService {
   /** null = 不是單據，或看不出金額，或判斷失敗（照舊進知識庫）。 */
   async read(userId: string, apiKey: string, image: Buffer, mimeType = 'image/jpeg'): Promise<Receipt | null> {
     const startedAt = Date.now();
+    const model = agentModel();
+    let usage = emptyUsage();
     try {
-      const client = new GoogleGenAI({ apiKey });
-      const interaction = await client.interactions.create({
-        model: GEMINI_MODEL,
-        input: [
+      const res = await claudeJson<unknown>({
+        apiKey,
+        model,
+        effort: 'low',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType as Anthropic.Base64ImageSource['media_type'], data: image.toString('base64') } },
           { type: 'text', text: PROMPT },
-          { type: 'image', data: image.toString('base64'), mime_type: mimeType },
         ],
-        response_format: { type: 'text', mime_type: 'application/json', schema: RESPONSE_SCHEMA },
+        schema: RESPONSE_SCHEMA,
+        maxTokens: 4000,
       });
+      usage = res.usage;
       await this.aiUsage.record({
         userId,
         feature: 'receipt',
-        model: GEMINI_MODEL,
-        inputTokens: interaction.usage?.total_input_tokens ?? 0,
-        outputTokens: interaction.usage?.total_output_tokens ?? 0,
+        model,
+        ...usageFields(usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      return parseReceipt(interaction.output_text);
+      return parseReceipt(res.text);
     } catch (error) {
       await this.aiUsage.record({
         userId,
         feature: 'receipt',
-        model: GEMINI_MODEL,
-        inputTokens: 0,
-        outputTokens: 0,
+        model,
+        ...usageFields(usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.FAILED,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
+      // 金鑰／付款／額度問題：讓呼叫端跟使用者說原因，不要默默當成不是收據。
+      if (error instanceof AiUnavailableError) throw error;
       this.logger.warn(`收據判斷失敗，照舊進知識庫（userId=${userId}）：${String(error)}`);
       return null;
     }

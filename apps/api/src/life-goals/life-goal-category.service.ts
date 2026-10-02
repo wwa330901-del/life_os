@@ -1,9 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
-import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
+import { claudeJson, emptyUsage, lightModel, usageFields } from '../ai/claude';
 import { AiUsageStatus } from '../../generated/prisma/client.js';
 
 const RESPONSE_SCHEMA = {
@@ -31,11 +30,11 @@ export class LifeGoalCategoryService {
   ) {}
 
   /** Returns null (caller keeps whatever the user typed) when the user has
-   * no Gemini key or the call fails — categorizing is a nicety, never a
+   * no Claude key or the call fails — categorizing is a nicety, never a
    * reason to block saving a goal. */
   async suggest(userId: string, title: string, typedCategory?: string | null): Promise<{ category: string | null }> {
     const user = await this.users.findById(userId);
-    if (!user?.geminiApiKey) return { category: null };
+    if (!user?.claudeApiKey) return { category: null };
 
     const existing = (
       await this.prisma.lifeGoal.findMany({
@@ -61,24 +60,18 @@ export class LifeGoalCategoryService {
     ].join('\n');
 
     const startedAt = Date.now();
-    let inputTokens = 0;
-    let outputTokens = 0;
+    // 簡單分類用便宜的 Haiku。
+    const model = lightModel();
+    let usage = emptyUsage();
     try {
-      const client = new GoogleGenAI({ apiKey: user.geminiApiKey });
-      const interaction = await client.interactions.create({
-        model: GEMINI_MODEL,
-        input: prompt,
-        response_format: { type: 'text', mime_type: 'application/json', schema: RESPONSE_SCHEMA },
-      });
-      inputTokens = interaction.usage?.total_input_tokens ?? 0;
-      outputTokens = interaction.usage?.total_output_tokens ?? 0;
-      const category = (JSON.parse(interaction.output_text ?? '{}') as { category?: string }).category?.trim() || null;
+      const res = await claudeJson<{ category?: string }>({ apiKey: user.claudeApiKey, model, content: prompt, schema: RESPONSE_SCHEMA, maxTokens: 500 });
+      usage = res.usage;
+      const category = res.data.category?.trim() || null;
       await this.aiUsage.record({
         userId,
         feature: 'life_goal_category',
-        model: GEMINI_MODEL,
-        inputTokens,
-        outputTokens,
+        model,
+        ...usageFields(usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
@@ -88,9 +81,8 @@ export class LifeGoalCategoryService {
       await this.aiUsage.record({
         userId,
         feature: 'life_goal_category',
-        model: GEMINI_MODEL,
-        inputTokens,
-        outputTokens,
+        model,
+        ...usageFields(usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.FAILED,
         errorMessage: error instanceof Error ? error.message : String(error),

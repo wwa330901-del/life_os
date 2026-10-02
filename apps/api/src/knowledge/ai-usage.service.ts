@@ -34,20 +34,26 @@ export const AI_FEATURE_LABEL: Record<string, string> = {
 
 export const featureLabel = (feature: string) => AI_FEATURE_LABEL[feature] ?? feature;
 
-/** gemini-3.6-flash pricing (see Desktop 「Gemini API 收費分析.md」) — kept
- * here rather than duplicated at every call site; if the model constant in
- * GeminiContentAnalysisService ever changes, update this too. */
-const INPUT_COST_PER_MILLION = 1.5;
-const OUTPUT_COST_PER_MILLION = 7.5;
+/** 每百萬 token 美元（輸入、輸出、寫快取 5 分鐘、讀快取）。Claude 照官方價；Gemini
+ * 照 3.6 Flash 付費價估（免費額度內實際 0 元，這是上限）。沒列到的模型用 Sonnet 的價。 */
+const PRICES: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+  'claude-haiku-4-5': { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
+  'claude-opus-5-5': { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
+  gemini: { input: 1.5, output: 7.5, cacheWrite: 1.5, cacheRead: 1.5 },
+};
 
+/** inputTokens 是全部輸入（含快取讀寫的部分）。 */
 export function estimateCostUsd(
+  model: string,
   inputTokens: number,
   outputTokens: number,
+  cacheReadTokens = 0,
+  cacheWriteTokens = 0,
 ): number {
-  return (
-    (inputTokens / 1_000_000) * INPUT_COST_PER_MILLION +
-    (outputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION
-  );
+  const p = PRICES[model] ?? (model.startsWith('gemini') ? PRICES.gemini : PRICES['claude-sonnet-5-5']);
+  const plain = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens);
+  return (plain * p.input + cacheReadTokens * p.cacheRead + cacheWriteTokens * p.cacheWrite + outputTokens * p.output) / 1_000_000;
 }
 
 interface RecordParams {
@@ -56,6 +62,9 @@ interface RecordParams {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** Claude 的快取讀/寫（算錢用，讀快取便宜很多）。 */
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   durationMs: number;
   status: AiUsageStatus;
   errorMessage?: string;
@@ -76,7 +85,7 @@ export class AiUsageService {
         model: params.model,
         inputTokens: params.inputTokens,
         outputTokens: params.outputTokens,
-        costUsd: estimateCostUsd(params.inputTokens, params.outputTokens),
+        costUsd: estimateCostUsd(params.model, params.inputTokens, params.outputTokens, params.cacheReadTokens, params.cacheWriteTokens),
         durationMs: params.durationMs,
         status: params.status,
         errorMessage: params.errorMessage,

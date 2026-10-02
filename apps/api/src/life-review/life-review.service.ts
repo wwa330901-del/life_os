@@ -1,7 +1,6 @@
 import { decryptSecret } from '../common/secret-box';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
 import { FinanceBudgetsService } from '../finance/finance-budgets.service';
@@ -13,7 +12,7 @@ import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
 import { StockHistoryService } from '../stocks/stock-history.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
-import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
+import { agentModel, claudeText, usageFields } from '../ai/claude';
 import { formatTaipeiDateTime } from '../common/taipei-date';
 import { AiUsageStatus, FinanceLoanDirection, FinanceTransactionType, LifeGoalStatus, LifeGoalTrackingType } from '../../generated/prisma/client.js';
 import { JournalService } from '../journal/journal.service';
@@ -353,8 +352,8 @@ export class LifeReviewService {
   // --- AI 總結 ---
 
   private async aiSummary(userId: string, period: ReviewPeriod, sections: Section[]): Promise<string | null> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { geminiApiKey: true } });
-    const apiKey = decryptSecret(user?.geminiApiKey);
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { claudeApiKey: true } });
+    const apiKey = decryptSecret(user?.claudeApiKey);
     if (!apiKey) return null;
     const prompt = [
       `以下是使用者${period.kind === 'week' ? '這週' : period.label}的生活數據（JSON）。`,
@@ -364,24 +363,23 @@ export class LifeReviewService {
     ].join('\n');
 
     const startedAt = Date.now();
+    const model = agentModel();
     try {
-      const client = new GoogleGenAI({ apiKey });
-      const interaction = await client.interactions.create({ model: GEMINI_MODEL, input: prompt });
+      const res = await claudeText({ apiKey, model, effort: 'low', content: prompt, maxTokens: 4000 });
       await this.aiUsage.record({
         userId,
         feature: 'life_review',
-        model: GEMINI_MODEL,
-        inputTokens: interaction.usage?.total_input_tokens ?? 0,
-        outputTokens: interaction.usage?.total_output_tokens ?? 0,
+        model,
+        ...usageFields(res.usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      return interaction.output_text?.trim() || null;
+      return res.text || null;
     } catch (error) {
       await this.aiUsage.record({
         userId,
         feature: 'life_review',
-        model: GEMINI_MODEL,
+        model,
         inputTokens: 0,
         outputTokens: 0,
         durationMs: Date.now() - startedAt,

@@ -21,6 +21,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@google/genai": "^2.15.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",

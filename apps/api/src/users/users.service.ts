@@ -14,10 +14,22 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { username } });
   }
 
-  /** `geminiApiKey` comes back decrypted (it's stored encrypted, see common/secret-box). */
+  /** `geminiApiKey` / `claudeApiKey` come back decrypted (stored encrypted, see common/secret-box). */
   async findById(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
-    return user && { ...user, geminiApiKey: decryptSecret(user.geminiApiKey) };
+    return user && { ...user, geminiApiKey: decryptSecret(user.geminiApiKey), claudeApiKey: decryptSecret(user.claudeApiKey) };
+  }
+
+  async setClaudeApiKey(userId: string, apiKey: string | null): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { claudeApiKey: encryptSecret(apiKey || null) },
+    });
+  }
+
+  async hasClaudeApiKey(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { claudeApiKey: true } });
+    return Boolean(decryptSecret(user?.claudeApiKey));
   }
 
   /** null/undefined and '' are both treated as "cleared" — the App's clear

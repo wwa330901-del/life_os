@@ -104,6 +104,9 @@ model User {
   /// GoogleCalendarConnection.refreshToken) — Postgres access itself is
   /// the trust boundary.
   geminiApiKey String?
+  /// Claude API 金鑰（2026-10-02 起 AI 主要用 Claude；Gemini 只剩語音轉文字、看影片）。
+  /// 跟 geminiApiKey 一樣加密存（common/secret-box）。
+  claudeApiKey String?
 
   /// 算命用的生辰（2026-10-01）：日期必填、時間可以不知道。
   birthDate DateTime? @db.Date
@@ -953,6 +956,9 @@ model LineAccountLink {
   /// 一段對話，10 分鐘後失效。
   aiInteractionId String?
   aiInteractionAt DateTime?
+  /// Claude Agent 的對話紀錄（Anthropic MessageParam[]，2026-10-02）：Claude 不像 Gemini
+  /// 在伺服器記對話，要自己存、下一則訊息整段送回去。思考區塊不存。
+  aiMessages      Json?
 
   /// AI 提議、等使用者確認才執行的動作（猜的記帳帳戶、自動排的行程）。
   /// `pendingAiActionTurn` 記下提議時是哪一則訊息——確認一定要來自之後的
@@ -1331,6 +1337,8 @@ model AppAiSession {
 
   aiInteractionId     String?
   aiInteractionAt     DateTime?
+  /// Claude Agent 的對話紀錄，同 LineAccountLink.aiMessages。
+  aiMessages          Json?
   pendingAiAction     Json?
   pendingAiActionTurn String?
   /// 閒聊分流（2026-10-02）：最近幾輪對話 [{role,text,via,at}]，閒聊走輕量 AI、

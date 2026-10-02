@@ -25,7 +25,7 @@ function makeService(overrides: { goals?: unknown[]; holdings?: unknown[] } = {}
       ),
     },
     lifeGoalCheckIn: { groupBy: jest.fn().mockResolvedValue([{ goalId: 'g1', _count: { goalId: 2 } }]) },
-    user: { findUnique: jest.fn().mockResolvedValue({ geminiApiKey: null }) },
+    user: { findUnique: jest.fn().mockResolvedValue({ claudeApiKey: null }) },
   };
   const transactions = {
     rangeSummary: jest.fn((_u, _s, start: Date) =>

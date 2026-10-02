@@ -1,9 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
+import type Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
-import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
 import { AI_QUERY_TOOLS, AiQueryToolsService } from '../ai-assistant/ai-query-tools.service';
 import { LIFE_GOAL_TOOLS, LifeGoalAiService } from '../life-goals/life-goal-ai.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
@@ -36,7 +35,9 @@ import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
 import { DIVINATION_FEEDBACK_WINDOW_MS } from '../divination/divination-feedback.service';
 import { RECORD_AI_GUIDE, RECORD_TOOLS, RecordPending, RecordToolsService } from './record-tools.service';
 import { findFreeSlots, parseClock, ScheduleKind } from './free-slots';
-import { AiRateLimitedError, withModelFallback } from './gemini-rate-limit';
+import { AiUnavailableError } from '../ai/ai-errors';
+import { addUsage, agentModel, callClaude, claudeClient, emptyUsage, lightModel, textOf, toClaudeTools, usageFields } from '../ai/claude';
+import { forNextTurn, historyForStorage, parseHistory } from './claude-history';
 import { activeTurns, agentInput, appendTurns, parseTurns, transcript, type ChatTurn } from './chat-router';
 
 const MAX_TOOL_ROUNDS = 6;
@@ -262,6 +263,8 @@ const AGENT_TOOLS = [
 
 const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...MEMORY_TOOLS, ...WISHLIST_TOOLS, ...RETIREMENT_TOOLS, ...TRIP_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
+/** 給 Claude 的工具清單：最後一個加快取標記（工具清單佔每次請求大半，5 分鐘內再問就便宜很多）。 */
+const CLAUDE_TOOLS = toClaudeTools(ALL_TOOLS, true);
 
 /** Where the conversation happens — decides where its state is stored
  * (LineAccountLink vs AppAiSession), how long a conversation stays live,
@@ -271,18 +274,16 @@ export type AgentChannel = { kind: 'line'; linkId: string } | { kind: 'app' };
 /** Same four columns on LineAccountLink and AppAiSession. */
 export type AgentState = Pick<
   LineAccountLink,
-  'aiInteractionId' | 'aiInteractionAt' | 'pendingAiAction' | 'pendingAiActionTurn'
+  'aiInteractionId' | 'aiInteractionAt' | 'aiMessages' | 'pendingAiAction' | 'pendingAiActionTurn'
 >;
 
 const APP_CONVERSATION_WINDOW_MS = 60 * 60 * 1000;
 
-/** 閒聊分流開關：on（預設）＝所有人、admin＝只有管理員、off＝全部走 Agent。
- * 2026-10-02 驗收通過才打開：scripts/eval-chat-router.ts 要做事的 36/36 交給 Agent。 */
-const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'on').toLowerCase();
-/** 輕量 AI 用的模型：驗收是用 flash-lite 跑的（便宜、免費額度跟 Agent 的模型分開算）。
- * 換模型要重跑 scripts/eval-chat-router.ts。 */
-export const CHAT_MODEL_DEFAULT = 'gemini-3.5-flash-lite';
-const chatModel = () => process.env.AI_CHAT_MODEL || CHAT_MODEL_DEFAULT;
+/** 閒聊分流開關：on＝所有人、admin＝只有管理員、off＝全部走 Agent。
+ * 2026-10-02 改用 Claude 後先關（預設 off）：輕量 AI 換成 Haiku 還沒跑過驗收
+ * （scripts/eval-chat-router.ts，要做事的必須全部交給 Agent），通過才改回 on。 */
+const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'off').toLowerCase();
+const chatModel = lightModel;
 
 /** LINE 不支援 Markdown：去掉 **粗體**、# 標題，條列改成「・」。 */
 export function plainText(text: string): string {
@@ -304,11 +305,11 @@ const USE_AGENT_TOOL = {
 
 /** 輕量 AI 可以自己用的工具：都不碰元序的資料庫（天氣、某檔股票的公開資料）。 */
 const CHAT_TOOL_NAMES = new Set(['get_weather', 'analyze_stock_trend', 'get_stock_fundamentals']);
-const CHAT_TOOLS = [
+const CHAT_TOOLS = toClaudeTools([
   USE_AGENT_TOOL,
   WEATHER_TOOL,
   ...STOCK_TOOLS.filter((t) => CHAT_TOOL_NAMES.has(t.name)),
-];
+]);
 
 /** 什麼時候一定要交給 Agent——寧可多交，不能漏（漏了就少一個功能）。 */
 export const CHAT_ROUTER_RULES = [
@@ -524,61 +525,47 @@ export class AiAgentService {
         '回覆一律繁體中文、口語、簡短（聊天訊息，畫面不支援 Markdown，不要用 ** 或 #）。',
       ].join('\n');
       const input = turns.length ? `最近的對話：\n${transcript(turns)}\n\n使用者現在說：${text}` : text;
-      const client = new GoogleGenAI({ apiKey });
-      let interaction = await client.interactions.create({ model: chatModel(), system_instruction: system, tools: CHAT_TOOLS, input });
-      let inputTokens = interaction.usage?.total_input_tokens ?? 0;
-      let outputTokens = interaction.usage?.total_output_tokens ?? 0;
+      const client = claudeClient(apiKey);
+      const model = chatModel();
+      const usage = emptyUsage();
+      const messages: Anthropic.MessageParam[] = [{ role: 'user', content: input }];
+      let response = await callClaude(client, { model, max_tokens: 2000, system, tools: CHAT_TOOLS, messages });
+      addUsage(usage, response.usage);
       let escalate = false;
       // 不用元序資料的工具（天氣、股票走勢/基本面）輕量 AI 自己查；碰到 use_agent 就交出去。
-      for (let round = 0; round < 3 && !escalate; round++) {
-        const calls = (interaction.steps ?? []).filter(
-          (step): step is typeof step & { type: 'function_call' } => step.type === 'function_call',
-        );
-        if (calls.length === 0) break;
+      for (let round = 0; round < 3 && response.stop_reason === 'tool_use'; round++) {
+        const calls = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
         if (calls.some((c) => c.name === USE_AGENT_TOOL.name || !CHAT_TOOL_NAMES.has(c.name))) {
           escalate = true;
           break;
         }
-        const results: Array<{
-          type: 'function_result';
-          name: string;
-          call_id: string;
-          is_error?: boolean;
-          result: Array<{ type: 'text'; text: string }>;
-        }> = [];
+        const results: Anthropic.ToolResultBlockParam[] = [];
         for (const call of calls) {
-          const args = (call.arguments ?? {}) as ToolArgs;
+          const args = (call.input ?? {}) as ToolArgs;
           try {
             const output =
               call.name === WEATHER_TOOL.name
                 ? await getWeather(String(args.placeName ?? ''), Number(args.latitude), Number(args.longitude))
                 : await this.stockTools.execute(userId, call.name, args);
-            results.push({ type: 'function_result' as const, name: call.name, call_id: call.id, result: [{ type: 'text' as const, text: JSON.stringify(output) }] });
+            results.push({ type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(output) ?? 'null' });
           } catch (error) {
-            results.push({
-              type: 'function_result' as const,
-              name: call.name,
-              call_id: call.id,
-              is_error: true,
-              result: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
-            });
+            results.push({ type: 'tool_result', tool_use_id: call.id, is_error: true, content: error instanceof Error ? error.message : String(error) });
           }
         }
-        interaction = await client.interactions.create({ model: chatModel(), tools: CHAT_TOOLS, previous_interaction_id: interaction.id, input: results });
-        inputTokens += interaction.usage?.total_input_tokens ?? 0;
-        outputTokens += interaction.usage?.total_output_tokens ?? 0;
+        messages.push({ role: 'assistant', content: response.content }, { role: 'user', content: results });
+        response = await callClaude(client, { model, max_tokens: 2000, system, tools: CHAT_TOOLS, messages });
+        addUsage(usage, response.usage);
       }
       await this.aiUsage.record({
         userId,
         feature,
-        model: chatModel(),
-        inputTokens,
-        outputTokens,
+        model,
+        ...usageFields(usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      if (escalate || (interaction.steps ?? []).some((s) => s.type === 'function_call')) return null;
-      const reply = plainText(interaction.output_text ?? '');
+      if (escalate || response.stop_reason === 'tool_use') return null;
+      const reply = plainText(textOf(response));
       return reply && reply !== NOT_HANDLED ? reply : null;
     } catch (error) {
       await this.aiUsage.record({
@@ -612,77 +599,61 @@ export class AiAgentService {
     const ctx = await this.buildContext(params.userId, channel, state);
     ctx.journalPrompted = params.journalPrompted ?? false;
     ctx.divinationFeedbackId = params.divinationFeedbackId ?? null;
-    const client = new GoogleGenAI({ apiKey: params.apiKey });
+    const client = claudeClient(params.apiKey);
     const startedAt = Date.now();
-    let inputTokens = 0;
-    let outputTokens = 0;
+    const usage = emptyUsage();
     let status: AiUsageStatus = AiUsageStatus.SUCCESS;
     let errorMessage: string | undefined;
-    // 主要模型額度用完（免費層每分鐘 5 次）就換輕量模型接著做，這一輪之後都用它。
-    let model = GEMINI_MODEL;
+    const model = agentModel();
 
     try {
-      const systemInstruction = await this.systemInstruction(ctx);
-      const first = await withModelFallback(model, chatModel(), (m) =>
-        client.interactions.create({
-          model: m,
-          system_instruction: systemInstruction,
-          tools: ALL_TOOLS,
-          // 前幾輪可能都是閒聊（沒有 Agent 對話串），那就從頭開始。
-          ...(active && state.aiInteractionId && { previous_interaction_id: state.aiInteractionId }),
-          input: params.text,
-        }),
-      );
-      let interaction = first.result;
-      model = first.model;
-      inputTokens += interaction.usage?.total_input_tokens ?? 0;
-      outputTokens += interaction.usage?.total_output_tokens ?? 0;
+      const system = await this.systemInstruction(ctx);
+      // Claude 不在伺服器記對話：上幾則訊息的紀錄（含工具呼叫與結果）自己存、整段送回去。
+      // 前幾輪可能都是閒聊（沒有 Agent 的紀錄），那就從頭開始。
+      const messages: Anthropic.MessageParam[] = [
+        ...(active ? forNextTurn(parseHistory(state.aiMessages)) : []),
+        { role: 'user', content: params.text },
+      ];
+      const ask = () =>
+        callClaude(client, {
+          model,
+          max_tokens: 16000,
+          system,
+          tools: CLAUDE_TOOLS,
+          messages,
+          // 對話尾巴自動快取（同一則訊息裡的第 2、3 次呼叫只付新增的部分）。
+          cache_control: { type: 'ephemeral' },
+          output_config: { effort: 'medium' },
+        });
+      let response = await ask();
+      addUsage(usage, response.usage);
+      messages.push({ role: 'assistant', content: response.content });
 
-      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        const calls = (interaction.steps ?? []).filter(
-          (step): step is typeof step & { type: 'function_call' } => step.type === 'function_call',
-        );
-        if (calls.length === 0) break;
-
+      for (let round = 0; round < MAX_TOOL_ROUNDS && response.stop_reason === 'tool_use'; round++) {
+        const calls = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
         // Sequential, not Promise.all: tools share `ctx.pending` and a
         // confirm right after a propose must see the propose's write.
-        const results: Array<{
-          type: 'function_result';
-          name: string;
-          call_id: string;
-          is_error?: boolean;
-          result: Array<{ type: 'text'; text: string }>;
-        }> = [];
-        for (const step of calls) {
+        const results: Anthropic.ToolResultBlockParam[] = [];
+        for (const call of calls) {
           try {
-            const output = await this.execute(ctx, step.name, (step.arguments ?? {}) as ToolArgs);
-            results.push({ type: 'function_result', name: step.name, call_id: step.id, result: [{ type: 'text', text: JSON.stringify(output) }] });
+            const output = await this.execute(ctx, call.name, (call.input ?? {}) as ToolArgs);
+            results.push({ type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(output) ?? 'null' });
           } catch (error) {
-            results.push({
-              type: 'function_result',
-              name: step.name,
-              call_id: step.id,
-              is_error: true,
-              result: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }],
-            });
+            results.push({ type: 'tool_result', tool_use_id: call.id, is_error: true, content: error instanceof Error ? error.message : String(error) });
           }
         }
-
-        const previousId = interaction.id;
-        const next = await withModelFallback(model, chatModel(), (m) =>
-          client.interactions.create({ model: m, tools: ALL_TOOLS, previous_interaction_id: previousId, input: results }),
-        );
-        interaction = next.result;
-        model = next.model;
-        inputTokens += interaction.usage?.total_input_tokens ?? 0;
-        outputTokens += interaction.usage?.total_output_tokens ?? 0;
+        messages.push({ role: 'user', content: results });
+        response = await ask();
+        addUsage(usage, response.usage);
+        messages.push({ role: 'assistant', content: response.content });
       }
 
-      const text = (interaction.output_text ?? '').trim();
+      const text = response.stop_reason === 'tool_use' ? '' : textOf(response);
       const handled = text.length > 0 && text !== NOT_HANDLED;
       const data = {
-        aiInteractionId: handled ? interaction.id : null,
+        aiInteractionId: handled ? ctx.turnId : null,
         aiInteractionAt: handled ? new Date() : null,
+        aiMessages: handled ? (historyForStorage(messages) as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
         ...(ctx.pending
           ? { pendingAiAction: ctx.pending.action as unknown as Prisma.InputJsonValue, pendingAiActionTurn: ctx.pending.turnId }
           : { pendingAiAction: Prisma.DbNull, pendingAiActionTurn: null }),
@@ -696,13 +667,13 @@ export class AiAgentService {
           update: data,
         });
       }
-      return { handled, reply: handled ? text : '', interactionId: interaction.id };
+      return { handled, reply: handled ? text : '', interactionId: ctx.turnId };
     } catch (error) {
       status = AiUsageStatus.FAILED;
       errorMessage = error instanceof Error ? error.message : String(error);
-      if (error instanceof AiRateLimitedError) {
-        // 額度用完／金鑰付款問題不是系統壞掉：不通知管理員，呼叫端直接跟使用者說原因。
-        this.logger.warn(`萬用 AI 不能用（${{ minute: '這分鐘額度用完', daily: '今天額度用完', billing: '金鑰付款有問題' }[error.reason]}）：${error.message}`);
+      if (error instanceof AiUnavailableError) {
+        // 額度／付款／金鑰／Claude 過載不是系統壞掉：不通知管理員，呼叫端直接跟使用者說原因。
+        this.logger.warn(`萬用 AI 不能用（${error.provider} ${error.reason}）：${error.message}`);
       } else {
         this.logger.error('萬用 AI 處理失敗', error as Error);
       }
@@ -712,8 +683,7 @@ export class AiAgentService {
         userId: params.userId,
         feature: channel.kind === 'line' ? 'line_ai_agent' : 'ai_assistant_app',
         model,
-        inputTokens,
-        outputTokens,
+        ...usageFields(usage),
         durationMs: Date.now() - startedAt,
         status,
         errorMessage,

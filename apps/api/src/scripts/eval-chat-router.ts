@@ -1,8 +1,8 @@
-/* 閒聊分流驗收（2026-10-02）：用真的 Gemini 跑一組標好答案的訊息，確認
+/* 閒聊分流驗收（2026-10-02）：用真的 AI（現在是 Claude，輕量 AI＝Haiku）跑一組標好答案的訊息，確認
  * 「要做事的一定交給 Agent」（漏一個就是少一個功能），閒聊盡量走輕量 AI。
  *
  * 用法（本機，DB 要開著）：
- *   GEMINI_API_KEY=... [AI_CHAT_MODEL=gemini-3.5-flash-lite] npm run build && node dist/src/scripts/eval-chat-router.js
+ *   CLAUDE_API_KEY=... [AI_CHAT_MODEL=claude-haiku-4-5] npm run build && node dist/src/scripts/eval-chat-router.js
  * 只看分流判斷，不會真的記帳或改資料（輕量 AI 只有 use_agent 這一個工具）。 */
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
@@ -75,8 +75,8 @@ const PLAIN_CHAT = [
 ];
 
 async function main() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('要設 GEMINI_API_KEY');
+  const apiKey = process.env.CLAUDE_API_KEY;
+  if (!apiKey) throw new Error('要設 CLAUDE_API_KEY');
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error'] });
   const agent = app.get(AiAgentService);
   const prisma = app.get(PrismaService);

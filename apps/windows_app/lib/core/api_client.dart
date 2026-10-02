@@ -579,6 +579,19 @@ class ApiClient {
     await _delete('/users/me/gemini-key');
   }
 
+  Future<bool> hasClaudeApiKey() async {
+    final body = await _get('/users/me/claude-key');
+    return body['hasKey'] as bool;
+  }
+
+  Future<void> setClaudeApiKey(String apiKey) async {
+    await _patch('/users/me/claude-key', {'apiKey': apiKey});
+  }
+
+  Future<void> clearClaudeApiKey() async {
+    await _delete('/users/me/claude-key');
+  }
+
   Future<AiUsageHistory> getAiUsageHistory() async {
     final body = await _get('/knowledge/ai-usage');
     return AiUsageHistory.fromJson(body);

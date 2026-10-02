@@ -13,10 +13,10 @@ export interface CategoryContext {
 }
 
 export interface ContentAnalysisInput {
-  /** The calling user's own Gemini API key (aistudio.google.com) — every
-   * call bills to their own Google account, never a shared platform key.
-   * Callers must check this is set before invoking `analyze` at all. */
-  apiKey: string;
+  /** The calling user's own keys — every call bills to their own account,
+   * never a shared platform key. 2026-10-02: Claude does text/images; Gemini
+   * only videos (Claude can't watch video). At least one must be set. */
+  keys: { claude: string | null; gemini: string | null };
   /** Display label only, e.g. "IG"/"YouTube"/"網頁文章"/"PDF"/"圖片". */
   sourcePlatform: string;
   sourceUrl?: string;

@@ -1,9 +1,9 @@
 import { decryptSecret } from '../common/secret-box';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
-import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
+import { aiUnavailableMessage, AiUnavailableError } from '../ai/ai-errors';
+import { agentModel, claudeText, needClaudeKey, usageFields } from '../ai/claude';
 import { AiUsageStatus, Prisma } from '../../generated/prisma/client.js';
 import { birthChart, castByTime, MeihuaReading } from './meihua';
 
@@ -100,12 +100,10 @@ export class DivinationService {
     if (!q) throw new BadRequestException('要先說想算什麼');
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { geminiApiKey: true, birthDate: true, birthTime: true },
+      select: { claudeApiKey: true, birthDate: true, birthTime: true },
     });
-    const apiKey = decryptSecret(user.geminiApiKey);
-    if (!apiKey) {
-      throw new BadRequestException('解卦需要 AI，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰');
-    }
+    const apiKey = decryptSecret(user.claudeApiKey);
+    if (!apiKey) throw new BadRequestException(needClaudeKey('解卦'));
 
     const reading = castByTime(now);
     const chart = user.birthDate ? birthChart(user.birthDate.toISOString().slice(0, 10), user.birthTime) : null;
@@ -164,32 +162,32 @@ export class DivinationService {
     ].join('\n');
 
     const startedAt = Date.now();
+    const model = agentModel();
     try {
-      const client = new GoogleGenAI({ apiKey });
-      const interaction = await client.interactions.create({ model: GEMINI_MODEL, input: prompt });
+      const res = await claudeText({ apiKey, model, content: prompt });
       await this.aiUsage.record({
         userId,
         feature: 'divination',
-        model: GEMINI_MODEL,
-        inputTokens: interaction.usage?.total_input_tokens ?? 0,
-        outputTokens: interaction.usage?.total_output_tokens ?? 0,
+        model,
+        ...usageFields(res.usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      const text = interaction.output_text?.trim();
+      const text = res.text;
       if (!text) throw new Error('AI 沒有回應');
       return text;
     } catch (error) {
       await this.aiUsage.record({
         userId,
         feature: 'divination',
-        model: GEMINI_MODEL,
+        model,
         inputTokens: 0,
         outputTokens: 0,
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.FAILED,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
+      if (error instanceof AiUnavailableError) throw new BadRequestException(aiUnavailableMessage(error));
       this.logger.warn(`解卦失敗（userId=${userId}）：${String(error)}`);
       throw new BadRequestException('解卦失敗，請稍後再試一次');
     }

@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { UserLocationService } from '../users/user-location.service';
@@ -8,8 +7,8 @@ import { MemoryService } from '../memory/memory.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { WishlistService } from '../finance/wishlist.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
-import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
-import { AiRateLimitedError, fallbackModel, rateLimitMessage, withModelFallback } from '../ai-agent/gemini-rate-limit';
+import { aiUnavailableMessage, AiUnavailableError } from '../ai/ai-errors';
+import { agentModel, claudeJson, needClaudeKey, usageFields } from '../ai/claude';
 import { taipeiDateKey, taipeiDateKeyToUtcMidnight, utcDateKey } from '../common/taipei-date';
 import { AiUsageStatus, CalendarSyncTarget, WishlistStatus } from '../../generated/prisma/client.js';
 import type { Prisma, Trip } from '../../generated/prisma/client.js';
@@ -231,7 +230,7 @@ export class TripsService {
 
   private async draft(userId: string, input: TripInput & { travelers: number }): Promise<TripDraft> {
     const user = await this.users.findById(userId);
-    if (!user?.geminiApiKey) throw new BadRequestException('旅行規劃需要 AI，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰');
+    if (!user?.claudeApiKey) throw new BadRequestException(needClaudeKey('旅行規劃'));
     const [memoryContext, location] = await Promise.all([this.memory.contextText(userId), this.userLocation.get(userId)]);
     const days = daysBetween(input.startDate, input.endDate) + 1;
     const prompt = [
@@ -255,30 +254,18 @@ export class TripsService {
       .join('\n');
 
     const startedAt = Date.now();
-    let model = GEMINI_MODEL;
+    const model = agentModel();
     try {
-      const client = new GoogleGenAI({ apiKey: user.geminiApiKey });
-      const res = await withModelFallback(GEMINI_MODEL, fallbackModel(), (m) =>
-        client.interactions.create({
-          model: m,
-          input: prompt,
-          response_format: { type: 'text', mime_type: 'application/json', schema: SCHEMA },
-        }),
-      );
-      model = res.model;
-      const interaction = res.result;
+      const res = await claudeJson<unknown>({ apiKey: user.claudeApiKey, model, content: prompt, schema: SCHEMA });
       await this.aiUsage.record({
         userId,
         feature: 'trip_plan',
         model,
-        inputTokens: interaction.usage?.total_input_tokens ?? 0,
-        outputTokens: interaction.usage?.total_output_tokens ?? 0,
+        ...usageFields(res.usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      const raw = interaction.output_text?.trim();
-      if (!raw) throw new Error('AI 沒有回應');
-      return parseTripDraft(raw, input.startDate, input.endDate);
+      return parseTripDraft(res.text, input.startDate, input.endDate);
     } catch (error) {
       await this.aiUsage.record({
         userId,
@@ -290,7 +277,7 @@ export class TripsService {
         status: AiUsageStatus.FAILED,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
-      if (error instanceof AiRateLimitedError) throw new BadRequestException(rateLimitMessage(error));
+      if (error instanceof AiUnavailableError) throw new BadRequestException(aiUnavailableMessage(error));
       this.logger.warn(`旅行規劃失敗（userId=${userId}）：${String(error)}`);
       throw new BadRequestException('旅行規劃產生失敗，請稍後再試一次');
     }

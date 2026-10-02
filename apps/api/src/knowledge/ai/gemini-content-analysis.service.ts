@@ -27,11 +27,11 @@ function toFieldType(value: string): KnowledgeFieldType {
  * originally picked for being cheap/GA/multimodal, but Google stopped
  * granting new API keys access to it (404 "no longer available to new
  * users") — 3.6 Flash is the current stable successor with the same
- * multimodal support. */
+ * multimodal support. 2026-10-02 起只剩看影片、語音轉文字用 Gemini。 */
 export const GEMINI_MODEL = 'gemini-3.6-flash';
 const MODEL = GEMINI_MODEL;
 
-const RESPONSE_SCHEMA = {
+export const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     matched: { type: 'boolean' },
@@ -77,7 +77,7 @@ type GeminiInputPart =
   | { type: 'image'; data?: string; mime_type?: string; uri?: string }
   | { type: 'video'; data?: string; mime_type?: string; uri?: string };
 
-interface RawGeminiOutput {
+export interface RawAnalysisOutput {
   matched: boolean;
   categoryId?: string;
   suggestedCategoryName?: string;
@@ -88,12 +88,14 @@ interface RawGeminiOutput {
   fieldValues?: { name: string; value: string }[];
 }
 
+/** 看影片（YouTube、LINE 傳的影片）用 Gemini——Claude 看不了影片。 */
 @Injectable()
 export class GeminiContentAnalysisService implements AiContentAnalysisService {
   private readonly logger = new Logger(GeminiContentAnalysisService.name);
 
   async analyze(input: ContentAnalysisInput): Promise<ContentAnalysisOutcome> {
-    const client = new GoogleGenAI({ apiKey: input.apiKey });
+    if (!input.keys.gemini) throw new Error('Gemini 金鑰沒有設定');
+    const client = new GoogleGenAI({ apiKey: input.keys.gemini });
     const parts = this.buildInputParts(input);
 
     let outputText: string | undefined;
@@ -123,42 +125,15 @@ export class GeminiContentAnalysisService implements AiContentAnalysisService {
     if (!outputText) {
       throw new Error('Gemini interaction returned no output_text');
     }
-    const raw = JSON.parse(outputText) as RawGeminiOutput;
+    const raw = JSON.parse(outputText) as RawAnalysisOutput;
     return {
-      result: this.toResult(raw),
+      result: toAnalysisResult(raw),
       usage: { model: MODEL, inputTokens, outputTokens },
     };
   }
 
   private buildInputParts(input: ContentAnalysisInput): GeminiInputPart[] {
-    const categoriesDescription = input.existingCategories.map((category) => ({
-      id: category.id,
-      name: category.name,
-      fields: category.fields.map((field) => ({
-        name: field.name,
-        type: field.type,
-      })),
-    }));
-
-    const instruction = [
-      '你是「元序」App 知識蒐集中心的內容分析助理。使用者傳來一則要收藏的內容，你的任務：',
-      '1. 判斷這則內容最符合下面「現有分類」清單中的哪一個；如果沒有任何一個真的合適，設 matched=false。',
-      '2. 若 matched=true：填 categoryId（必須是清單裡的 id），並照該分類的 fields 清單，盡量把看得出來的欄位值填進 fieldValues（陣列，每個元素 {name, value}，name 必須完全對應該分類的欄位名稱；看不出來的欄位就不要放進陣列）。DATE 型態請輸出 "YYYY-MM-DD"；BOOLEAN 型態請輸出 "true" 或 "false"；NUMBER 型態請輸出純數字字串。',
-      '3. 若 matched=false：建議一個新的分類名稱（suggestedCategoryName）跟 3-8 個合理的欄位（suggestedFields，每個 {name, type}，type 從 TEXT/NUMBER/DATE/SELECT/BOOLEAN 選）。',
-      '4. 一律填 title（簡短標題）、summary（三行以內摘要）、tags（3-6 個關鍵字標籤）。',
-      '所有輸出一律使用繁體中文。',
-      '',
-      `來源平台：${input.sourcePlatform}`,
-      input.sourceUrl ? `原始網址：${input.sourceUrl}` : null,
-      input.extraInstruction ? `使用者這次重新分析的額外指示：${input.extraInstruction}` : null,
-      '',
-      '現有分類清單（JSON）：',
-      JSON.stringify(categoriesDescription),
-    ]
-      .filter((line) => line !== null)
-      .join('\n');
-
-    const parts: GeminiInputPart[] = [{ type: 'text', text: instruction }];
+    const parts: GeminiInputPart[] = [{ type: 'text', text: analysisInstruction(input) }];
 
     if (input.extractedText) {
       parts.push({
@@ -186,33 +161,63 @@ export class GeminiContentAnalysisService implements AiContentAnalysisService {
 
     return parts;
   }
+}
 
-  private toResult(raw: RawGeminiOutput): ContentAnalysisResult {
-    if (raw.matched && raw.categoryId) {
-      const fieldValues: Record<string, string> = {};
-      for (const entry of raw.fieldValues ?? []) {
-        fieldValues[entry.name] = entry.value;
-      }
-      return {
-        matched: true,
-        categoryId: raw.categoryId,
-        title: raw.title,
-        summary: raw.summary,
-        tags: raw.tags ?? [],
-        fieldValues,
-      };
+/** 分析指示（Claude、Gemini 共用）。 */
+export function analysisInstruction(input: ContentAnalysisInput): string {
+  const categoriesDescription = input.existingCategories.map((category) => ({
+    id: category.id,
+    name: category.name,
+    fields: category.fields.map((field) => ({
+      name: field.name,
+      type: field.type,
+    })),
+  }));
+
+  return [
+    '你是「元序」App 知識蒐集中心的內容分析助理。使用者傳來一則要收藏的內容，你的任務：',
+    '1. 判斷這則內容最符合下面「現有分類」清單中的哪一個；如果沒有任何一個真的合適，設 matched=false。',
+    '2. 若 matched=true：填 categoryId（必須是清單裡的 id），並照該分類的 fields 清單，盡量把看得出來的欄位值填進 fieldValues（陣列，每個元素 {name, value}，name 必須完全對應該分類的欄位名稱；看不出來的欄位就不要放進陣列）。DATE 型態請輸出 "YYYY-MM-DD"；BOOLEAN 型態請輸出 "true" 或 "false"；NUMBER 型態請輸出純數字字串。',
+    '3. 若 matched=false：建議一個新的分類名稱（suggestedCategoryName）跟 3-8 個合理的欄位（suggestedFields，每個 {name, type}，type 從 TEXT/NUMBER/DATE/SELECT/BOOLEAN 選）。',
+    '4. 一律填 title（簡短標題）、summary（三行以內摘要）、tags（3-6 個關鍵字標籤）。',
+    '所有輸出一律使用繁體中文。',
+    '',
+    `來源平台：${input.sourcePlatform}`,
+    input.sourceUrl ? `原始網址：${input.sourceUrl}` : null,
+    input.extraInstruction ? `使用者這次重新分析的額外指示：${input.extraInstruction}` : null,
+    '',
+    '現有分類清單（JSON）：',
+    JSON.stringify(categoriesDescription),
+  ]
+    .filter((line) => line !== null)
+    .join('\n');
+}
+
+export function toAnalysisResult(raw: RawAnalysisOutput): ContentAnalysisResult {
+  if (raw.matched && raw.categoryId) {
+    const fieldValues: Record<string, string> = {};
+    for (const entry of raw.fieldValues ?? []) {
+      fieldValues[entry.name] = entry.value;
     }
-
     return {
-      matched: false,
-      suggestedCategoryName: raw.suggestedCategoryName ?? '未分類',
-      suggestedFields: (raw.suggestedFields ?? []).map((field) => ({
-        name: field.name,
-        type: toFieldType(field.type),
-      })),
+      matched: true,
+      categoryId: raw.categoryId,
       title: raw.title,
       summary: raw.summary,
       tags: raw.tags ?? [],
+      fieldValues,
     };
   }
+
+  return {
+    matched: false,
+    suggestedCategoryName: raw.suggestedCategoryName ?? '未分類',
+    suggestedFields: (raw.suggestedFields ?? []).map((field) => ({
+      name: field.name,
+      type: toFieldType(field.type),
+    })),
+    title: raw.title,
+    summary: raw.summary,
+    tags: raw.tags ?? [],
+  };
 }

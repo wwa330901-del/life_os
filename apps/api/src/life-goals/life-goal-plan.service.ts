@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
 import { FinancePlanService } from '../finance/finance-plan.service';
-import { GEMINI_MODEL } from '../knowledge/ai/gemini-content-analysis.service';
+import { aiUnavailableMessage, AiUnavailableError } from '../ai/ai-errors';
+import { agentModel, claudeJson, needClaudeKey, usageFields } from '../ai/claude';
 import { taipeiDateKey } from '../common/taipei-date';
 import { AiUsageStatus, LifeGoalStatus } from '../../generated/prisma/client.js';
 
@@ -123,7 +123,8 @@ export class LifeGoalPlanService {
     const wish = input.title.trim();
     if (!wish) throw new BadRequestException('先寫想達成什麼');
     const user = await this.users.findById(userId);
-    if (!user?.geminiApiKey) throw new BadRequestException('目標規劃需要 AI，請先到 App 左側「AI 設定」貼上你的 Gemini 金鑰');
+    if (!user?.claudeApiKey) throw new BadRequestException(needClaudeKey('目標規劃'));
+    const apiKey = user.claudeApiKey;
 
     const [goals, finance, space] = await Promise.all([
       this.prisma.lifeGoal.findMany({
@@ -168,24 +169,18 @@ export class LifeGoalPlanService {
       .join('\n');
 
     const startedAt = Date.now();
+    const model = agentModel();
     try {
-      const client = new GoogleGenAI({ apiKey: user.geminiApiKey });
-      const interaction = await client.interactions.create({
-        model: GEMINI_MODEL,
-        input: prompt,
-        response_format: { type: 'text', mime_type: 'application/json', schema: SCHEMA },
-      });
+      const res = await claudeJson<unknown>({ apiKey, model, content: prompt, schema: SCHEMA });
       await this.aiUsage.record({
         userId,
         feature: 'life_goal_plan',
-        model: GEMINI_MODEL,
-        inputTokens: interaction.usage?.total_input_tokens ?? 0,
-        outputTokens: interaction.usage?.total_output_tokens ?? 0,
+        model,
+        ...usageFields(res.usage),
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      const raw = interaction.output_text?.trim();
-      if (!raw) throw new Error('AI 沒有回應');
+      const raw = res.text;
       const plan = parseGoalPlan(raw, accountNames);
       if (!plan.title) plan.title = wish;
       return plan;
@@ -193,13 +188,14 @@ export class LifeGoalPlanService {
       await this.aiUsage.record({
         userId,
         feature: 'life_goal_plan',
-        model: GEMINI_MODEL,
+        model,
         inputTokens: 0,
         outputTokens: 0,
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.FAILED,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
+      if (error instanceof AiUnavailableError) throw new BadRequestException(aiUnavailableMessage(error));
       this.logger.warn(`目標規劃失敗（userId=${userId}）：${String(error)}`);
       throw new BadRequestException('目標規劃產生失敗，請稍後再試一次');
     }

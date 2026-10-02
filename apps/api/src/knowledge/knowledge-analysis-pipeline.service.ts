@@ -16,9 +16,12 @@ import { GEMINI_MODEL } from './ai/gemini-content-analysis.service';
 import { AI_CONTENT_ANALYSIS_SERVICE } from './ai/ai-content-analysis.interface';
 import type { AiContentAnalysisService } from './ai/ai-content-analysis.interface';
 import { AiUsageStatus } from '../../generated/prisma/client.js';
+import { aiUnavailableMessage, claudeUnavailable, geminiUnavailable } from '../ai/ai-errors';
+import { agentModel } from '../ai/claude';
+import { VIDEO_NEEDS_GEMINI_MESSAGE } from './ai/claude-content-analysis.service';
 
 const NO_API_KEY_MESSAGE =
-  '你還沒有設定自己的 Gemini API 金鑰，請先到 App 的「AI 設定」貼上你自己的金鑰才能使用知識庫分析功能。';
+  '你還沒有設定自己的 AI 金鑰，請先到 App 的「AI 設定」貼上你的 Claude 金鑰才能使用知識庫分析功能。';
 
 /** Ties fetch -> AI analysis -> persistence together, run fire-and-forget
  * from the LINE webhook handler (which has already replied "收到，分析中"
@@ -57,12 +60,12 @@ export class KnowledgeAnalysisPipeline {
     url: string,
   ): Promise<void> {
     try {
-      const apiKey = await this.requireApiKey(ownerUserId);
+      const keys = await this.requireApiKey(ownerUserId);
       await this.itemsService.markProcessing(itemId);
       const fetched = await this.contentFetcher.fetchFromUrl(url);
-      await this.runAnalysis(itemId, ownerUserId, apiKey, fetched);
+      await this.runAnalysis(itemId, ownerUserId, keys, fetched);
     } catch (error) {
-      this.logger.error(`知識庫網址分析失敗 item=${itemId}`, error as Error);
+      this.logFailure(`知識庫網址分析失敗 item=${itemId}`, error);
       await this.itemsService.markFailed(itemId, this.errorMessage(error));
       await this.lineNotifier.notifyByUser(
         ownerUserId,
@@ -77,15 +80,15 @@ export class KnowledgeAnalysisPipeline {
     image: { data: Buffer; mimeType: string },
   ): Promise<void> {
     try {
-      const apiKey = await this.requireApiKey(ownerUserId);
+      const keys = await this.requireApiKey(ownerUserId);
       await this.itemsService.markProcessing(itemId);
       await this.persistSourceFile(itemId, image.data, image.mimeType, 'jpg');
-      await this.runAnalysis(itemId, ownerUserId, apiKey, {
+      await this.runAnalysis(itemId, ownerUserId, keys, {
         sourcePlatform: '圖片',
         image,
       });
     } catch (error) {
-      this.logger.error(`知識庫圖片分析失敗 item=${itemId}`, error as Error);
+      this.logFailure(`知識庫圖片分析失敗 item=${itemId}`, error);
       await this.itemsService.markFailed(itemId, this.errorMessage(error));
       await this.lineNotifier.notifyByUser(
         ownerUserId,
@@ -103,14 +106,14 @@ export class KnowledgeAnalysisPipeline {
     text: string,
   ): Promise<void> {
     try {
-      const apiKey = await this.requireApiKey(ownerUserId);
+      const keys = await this.requireApiKey(ownerUserId);
       await this.itemsService.markProcessing(itemId);
-      await this.runAnalysis(itemId, ownerUserId, apiKey, {
+      await this.runAnalysis(itemId, ownerUserId, keys, {
         sourcePlatform: '貼上文字',
         extractedText: text,
       });
     } catch (error) {
-      this.logger.error(`知識庫文字分析失敗 item=${itemId}`, error as Error);
+      this.logFailure(`知識庫文字分析失敗 item=${itemId}`, error);
       await this.itemsService.markFailed(itemId, this.errorMessage(error));
       await this.lineNotifier.notifyByUser(
         ownerUserId,
@@ -127,15 +130,15 @@ export class KnowledgeAnalysisPipeline {
     video: { data: Buffer; mimeType: string },
   ): Promise<void> {
     try {
-      const apiKey = await this.requireApiKey(ownerUserId);
+      const keys = await this.requireApiKey(ownerUserId);
       await this.itemsService.markProcessing(itemId);
       await this.persistSourceFile(itemId, video.data, video.mimeType, 'mp4');
-      await this.runAnalysis(itemId, ownerUserId, apiKey, {
+      await this.runAnalysis(itemId, ownerUserId, keys, {
         sourcePlatform: '影片',
         video,
       });
     } catch (error) {
-      this.logger.error(`知識庫影片分析失敗 item=${itemId}`, error as Error);
+      this.logFailure(`知識庫影片分析失敗 item=${itemId}`, error);
       await this.itemsService.markFailed(itemId, this.errorMessage(error));
       await this.lineNotifier.notifyByUser(
         ownerUserId,
@@ -158,12 +161,12 @@ export class KnowledgeAnalysisPipeline {
     }
 
     try {
-      const apiKey = await this.requireApiKey(callerId);
+      const keys = await this.requireApiKey(callerId);
       await this.itemsService.markProcessing(itemId);
       const fetched = await this.resolveSourceForReanalysis(item);
-      await this.runAnalysis(itemId, callerId, apiKey, fetched, extraInstruction);
+      await this.runAnalysis(itemId, callerId, keys, fetched, extraInstruction);
     } catch (error) {
-      this.logger.error(`知識庫重新分析失敗 item=${itemId}`, error as Error);
+      this.logFailure(`知識庫重新分析失敗 item=${itemId}`, error);
       await this.itemsService.markFailed(itemId, this.errorMessage(error));
       await this.lineNotifier.notifyByUser(callerId, this.userFacingMessage(error));
     }
@@ -213,26 +216,42 @@ export class KnowledgeAnalysisPipeline {
    * everything else gets a generic wrapper so a raw technical message
    * (e.g. "Fetch failed with status 404") doesn't show up unexplained. */
   private userFacingMessage(error: unknown): string {
+    const unavailable = this.unavailable(error);
+    if (unavailable) return aiUnavailableMessage(unavailable);
     const message = this.errorMessage(error);
     // 使用者自己能處理的照實說；其他（含 IG session 過期）是系統問題，細節
     // 已經 logger.error 通知管理員，使用者只看到「已通知管理員」。
-    return message === NO_API_KEY_MESSAGE || message === INSTAGRAM_UNSUPPORTED_MESSAGE
+    return message === NO_API_KEY_MESSAGE || message === INSTAGRAM_UNSUPPORTED_MESSAGE || message === VIDEO_NEEDS_GEMINI_MESSAGE
       ? message
       : `這則知識庫內容分析失敗了。${SYSTEM_TROUBLE_MESSAGE}`;
   }
 
-  private async requireApiKey(userId: string): Promise<string> {
+  private unavailable(error: unknown) {
+    return claudeUnavailable(error) ?? geminiUnavailable(error);
+  }
+
+  /** 使用者自己能處理的（沒金鑰、帳戶沒錢、影片要 Gemini）只記 warn，其他才通知管理員。 */
+  private logFailure(label: string, error: unknown) {
+    const message = this.errorMessage(error);
+    if (this.unavailable(error) || message === NO_API_KEY_MESSAGE || message === VIDEO_NEEDS_GEMINI_MESSAGE) {
+      this.logger.warn(`${label}：${message}`);
+    } else {
+      this.logger.error(label, error as Error);
+    }
+  }
+
+  private async requireApiKey(userId: string): Promise<{ claude: string | null; gemini: string | null }> {
     const user = await this.usersService.findById(userId);
-    if (!user?.geminiApiKey) {
+    if (!user?.claudeApiKey && !user?.geminiApiKey) {
       throw new Error(NO_API_KEY_MESSAGE);
     }
-    return user.geminiApiKey;
+    return { claude: user.claudeApiKey, gemini: user.geminiApiKey };
   }
 
   private async runAnalysis(
     itemId: string,
     ownerUserId: string,
-    apiKey: string,
+    keys: { claude: string | null; gemini: string | null },
     fetched: FetchedContent,
     extraInstruction?: string,
   ): Promise<void> {
@@ -248,7 +267,7 @@ export class KnowledgeAnalysisPipeline {
     const startedAt = Date.now();
     const outcome = await this.aiService
       .analyze({
-        apiKey,
+        keys,
         sourcePlatform: fetched.sourcePlatform,
         sourceUrl: item.sourceUrl ?? undefined,
         extractedText: fetched.extractedText,
@@ -262,7 +281,7 @@ export class KnowledgeAnalysisPipeline {
         await this.aiUsageService.record({
           userId: ownerUserId,
           feature: 'knowledge',
-          model: GEMINI_MODEL,
+          model: keys.claude ? agentModel() : GEMINI_MODEL,
           inputTokens: 0,
           outputTokens: 0,
           durationMs: Date.now() - startedAt,

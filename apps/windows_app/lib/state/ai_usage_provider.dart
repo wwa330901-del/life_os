@@ -10,3 +10,7 @@ final aiUsageHistoryProvider = FutureProvider.autoDispose<AiUsageHistory>((ref) 
 final hasGeminiApiKeyProvider = FutureProvider.autoDispose<bool>((ref) {
   return ref.read(apiClientProvider).hasGeminiApiKey();
 });
+
+final hasClaudeApiKeyProvider = FutureProvider.autoDispose<bool>((ref) {
+  return ref.read(apiClientProvider).hasClaudeApiKey();
+});
