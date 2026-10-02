@@ -3,7 +3,7 @@ import { JournalService } from './journal.service';
 
 const MOOD_LABEL = ['', '很差', '不太好', '普通', '不錯', '很好'];
 
-/** Gemini tool declarations for 日記 — composed into the 萬用 AI. */
+/** Tool declarations for 日記 — composed into the 萬用 AI. */
 export const JOURNAL_TOOLS = [
   {
     type: 'function' as const,
@@ -23,6 +23,22 @@ export const JOURNAL_TOOLS = [
   },
   {
     type: 'function' as const,
+    name: 'update_journal_entry',
+    description:
+      '改或補充已經記過的日記（id 從 list_journal_entries 拿）。使用者說「再補一句」「剛剛那篇改成…」時用：補充就把新內容接在原本 content 後面整段傳回來，不要另外新增一篇；mood、tags 有變才填。',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        content: { type: 'string', description: '改好後的完整內容' },
+        mood: { type: 'integer', minimum: 1, maximum: 5 },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['id', 'content'],
+    },
+  },
+  {
+    type: 'function' as const,
     name: 'list_journal_entries',
     description: '查使用者的日記（可依日期範圍或關鍵字），例如「上個月心情怎樣」「我什麼時候去過宜蘭」。',
     parameters: {
@@ -37,7 +53,9 @@ export const JOURNAL_TOOLS = [
 ];
 
 export const JOURNAL_AI_GUIDE =
-  '使用者在描述今天發生的事、心情、感想（不是要你做事）時，用 add_journal_entry 記成日記，回一句溫暖的話並說已經記下來；問過去的日記就 list_journal_entries。';
+  '使用者在描述今天發生的事、心情、感想（不是要你做事）時，用 add_journal_entry 記成日記，回一句溫暖的話並說已經記下來；問過去的日記就 list_journal_entries。' +
+  '同一天已經有日記、使用者是要補充或修改（「再補一句」「剛剛那篇改成」）→ 先 list_journal_entries 拿 id，再 update_journal_entry 把內容接上去，不要另開一篇。' +
+  '補寫以前的日記（「補昨天的日記」「10/1 的日記」）就填 date；過了午夜才寫、內容在講「今天」白天的事，問他要記在昨天還是今天。';
 
 @Injectable()
 export class JournalAiService {
@@ -55,7 +73,16 @@ export class JournalAiService {
           ...(mood >= 1 && mood <= 5 && { mood: Math.round(mood) }),
           ...(Array.isArray(args.tags) && { tags: args.tags.map(String).slice(0, 5) }),
         });
-        return { saved: true, date: entry.date.toISOString().slice(0, 10), mood: entry.mood, tags: entry.tags };
+        return { saved: true, id: entry.id, date: entry.date.toISOString().slice(0, 10), mood: entry.mood, tags: entry.tags };
+      }
+      case 'update_journal_entry': {
+        const mood = Number(args.mood);
+        const entry = await this.journal.update(userId, String(args.id ?? ''), {
+          content: String(args.content ?? ''),
+          ...(mood >= 1 && mood <= 5 && { mood: Math.round(mood) }),
+          ...(Array.isArray(args.tags) && { tags: args.tags.map(String).slice(0, 5) }),
+        });
+        return { saved: true, id: entry.id, date: entry.date.toISOString().slice(0, 10), content: entry.content };
       }
       case 'list_journal_entries': {
         const entries = await this.journal.list(userId, {
@@ -65,6 +92,7 @@ export class JournalAiService {
           limit: 30,
         });
         return entries.map((e) => ({
+          id: e.id,
           date: e.date.toISOString().slice(0, 10),
           content: e.content,
           mood: e.mood ? `${e.mood}（${MOOD_LABEL[e.mood]}）` : null,
