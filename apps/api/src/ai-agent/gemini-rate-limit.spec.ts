@@ -1,4 +1,4 @@
-import { AiRateLimitedError, isRateLimitError, withModelFallback } from './gemini-rate-limit';
+import { AiRateLimitedError, BILLING_MESSAGE, isRateLimitError, rateLimitMessage, withModelFallback } from './gemini-rate-limit';
 
 const limit = (per: 'minute' | 'day') =>
   Object.assign(new Error(`429 Rate limit exceeded for model x (limit: 5 requests per ${per} on Free Tier).`), { status: 429 });
@@ -36,6 +36,18 @@ describe('withModelFallback', () => {
     }).catch((e) => e);
     expect(err).not.toBeInstanceOf(AiRateLimitedError);
     expect(isRateLimitError(err)).toBe(false);
+    expect(calls).toEqual(['a']);
+  });
+
+  it('402 付款問題不換模型，直接丟 billing', async () => {
+    const calls: string[] = [];
+    const err = await withModelFallback('a', 'b', async (m) => {
+      calls.push(m);
+      throw Object.assign(new Error('402 API error occurred: {}'), { status: 402 });
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(AiRateLimitedError);
+    expect(err.reason).toBe('billing');
+    expect(rateLimitMessage(err)).toBe(BILLING_MESSAGE);
     expect(calls).toEqual(['a']);
   });
 });

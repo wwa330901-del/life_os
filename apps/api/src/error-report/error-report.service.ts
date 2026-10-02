@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { formatTaipeiDateTime } from '../common/taipei-date';
+import { isBillingError } from '../ai-agent/gemini-rate-limit';
 
 const SAME_ERROR_COOLDOWN_MS = 60 * 60 * 1000;
 const DAILY_LIMIT = 20;
@@ -47,6 +48,7 @@ export class ErrorReportService {
         `哪裡：${source}`,
         `訊息：${message.slice(0, 300)}`,
         ...(detail ? ['', detail.split('\n').slice(0, 4).join('\n').slice(0, 400)] : []),
+        ...(isBillingError(`${message}\n${detail ?? ''}`) ? ['', '👉 這是 Gemini 金鑰付款問題（402）：到 AI Studio 的 Billing 儲值或檢查付款方式就好，不用改程式。'] : []),
         '',
         '（同一個錯誤一小時只通知一次。可以把這則訊息轉給 Claude 幫你修）',
       ].join('\n');

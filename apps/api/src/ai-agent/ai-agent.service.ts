@@ -701,8 +701,8 @@ export class AiAgentService {
       status = AiUsageStatus.FAILED;
       errorMessage = error instanceof Error ? error.message : String(error);
       if (error instanceof AiRateLimitedError) {
-        // 額度用完不是系統壞掉：不通知管理員，呼叫端跟使用者說等一下。
-        this.logger.warn(`萬用 AI 額度用完（${error.daily ? '今天' : '這分鐘'}）：${error.message}`);
+        // 額度用完／金鑰付款問題不是系統壞掉：不通知管理員，呼叫端直接跟使用者說原因。
+        this.logger.warn(`萬用 AI 不能用（${{ minute: '這分鐘額度用完', daily: '今天額度用完', billing: '金鑰付款有問題' }[error.reason]}）：${error.message}`);
       } else {
         this.logger.error('萬用 AI 處理失敗', error as Error);
       }
