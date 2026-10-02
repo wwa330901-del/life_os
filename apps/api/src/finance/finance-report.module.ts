@@ -8,6 +8,9 @@ import { FinancePlanService } from './finance-plan.service';
 import { WishlistService } from './wishlist.service';
 import { WishlistAiService } from './wishlist-ai.service';
 import { WishlistController } from './wishlist.controller';
+import { RetirementService } from './retirement.service';
+import { RetirementController } from './retirement.controller';
+import { RetirementAiService } from './retirement-ai.service';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 
 /// Split out from FinanceModule (rather than added to it) specifically to
@@ -18,9 +21,9 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 @Module({
   // KnowledgeModule for AiUsageService（理財評估用 AI）。
   imports: [FinanceModule, StocksModule, KnowledgeModule],
-  controllers: [FinanceReportController, WishlistController],
-  providers: [FinanceReportService, FinanceHealthService, FinancePlanService, WishlistService, WishlistAiService],
+  controllers: [FinanceReportController, WishlistController, RetirementController],
+  providers: [FinanceReportService, FinanceHealthService, FinancePlanService, WishlistService, WishlistAiService, RetirementService, RetirementAiService],
   // 人生目標的「淨資產」追蹤用同一套算法，不另寫一份。購物車給萬用 AI、LINE 用。
-  exports: [FinanceReportService, FinanceHealthService, FinancePlanService, WishlistService, WishlistAiService],
+  exports: [FinanceReportService, FinanceHealthService, FinancePlanService, WishlistService, WishlistAiService, RetirementService, RetirementAiService],
 })
 export class FinanceReportModule {}

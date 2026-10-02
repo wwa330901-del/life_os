@@ -10,6 +10,7 @@ import { AiUsageAdminService } from '../admin/ai-usage-admin.service';
 import { SubscriptionService } from '../finance/subscription.service';
 import { subscriptionsText } from '../finance/subscriptions';
 import { WishlistService } from '../finance/wishlist.service';
+import { RetirementService } from '../finance/retirement.service';
 import { UserLocationService } from '../users/user-location.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
@@ -156,6 +157,7 @@ export class LineService {
     private readonly aiUsageAdmin: AiUsageAdminService,
     private readonly subscriptionService: SubscriptionService,
     private readonly wishlist: WishlistService,
+    private readonly retirement: RetirementService,
     private readonly userLocation: UserLocationService,
   ) {}
 
@@ -314,6 +316,8 @@ export class LineService {
     '關閉早報',
     '開啟早報',
     '購物車',
+    '退休試算',
+    '退休',
     '訂閱',
     '我的訂閱',
     '關閉花費提醒',
@@ -342,6 +346,9 @@ export class LineService {
           '',
           '🛒 購物車',
           '「想買 AirPods 7490」我會排什麼時候買得起；傳「購物車」看清單',
+          '',
+          '🧓 退休試算',
+          '傳「退休試算」，或問「我幾歲可以退休？」「如果每月多存 5000 呢？」',
           '',
           '🧠 記住你的事',
           '「記住我不吃牛」「我太太叫小美，喜歡多肉植物」',
@@ -668,6 +675,10 @@ export class LineService {
 
     if (text === '購物車') {
       await this.reply(replyToken, await this.wishlist.text(userId));
+      return;
+    }
+    if (text === '退休試算' || text === '退休') {
+      await this.reply(replyToken, await this.retirement.text(userId));
       return;
     }
     if (text === '訂閱' || text === '我的訂閱') {

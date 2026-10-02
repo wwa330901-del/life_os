@@ -20,6 +20,7 @@ import 'models/life_goal.dart';
 import 'models/finance_plan.dart';
 import 'models/memory.dart';
 import 'models/wishlist.dart';
+import 'models/retirement.dart';
 import 'models/project_todo.dart';
 import 'models/stock.dart';
 
@@ -1359,6 +1360,17 @@ class ApiClient {
   /// null＝回到預設（平均結餘的 30%）。
   Future<void> setWishlistBudget(double? amount) async {
     await _patch('/wishlist/budget', {'amount': amount});
+  }
+
+  // --- 退休試算 ---
+
+  Future<RetirementReport> getRetirement() async {
+    return RetirementReport.fromJson(await _get('/retirement'));
+  }
+
+  /// 只送要改的欄位；值給 null＝改回自動（每月花費／每月存／年齡）。
+  Future<RetirementReport> updateRetirementSettings(Map<String, num?> patch) async {
+    return RetirementReport.fromJson(await _patch('/retirement', patch));
   }
 
   // --- AI 記得的事／重要日子 ---

@@ -4,6 +4,7 @@ import '../core/models/finance.dart';
 import '../core/models/finance_plan.dart';
 import '../core/models/finance_report.dart';
 import '../core/models/wishlist.dart';
+import '../core/models/retirement.dart';
 import 'auth_provider.dart';
 
 /// This month as `"YYYY-MM"` — the default selection for every 記帳 screen
@@ -210,6 +211,11 @@ final financeAdvancesProvider = AsyncNotifierProvider.autoDispose
 /// 購物車（想買的東西＋什麼時候買得起）。
 final wishlistProvider = FutureProvider.autoDispose<WishlistOverview>((ref) {
   return ref.read(apiClientProvider).getWishlist();
+});
+
+/// 退休試算。
+final retirementProvider = FutureProvider.autoDispose<RetirementReport>((ref) {
+  return ref.read(apiClientProvider).getRetirement();
 });
 
 /// 最近一次的財務規劃（還沒做過是 null）。
