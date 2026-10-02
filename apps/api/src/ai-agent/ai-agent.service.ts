@@ -280,8 +280,9 @@ export type AgentState = Pick<
 const APP_CONVERSATION_WINDOW_MS = 60 * 60 * 1000;
 
 /** 閒聊分流開關：on＝所有人、admin＝只有管理員、off＝全部走 Agent。
- * 2026-10-02 改用 Claude 後先關（預設 off）：輕量 AI 換成 Haiku 還沒跑過驗收
- * （scripts/eval-chat-router.ts，要做事的必須全部交給 Agent），通過才改回 on。 */
+ * 2026-10-02 改用 Claude 後關掉（預設 off）：Haiku 跑驗收（scripts/eval-chat-router.ts）
+ * 要做事的只有 31/36 交給 Agent（「我不吃牛肉」「關掉早報」「剛剛那筆改成150」等自己回了），
+ * 不合格。Agent 有快取，連續對話一則約 $0.01，全部走 Agent 也不貴。 */
 const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'off').toLowerCase();
 const chatModel = lightModel;
 
