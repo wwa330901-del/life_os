@@ -55,10 +55,15 @@ export function estimateCostUsd(
   outputTokens: number,
   cacheReadTokens = 0,
   cacheWriteTokens = 0,
+  /** cacheWriteTokens 裡寫 1 小時快取的部分（輸入價 2 倍）。 */
+  cacheWrite1hTokens = 0,
 ): number {
   const p = PRICES[model] ?? (model.startsWith('gemini') ? PRICES.gemini : PRICES['claude-sonnet-5-5']);
   const plain = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens);
-  return (plain * p.input + cacheReadTokens * p.cacheRead + cacheWriteTokens * p.cacheWrite + outputTokens * p.output) / 1_000_000;
+  const write5m = Math.max(0, cacheWriteTokens - cacheWrite1hTokens);
+  return (
+    (plain * p.input + cacheReadTokens * p.cacheRead + write5m * p.cacheWrite + cacheWrite1hTokens * p.input * 2 + outputTokens * p.output) / 1_000_000
+  );
 }
 
 interface RecordParams {
@@ -70,6 +75,7 @@ interface RecordParams {
   /** Claude 的快取讀/寫（算錢用，讀快取便宜很多）。 */
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  cacheWrite1hTokens?: number;
   durationMs: number;
   status: AiUsageStatus;
   errorMessage?: string;
@@ -90,7 +96,7 @@ export class AiUsageService {
         model: params.model,
         inputTokens: params.inputTokens,
         outputTokens: params.outputTokens,
-        costUsd: estimateCostUsd(params.model, params.inputTokens, params.outputTokens, params.cacheReadTokens, params.cacheWriteTokens),
+        costUsd: estimateCostUsd(params.model, params.inputTokens, params.outputTokens, params.cacheReadTokens, params.cacheWriteTokens, params.cacheWrite1hTokens),
         durationMs: params.durationMs,
         status: params.status,
         errorMessage: params.errorMessage,

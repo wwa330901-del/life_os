@@ -263,8 +263,9 @@ const AGENT_TOOLS = [
 
 const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...MEMORY_TOOLS, ...WISHLIST_TOOLS, ...RETIREMENT_TOOLS, ...TRIP_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
-/** 給 Claude 的工具清單：最後一個加快取標記（工具清單佔每次請求大半，5 分鐘內再問就便宜很多）。 */
-const CLAUDE_TOOLS = toClaudeTools(ALL_TOOLS, true);
+/** 給 Claude 的工具清單：最後一個加 1 小時快取（工具清單佔每次請求大半、每個人都一樣，
+ * 共用同一把金鑰的人也共用這份快取；LINE 訊息常隔超過 5 分鐘，1 小時比較划算）。 */
+const CLAUDE_TOOLS = toClaudeTools(ALL_TOOLS, '1h');
 
 /** Where the conversation happens — decides where its state is stored
  * (LineAccountLink vs AppAiSession), how long a conversation stays live,
@@ -279,11 +280,11 @@ export type AgentState = Pick<
 
 const APP_CONVERSATION_WINDOW_MS = 60 * 60 * 1000;
 
-/** 閒聊分流開關：on＝所有人、admin＝只有管理員、off＝全部走 Agent。
- * 2026-10-02 改用 Claude 後關掉（預設 off）：Haiku 跑驗收（scripts/eval-chat-router.ts）
- * 要做事的只有 31/36 交給 Agent（「我不吃牛肉」「關掉早報」「剛剛那筆改成150」等自己回了），
- * 不合格。Agent 有快取，連續對話一則約 $0.01，全部走 Agent 也不貴。 */
-const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'off').toLowerCase();
+/** 閒聊分流開關：on（預設）＝所有人、admin＝只有管理員、off＝全部走 Agent。
+ * 2026-10-02 Haiku 直接回文字只有 31/36 合格；2026-10-03 改成強制先呼叫工具＋選類別
+ * （answer_chat）後，scripts/eval-chat-router.ts 連跑兩次 36/36、閒聊 19～20/20 → 打開。
+ * 改規則或換模型要重跑驗收。 */
+const chatRouterMode = () => (process.env.AI_CHAT_ROUTER ?? 'on').toLowerCase();
 const chatModel = lightModel;
 
 /** LINE 不支援 Markdown：去掉 **粗體**、# 標題，條列改成「・」。 */
@@ -305,9 +306,25 @@ const USE_AGENT_TOOL = {
 };
 
 /** 輕量 AI 可以自己用的工具：都不碰元序的資料庫（天氣、某檔股票的公開資料）。 */
+/** 輕量 AI 自己回答一定要走這個工具，而且要選類別——選不進任何類別的就只能 use_agent。
+ * （2026-10-03：Haiku 直接回文字時常把「我不吃牛肉」「關掉早報」自己回掉，逼它先分類就準多了。） */
+const CHAT_CATEGORIES = ['打招呼道謝道別', '一般知識（世界上的常識，不含元序或你自己）', '翻譯', '幫忙寫東西', '笑話娛樂', '不需要他資料的意見討論', '天氣', '某檔股票的公開資訊'] as const;
+const ANSWER_TOOL = {
+  name: 'answer_chat',
+  description: '只有這則訊息完全屬於 category 列的其中一類，才用這個直接回答他。講他自己的事、要記錄、要設定、要查他的資料、問元序（或你）能做什麼／怎麼用，都不屬於任何一類 → 改呼叫 use_agent。',
+  parameters: {
+    type: 'object',
+    properties: {
+      category: { type: 'string', enum: [...CHAT_CATEGORIES] },
+      reply: { type: 'string', description: '給他的回答（繁體中文、口語、簡短，不要用 * 或 #）' },
+    },
+    required: ['category', 'reply'],
+  },
+};
 const CHAT_TOOL_NAMES = new Set(['get_weather', 'analyze_stock_trend', 'get_stock_fundamentals']);
 const CHAT_TOOLS = toClaudeTools([
   USE_AGENT_TOOL,
+  ANSWER_TOOL,
   WEATHER_TOOL,
   ...STOCK_TOOLS.filter((t) => CHAT_TOOL_NAMES.has(t.name)),
 ]);
@@ -323,7 +340,8 @@ export const CHAT_ROUTER_RULES = [
   '6. 要幫他規劃或給需要看他資料的建議（這週怎麼排、還能花多少、怎麼存錢）。',
   '7. 問元序（這個系統）怎麼用、有什麼功能。',
   '8. 看不懂、亂碼，或你不確定是不是上面這些。',
-  '其他（打招呼、道謝、開玩笑、一般知識、翻譯、幫忙寫東西、不需要他個人資料的意見）就直接回答，回答不要用 * 或 # 這種符號。',
+  '其他（打招呼、道謝、開玩笑、一般知識、翻譯、幫忙寫東西、不需要他個人資料的意見）才用 answer_chat 回答，並選對類別；不確定就 use_agent（多交不會錯，漏交就少一個功能）。',
+  '每一則都一定要呼叫工具：use_agent、answer_chat，或先查天氣／股票再 answer_chat。不要直接輸出文字。',
 ].join('\n');
 
 interface AgentContext {
@@ -530,12 +548,30 @@ export class AiAgentService {
       const model = chatModel();
       const usage = emptyUsage();
       const messages: Anthropic.MessageParam[] = [{ role: 'user', content: input }];
-      let response = await callClaude(client, { model, max_tokens: 2000, system, tools: CHAT_TOOLS, messages });
+      // Haiku 4.5 可以強制一定要呼叫工具（5.5 世代的模型不行，就用 auto＋規則）。
+      const toolChoice: Anthropic.ToolChoice = model.startsWith('claude-haiku')
+        ? { type: 'any', disable_parallel_tool_use: true }
+        : { type: 'auto', disable_parallel_tool_use: true };
+      const ask = () => callClaude(client, { model, max_tokens: 2000, system, tools: CHAT_TOOLS, tool_choice: toolChoice, messages });
+      let response = await ask();
       addUsage(usage, response.usage);
       let escalate = false;
+      let reply: string | null = null;
       // 不用元序資料的工具（天氣、股票走勢/基本面）輕量 AI 自己查；碰到 use_agent 就交出去。
-      for (let round = 0; round < 3 && response.stop_reason === 'tool_use'; round++) {
+      for (let round = 0; round < 3 && reply == null && !escalate; round++) {
         const calls = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+        if (calls.length === 0) {
+          // 沒照規定呼叫工具（auto 模式才可能）：直接輸出的文字當回答。
+          reply = textOf(response) || null;
+          break;
+        }
+        const answer = calls.find((c) => c.name === ANSWER_TOOL.name);
+        if (answer) {
+          const input = (answer.input ?? {}) as { category?: string; reply?: string };
+          if (!CHAT_CATEGORIES.includes(input.category as (typeof CHAT_CATEGORIES)[number])) escalate = true;
+          else reply = input.reply?.trim() || null;
+          break;
+        }
         if (calls.some((c) => c.name === USE_AGENT_TOOL.name || !CHAT_TOOL_NAMES.has(c.name))) {
           escalate = true;
           break;
@@ -554,7 +590,7 @@ export class AiAgentService {
           }
         }
         messages.push({ role: 'assistant', content: response.content }, { role: 'user', content: results });
-        response = await callClaude(client, { model, max_tokens: 2000, system, tools: CHAT_TOOLS, messages });
+        response = await ask();
         addUsage(usage, response.usage);
       }
       await this.aiUsage.record({
@@ -565,8 +601,8 @@ export class AiAgentService {
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      if (escalate || response.stop_reason === 'tool_use') return null;
-      const reply = plainText(textOf(response));
+      if (escalate || reply == null) return null;
+      reply = plainText(reply);
       return reply && reply !== NOT_HANDLED ? reply : null;
     } catch (error) {
       await this.aiUsage.record({

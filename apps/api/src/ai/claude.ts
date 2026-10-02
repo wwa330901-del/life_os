@@ -24,19 +24,19 @@ export function effortConfig(model: string, effort: Effort): { effort?: Effort }
 }
 
 /** 各功能原本的工具定義（{type:'function', name, description, parameters}）→ Claude 格式。
- * cacheLast：最後一個工具加快取標記——工具清單是每次請求最大、最不會變的一段。 */
+ * cache：最後一個工具加快取標記（'5m' 或 '1h'）——工具清單是每次請求最大、最不會變的一段。 */
 export interface FunctionToolDef {
   name: string;
   description: string;
   parameters?: object;
 }
 
-export function toClaudeTools(defs: readonly FunctionToolDef[], cacheLast = false): Anthropic.Tool[] {
+export function toClaudeTools(defs: readonly FunctionToolDef[], cache?: '5m' | '1h'): Anthropic.Tool[] {
   return defs.map((d, i) => ({
     name: d.name,
     description: d.description,
     input_schema: (d.parameters ?? { type: 'object', properties: {} }) as Anthropic.Tool.InputSchema,
-    ...(cacheLast && i === defs.length - 1 && { cache_control: { type: 'ephemeral' as const } }),
+    ...(cache && i === defs.length - 1 && { cache_control: { type: 'ephemeral' as const, ttl: cache } }),
   }));
 }
 
@@ -45,10 +45,13 @@ export interface TokenUsage {
   input: number;
   output: number;
   cacheRead: number;
+  /** 寫快取（含 1 小時的）。 */
   cacheWrite: number;
+  /** 其中寫 1 小時快取的（價格是輸入的 2 倍，5 分鐘的是 1.25 倍）。 */
+  cacheWrite1h: number;
 }
 
-export const emptyUsage = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+export const emptyUsage = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 });
 
 export function addUsage(total: TokenUsage, usage: Anthropic.Usage): TokenUsage {
   const cacheRead = usage.cache_read_input_tokens ?? 0;
@@ -57,6 +60,7 @@ export function addUsage(total: TokenUsage, usage: Anthropic.Usage): TokenUsage 
   total.output += usage.output_tokens;
   total.cacheRead += cacheRead;
   total.cacheWrite += cacheWrite;
+  total.cacheWrite1h += usage.cache_creation?.ephemeral_1h_input_tokens ?? 0;
   return total;
 }
 
@@ -66,6 +70,7 @@ export const usageFields = (u: TokenUsage) => ({
   outputTokens: u.output,
   cacheReadTokens: u.cacheRead,
   cacheWriteTokens: u.cacheWrite,
+  cacheWrite1hTokens: u.cacheWrite1h,
 });
 
 export function textOf(message: Anthropic.Message): string {
