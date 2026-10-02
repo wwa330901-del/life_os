@@ -28,11 +28,16 @@ export const AI_FEATURE_LABEL: Record<string, string> = {
   life_goal_category: '目標分類',
   life_goal_plan: '目標規劃',
   life_review: '週/月回顧總結',
+  trip_plan: '旅行規劃',
   receipt: '收據辨識',
   voice: '語音轉文字',
 };
 
 export const featureLabel = (feature: string) => AI_FEATURE_LABEL[feature] ?? feature;
+
+/** 哪一家的 AI（AI 用量分開看，2026-10-02 起 Claude 為主、Gemini 只剩語音和影片）。 */
+export const AI_PROVIDERS = ['Claude', 'Gemini'] as const;
+export const aiProvider = (model: string): (typeof AI_PROVIDERS)[number] => (model.startsWith('gemini') ? 'Gemini' : 'Claude');
 
 /** 每百萬 token 美元（輸入、輸出、寫快取 5 分鐘、讀快取）。Claude 照官方價；Gemini
  * 照 3.6 Flash 付費價估（免費額度內實際 0 元，這是上限）。沒列到的模型用 Sonnet 的價。 */
@@ -123,14 +128,16 @@ export class AiUsageService {
     };
   }
 
-  private summarize(
-    entries: { inputTokens: number; outputTokens: number; costUsd: number }[],
-  ) {
+  private summarize(entries: { model: string; inputTokens: number; outputTokens: number; costUsd: number }[]) {
+    const total = (list: typeof entries) => ({
+      count: list.length,
+      inputTokens: list.reduce((sum, e) => sum + e.inputTokens, 0),
+      outputTokens: list.reduce((sum, e) => sum + e.outputTokens, 0),
+      costUsd: list.reduce((sum, e) => sum + e.costUsd, 0),
+    });
     return {
-      count: entries.length,
-      inputTokens: entries.reduce((sum, e) => sum + e.inputTokens, 0),
-      outputTokens: entries.reduce((sum, e) => sum + e.outputTokens, 0),
-      costUsd: entries.reduce((sum, e) => sum + e.costUsd, 0),
+      ...total(entries),
+      byProvider: AI_PROVIDERS.map((provider) => ({ provider, ...total(entries.filter((e) => aiProvider(e.model) === provider)) })),
     };
   }
 }

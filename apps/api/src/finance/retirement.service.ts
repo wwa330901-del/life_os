@@ -6,6 +6,7 @@ import { taipeiCurrentMonth } from '../common/taipei-date';
 import { shiftMonth } from './wishlist';
 import {
   ageFromBirthDate,
+  DEFAULT_RETIREMENT_SETTINGS,
   parseRetirementSettings,
   projectRetirement,
   RetirementProjection,
@@ -89,7 +90,11 @@ export class RetirementService {
       throw new BadRequestException((error as Error).message);
     }
     const merged = { ...parseRetirementSettings(space.retirementSettings), ...valid };
-    if (merged.lifeExpectancy <= merged.retireAge) throw new BadRequestException('預計活到的年齡要比退休年齡大');
+    if (merged.lifeExpectancy <= merged.retireAge) {
+      // 只調退休年齡卻超過了「預計活到幾歲」：自動把活到幾歲往後推，不要擋（2026-10-02 使用者回報）。
+      if (valid.lifeExpectancy !== undefined) throw new BadRequestException('「預計活到幾歲」要比退休年齡大');
+      merged.lifeExpectancy = Math.min(120, Math.max(DEFAULT_RETIREMENT_SETTINGS.lifeExpectancy, merged.retireAge + 20));
+    }
     await this.prisma.space.update({ where: { id: space.id }, data: { retirementSettings: merged as unknown as Prisma.InputJsonValue } });
     return this.forUser(userId);
   }

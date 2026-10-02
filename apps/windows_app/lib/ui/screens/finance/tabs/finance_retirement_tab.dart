@@ -358,6 +358,13 @@ class _SettingsCard extends StatelessWidget {
                 ],
               ),
             ),
+            _NumberRow(
+              label: '預計活到幾歲',
+              value: s.lifeExpectancy,
+              suffix: '歲',
+              hint: '錢要夠用到這個年紀；退休年齡調超過會自動往後推',
+              onSave: (v) => onSave({'lifeExpectancy': v ?? 90}),
+            ),
             const Divider(height: 1),
             _NumberRow(
               label: '退休後每月花',
@@ -384,12 +391,6 @@ class _SettingsCard extends StatelessWidget {
               value: s.pensionStartAge,
               suffix: '歲',
               onSave: (v) => onSave({'pensionStartAge': v ?? 65}),
-            ),
-            _NumberRow(
-              label: '錢要夠用到',
-              value: s.lifeExpectancy,
-              suffix: '歲',
-              onSave: (v) => onSave({'lifeExpectancy': v ?? 90}),
             ),
             _NumberRow(
               label: '通膨',

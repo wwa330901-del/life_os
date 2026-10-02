@@ -2055,11 +2055,16 @@ export class LineService {
     if (user?.isPlatformAdmin) return this.aiUsageAdmin.summaryText();
     const h = await this.aiUsage.history(userId);
     const usd = (n: number) => `$${n.toFixed(3)}`;
+    type Period = (typeof h)['today'];
+    const line = (label: string, p: Period) => [
+      `${label}：${p.count} 次、約 ${usd(p.costUsd)}`,
+      ...p.byProvider.filter((x) => x.count > 0).map((x) => `　${x.provider} ${x.count} 次 ${usd(x.costUsd)}`),
+    ];
     return [
       '🤖 你的 AI 用量（用你自己的 Claude／Gemini 金鑰）',
-      `今天：${h.today.count} 次、約 ${usd(h.today.costUsd)}`,
-      `近 7 天：${h.thisWeek.count} 次、約 ${usd(h.thisWeek.costUsd)}`,
-      `本月：${h.thisMonth.count} 次、約 ${usd(h.thisMonth.costUsd)}`,
+      ...line('今天', h.today),
+      ...line('近 7 天', h.thisWeek),
+      ...line('本月', h.thisMonth),
       '（金額是估的，實際以 Anthropic／Google 帳單為準）',
     ].join('\n');
   }

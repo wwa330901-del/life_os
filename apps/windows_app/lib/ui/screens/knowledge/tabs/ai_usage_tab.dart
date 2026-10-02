@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/ai_usage.dart';
 import '../../../../state/ai_usage_provider.dart';
 
-/// 用量記錄 — this user's own Gemini usage/cost only, never anyone else's.
+/// 用量記錄 — this user's own AI usage/cost only (Claude／Gemini 分開), never anyone else's.
 class AiUsageTab extends ConsumerWidget {
   const AiUsageTab({super.key});
 
@@ -54,8 +54,10 @@ class _SummaryCard extends StatelessWidget {
           children: [
             Text(label, style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 6),
-            Text('${summary.count} 次分析'),
+            Text('${summary.count} 次'),
             Text('\$${summary.costUsd.toStringAsFixed(4)}'),
+            for (final p in summary.byProvider.where((p) => p.count > 0))
+              Text('${p.provider}：${p.count} 次 \$${p.costUsd.toStringAsFixed(4)}', style: const TextStyle(fontSize: 12)),
             Text(
               '輸入 ${summary.inputTokens} · 輸出 ${summary.outputTokens} tokens',
               style: const TextStyle(fontSize: 11),

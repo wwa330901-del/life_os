@@ -7,7 +7,7 @@ import '../../../state/admin_provider.dart';
 String _usd(double v) => '\$${v.toStringAsFixed(v < 1 ? 3 : 2)}';
 
 /// 管理員：所有使用者的 AI 用量（2026-10-02）。數字是依 token 估的，實際以
-/// Google 帳單為準。
+/// Anthropic／Google 帳單為準。
 class AdminAiUsageScreen extends ConsumerWidget {
   const AdminAiUsageScreen({super.key});
 
@@ -42,11 +42,13 @@ class AdminAiUsageScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '金額是依 token 數估的，實際以 Google 帳單為準。每晚 9 點如果失敗太多或花費暴增，LINE 會通知你（只有你收到）。',
+              '金額是依 token 數估的，實際以 Anthropic（Claude）／Google（Gemini）帳單為準。每晚 9 點如果失敗太多或花費暴增，LINE 會通知你（只有你收到）。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
             _Section(title: '近 14 天每日花費', child: _DailyBars(days: u.daily)),
+            if (u.providers.isNotEmpty)
+              _Section(title: '本月各 AI', child: _RowsTable(rows: u.providers)),
             _Section(
               title: '本月各功能',
               child: u.features.isEmpty ? const Text('本月還沒有用量') : _RowsTable(rows: u.features),

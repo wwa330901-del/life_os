@@ -4,6 +4,7 @@ class AiUsagePeriodSummary {
     required this.inputTokens,
     required this.outputTokens,
     required this.costUsd,
+    this.byProvider = const [],
   });
 
   final int count;
@@ -11,10 +12,30 @@ class AiUsagePeriodSummary {
   final int outputTokens;
   final double costUsd;
 
+  /// Claude／Gemini 分開（2026-10-02）。舊版伺服器沒有這欄就是空的。
+  final List<AiProviderUsage> byProvider;
+
   factory AiUsagePeriodSummary.fromJson(Map<String, dynamic> json) => AiUsagePeriodSummary(
     count: json['count'] as int,
     inputTokens: json['inputTokens'] as int,
     outputTokens: json['outputTokens'] as int,
+    costUsd: (json['costUsd'] as num).toDouble(),
+    byProvider: ((json['byProvider'] as List<dynamic>?) ?? const [])
+        .map((e) => AiProviderUsage.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+class AiProviderUsage {
+  const AiProviderUsage({required this.provider, required this.count, required this.costUsd});
+
+  final String provider;
+  final int count;
+  final double costUsd;
+
+  factory AiProviderUsage.fromJson(Map<String, dynamic> json) => AiProviderUsage(
+    provider: json['provider'] as String,
+    count: json['count'] as int,
     costUsd: (json['costUsd'] as num).toDouble(),
   );
 }
@@ -125,6 +146,7 @@ class AdminAiUsage {
     required this.thisWeek,
     required this.thisMonth,
     required this.users,
+    this.providers = const [],
     required this.features,
     required this.daily,
     required this.recentFailures,
@@ -134,6 +156,9 @@ class AdminAiUsage {
   final AdminAiUsageStat thisWeek;
   final AdminAiUsageStat thisMonth;
   final List<AdminAiUsageRow> users;
+
+  /// 本月各家 AI（Claude／Gemini）。
+  final List<AdminAiUsageRow> providers;
   final List<AdminAiUsageRow> features;
 
   /// 近 14 天，舊到新；label 是 'YYYY-MM-DD'。
@@ -151,6 +176,7 @@ class AdminAiUsage {
       thisWeek: stat(json['thisWeek']),
       thisMonth: stat(json['thisMonth']),
       users: rows('users', 'name'),
+      providers: json['providers'] == null ? const [] : rows('providers', 'provider'),
       features: rows('features', 'label'),
       daily: rows('daily', 'date'),
       recentFailures: (json['recentFailures'] as List<dynamic>)
