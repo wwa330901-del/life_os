@@ -51,3 +51,6 @@ export async function withModelFallback<T>(
     }
   }
 }
+
+/** 備用模型（跟閒聊分流的輕量模型同一個，額度跟主要模型分開算）。 */
+export const fallbackModel = () => process.env.AI_CHAT_MODEL || 'gemini-3.5-flash-lite';

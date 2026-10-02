@@ -14,6 +14,7 @@ const SETTINGS_SELECT = {
   goalReminderEnabled: true,
   spendingAlertEnabled: true,
   subscriptionReminderEnabled: true,
+  tripReminderEnabled: true,
 } as const;
 
 export class UpdateReminderSettingsDto {
@@ -24,6 +25,7 @@ export class UpdateReminderSettingsDto {
   @IsOptional() @IsBoolean() goalReminderEnabled?: boolean;
   @IsOptional() @IsBoolean() spendingAlertEnabled?: boolean;
   @IsOptional() @IsBoolean() subscriptionReminderEnabled?: boolean;
+  @IsOptional() @IsBoolean() tripReminderEnabled?: boolean;
 }
 
 /** App「提醒設定」— the same switches LINE's 「關閉早報」etc. flip. Every reminder goes
@@ -51,7 +53,7 @@ export class LineSettingsController {
   }
 }
 
-function toResponse(link: { lineUserId: string | null; morningBriefEnabled: boolean; journalReminderEnabled: boolean; todoReminderEnabled: boolean; reviewEnabled: boolean; goalReminderEnabled: boolean; spendingAlertEnabled: boolean; subscriptionReminderEnabled: boolean } | null) {
+function toResponse(link: { lineUserId: string | null; morningBriefEnabled: boolean; journalReminderEnabled: boolean; todoReminderEnabled: boolean; reviewEnabled: boolean; goalReminderEnabled: boolean; spendingAlertEnabled: boolean; subscriptionReminderEnabled: boolean; tripReminderEnabled: boolean } | null) {
   return {
     linked: link?.lineUserId != null,
     morningBriefEnabled: link?.morningBriefEnabled ?? true,
@@ -61,5 +63,6 @@ function toResponse(link: { lineUserId: string | null; morningBriefEnabled: bool
     goalReminderEnabled: link?.goalReminderEnabled ?? true,
     spendingAlertEnabled: link?.spendingAlertEnabled ?? true,
     subscriptionReminderEnabled: link?.subscriptionReminderEnabled ?? true,
+    tripReminderEnabled: link?.tripReminderEnabled ?? true,
   };
 }

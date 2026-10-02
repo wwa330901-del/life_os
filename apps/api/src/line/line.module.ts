@@ -7,6 +7,7 @@ import { AiAssistantModule } from '../ai-assistant/ai-assistant.module';
 import { UsersModule } from '../users/users.module';
 import { TodosModule } from '../todos/todos.module';
 import { LifeGoalsModule } from '../life-goals/life-goals.module';
+import { TripsModule } from '../trips/trips.module';
 import { LineWebhookController } from './line-webhook.controller';
 import { LineLinkController } from './line-link.controller';
 import { LineSettingsController } from './line-settings.controller';
@@ -34,6 +35,7 @@ import { AdminModule } from '../admin/admin.module';
     FinanceReportModule,
     DailyBriefModule,
     AdminModule,
+    TripsModule,
   ],
   controllers: [LineWebhookController, LineLinkController, LineSettingsController],
   providers: [LineService, VoiceTranscriberService, ReceiptReaderService],

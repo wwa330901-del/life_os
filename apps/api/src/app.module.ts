@@ -23,6 +23,7 @@ import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 import { FriendsModule } from './friends/friends.module';
 import { FinanceReportModule } from './finance/finance-report.module';
 import { LifeGoalsModule } from './life-goals/life-goals.module';
+import { TripsModule } from './trips/trips.module';
 import { LifeReviewModule } from './life-review/life-review.module';
 import { JournalModule } from './journal/journal.module';
 import { DailyBriefModule } from './daily-brief/daily-brief.module';
@@ -64,6 +65,7 @@ import { SecretMigrationService } from './common/secret-migration.service';
     DailyBriefModule,
     DivinationModule,
     MemoryModule,
+    TripsModule,
     ExportModule,
     ErrorReportModule,
   ],

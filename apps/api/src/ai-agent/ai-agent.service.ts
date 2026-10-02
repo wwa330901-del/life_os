@@ -29,6 +29,7 @@ import { MEMORY_AI_GUIDE, MEMORY_TOOLS, MemoryAiService } from '../memory/memory
 import { MemoryService } from '../memory/memory.service';
 import { getWeather, WEATHER_TOOL } from './weather';
 import { UserLocationService } from '../users/user-location.service';
+import { TRIP_AI_GUIDE, TRIP_TOOLS, TripAiService } from '../trips/trip-ai.service';
 import { RETIREMENT_AI_GUIDE, RETIREMENT_TOOLS, RetirementAiService } from '../finance/retirement-ai.service';
 import { WISHLIST_AI_GUIDE, WISHLIST_TOOLS, WishlistAiService } from '../finance/wishlist-ai.service';
 import { JOURNAL_PROMPT_WINDOW_MS } from '../journal/journal-reminder.service';
@@ -83,6 +84,7 @@ const REMINDER_FIELDS = {
   goal: 'goalReminderEnabled',
   spending: 'spendingAlertEnabled',
   subscription: 'subscriptionReminderEnabled',
+  trip: 'tripReminderEnabled',
 } as const;
 
 const AGENT_TOOLS = [
@@ -258,7 +260,7 @@ const AGENT_TOOLS = [
   },
 ];
 
-const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...MEMORY_TOOLS, ...WISHLIST_TOOLS, ...RETIREMENT_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
+const ALL_TOOLS = [...AI_QUERY_TOOLS, ...LIFE_GOAL_TOOLS, ...KNOWLEDGE_TOOLS, ...STOCK_TOOLS, ...JOURNAL_TOOLS, ...RECORD_TOOLS, ...DIVINATION_TOOLS, ...MEMORY_TOOLS, ...WISHLIST_TOOLS, ...RETIREMENT_TOOLS, ...TRIP_TOOLS, WEATHER_TOOL, ...AGENT_TOOLS];
 const QUERY_TOOL_NAMES = new Set(AI_QUERY_TOOLS.map((t) => t.name));
 
 /** Where the conversation happens — decides where its state is stored
@@ -373,6 +375,7 @@ export class AiAgentService {
     private readonly memory: MemoryService,
     private readonly wishlistTools: WishlistAiService,
     private readonly retirementTools: RetirementAiService,
+    private readonly tripTools: TripAiService,
     private readonly userLocation: UserLocationService,
   ) {}
 
@@ -821,6 +824,9 @@ export class AiAgentService {
       '【退休試算】',
       RETIREMENT_AI_GUIDE,
       '',
+      '【旅行】',
+      TRIP_AI_GUIDE,
+      '',
       '【理財評估】',
       '講薪水、問「薪水怎麼分配」「幫我做理財評估」→ 沒設固定薪資就先 set_fixed_income（問清楚金額和發薪日），再 get_financial_plan_inputs，依實際花費給：每月分配（固定支出/生活費/儲蓄/投資各多少）、3～5 個分類的建議預算、接下來 3 步。最後問他要不要幫他把預算設好 → propose_budgets。',
       '',
@@ -873,6 +879,7 @@ export class AiAgentService {
     if (MemoryAiService.toolNames.has(name)) return this.memoryTools.execute(ctx.userId, name, args);
     if (WishlistAiService.toolNames.has(name)) return this.wishlistTools.execute(ctx.userId, name, args);
     if (RetirementAiService.toolNames.has(name)) return this.retirementTools.execute(ctx.userId, name, args);
+    if (TripAiService.toolNames.has(name)) return this.tripTools.execute(ctx.userId, name, args);
     if (StockAiService.toolNames.has(name)) return this.stockTools.execute(ctx.userId, name, args);
 
     switch (name) {

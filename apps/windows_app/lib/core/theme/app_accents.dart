@@ -24,6 +24,12 @@ abstract final class AppAccents {
   static const _divinationLight = Color(0xFFF0E6CC);
   static const _divinationDark = Color(0xFF3F3622);
 
+  static const _tripsLight = Color(0xFFD5E6EC);
+  static const _tripsDark = Color(0xFF243840);
+
+  static Color trips(Brightness brightness) =>
+      brightness == Brightness.dark ? _tripsDark : _tripsLight;
+
   static Color divination(Brightness brightness) =>
       brightness == Brightness.dark ? _divinationDark : _divinationLight;
 

@@ -13,6 +13,7 @@ const _reminders = [
   ('goalReminderEnabled', '人生目標提醒', '目標快到期（7 天、1 天前），或 14 天沒更新進度'),
   ('spendingAlertEnabled', '花費異常提醒', '晚上 9 點：哪個分類比平常花太兇、有沒有特別大的單筆'),
   ('subscriptionReminderEnabled', '訂閱扣款提醒', '每月固定扣的訂閱（Netflix、健身房…）扣款前 3 天提醒'),
+  ('tripReminderEnabled', '旅行提醒', '出發前 7 天、前 1 天提醒行李和當地天氣，回來隔天算這趟花多少'),
 ];
 
 /// App「提醒設定」— same switches as LINE's 「關閉早報」etc. Every reminder is sent via LINE.

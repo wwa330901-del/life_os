@@ -106,3 +106,22 @@ export function summarizeWeather(placeName: string, body: ForecastResponse) {
     todayRainChanceByHour: nextHours,
   };
 }
+
+/** 旅行用：某地某幾天的每日預報（Open-Meteo 只到 16 天後；超過的日子不會出現）。 */
+export async function getDailyForecast(latitude: number, longitude: number, startDate: string, endDate: string) {
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+    `&timezone=auto&start_date=${startDate}&end_date=${endDate}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`天氣資料暫時拿不到（${res.status}）`);
+  const d = ((await res.json()) as ForecastResponse).daily;
+  if (!d) return [];
+  return d.time.map((date, i) => ({
+    date,
+    weather: weatherLabel(d.weather_code[i]),
+    high: d.temperature_2m_max[i],
+    low: d.temperature_2m_min[i],
+    rainChance: d.precipitation_probability_max[i],
+  }));
+}

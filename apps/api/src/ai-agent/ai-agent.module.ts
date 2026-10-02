@@ -7,6 +7,7 @@ import { AiAssistantModule } from '../ai-assistant/ai-assistant.module';
 import { UsersModule } from '../users/users.module';
 import { TodosModule } from '../todos/todos.module';
 import { LifeGoalsModule } from '../life-goals/life-goals.module';
+import { TripsModule } from '../trips/trips.module';
 import { LifeReviewModule } from '../life-review/life-review.module';
 import { JournalModule } from '../journal/journal.module';
 import { FinanceReportModule } from '../finance/finance-report.module';
@@ -34,6 +35,7 @@ import { AiAssistantController } from './ai-assistant.controller';
     FinanceReportModule,
     DivinationModule,
     MemoryModule,
+    TripsModule,
   ],
   controllers: [AiAssistantController],
   providers: [AiAgentService, RecordToolsService],

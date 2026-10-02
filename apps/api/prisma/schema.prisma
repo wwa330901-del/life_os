@@ -129,6 +129,7 @@ model User {
   appAiSession               AppAiSession?
   journalEntries             JournalEntry[]
   divinations                DivinationRecord[]
+  trips                      Trip[]
   healthRecords              HealthRecord[]
   /// 目前位置（2026-10-02）：App 開啟時用網路 IP 估城市（source=ip），或 LINE 傳
   /// 位置資訊（source=line，比較準，3 天內不會被 IP 蓋掉）。問天氣沒講地點就用這裡。
@@ -975,6 +976,8 @@ model LineAccountLink {
   /// 花費異常提醒、訂閱費續約提醒（2026-10-02）。
   spendingAlertEnabled        Boolean   @default(true)
   subscriptionReminderEnabled Boolean   @default(true)
+  /// 旅行（2026-10-02）：出發前 7 天、前 1 天（行李、天氣）、回來隔天（花費）。
+  tripReminderEnabled         Boolean   @default(true)
   /// 算命回饋：LINE 剛問過哪一筆算命準不準——24 小時內的回覆交給 AI 記成回饋。
   divinationFeedbackId        String?
   divinationFeedbackAt        DateTime?
@@ -1488,4 +1491,39 @@ model WishlistItem {
   createdAt   DateTime       @default(now())
 
   @@index([spaceId, status])
+}
+
+/// 旅行規劃（2026-10-02）：AI 依目的地、天數排每日行程、估預算、列行李清單；
+/// 可以一鍵放進行事曆、放進購物車存錢；出發前 LINE 提醒行李和天氣，回來後算實際花費
+///（旅行期間個人空間的支出）。
+model Trip {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destination     String
+  startDate       DateTime @db.Date
+  endDate         DateTime @db.Date
+  travelers       Int      @default(1)
+  /// 偏好（悠閒、美食、購物、親子…），重新規劃時沿用。
+  style           String?
+  /// 目的地經緯度（AI 給的），查天氣用。
+  latitude        Float?
+  longitude       Float?
+  /// 預估花費（新台幣，全部人合計）：{ transport, lodging, food, tickets, shopping, other }
+  budget          Json?
+  budgetTotal     Float?
+  /// 每日行程：[{ date, items: [{ time?, title, place?, note? }] }]
+  itinerary       Json?
+  /// 行李清單：[{ item, packed }]
+  packingList     Json?
+  tips            String?
+  notes           String?
+  calendarEventId String?
+  wishlistItemId  String?
+  /// 已發過的提醒（"7d,1d,after"）。
+  remindersSent   String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, startDate])
 }

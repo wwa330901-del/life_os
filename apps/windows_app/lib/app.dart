@@ -16,6 +16,8 @@ import 'ui/screens/space_picker_screen.dart';
 import 'ui/shell/ai_assistant_shell.dart';
 import 'ui/shell/divination_shell.dart';
 import 'ui/shell/journal_shell.dart';
+import 'ui/shell/trips_shell.dart';
+import 'state/trip_provider.dart';
 import 'ui/shell/knowledge_shell.dart';
 import 'ui/shell/life_goals_shell.dart';
 import 'ui/shell/space_shell.dart';
@@ -94,6 +96,9 @@ class _RootRouter extends ConsumerWidget {
     }
     if (ref.watch(showJournalProvider)) {
       return const JournalShell();
+    }
+    if (ref.watch(showTripsProvider)) {
+      return const TripsShell();
     }
     if (ref.watch(showDivinationProvider)) {
       return const DivinationShell();

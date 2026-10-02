@@ -11,6 +11,8 @@ import { SubscriptionService } from '../finance/subscription.service';
 import { subscriptionsText } from '../finance/subscriptions';
 import { WishlistService } from '../finance/wishlist.service';
 import { RetirementService } from '../finance/retirement.service';
+import { TripsService } from '../trips/trips.service';
+import { packingText } from '../trips/trip';
 import { UserLocationService } from '../users/user-location.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
@@ -158,6 +160,7 @@ export class LineService {
     private readonly subscriptionService: SubscriptionService,
     private readonly wishlist: WishlistService,
     private readonly retirement: RetirementService,
+    private readonly trips: TripsService,
     private readonly userLocation: UserLocationService,
   ) {}
 
@@ -293,7 +296,7 @@ export class LineService {
    * while no AI conversation is active — routed to it before the
    * batch/command parsers so e.g. a multi-line book reflection isn't split
    * into per-line 記帳 commands. */
-  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我|天氣|下雨|帶傘|氣溫|想買|想要買|購物車|買得起|撥.*買東西/;
+  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我|天氣|下雨|帶傘|氣溫|想買|想要買|購物車|買得起|撥.*買東西|旅行|旅遊|出國|去玩|行李|退休/;
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
   // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
@@ -318,6 +321,10 @@ export class LineService {
     '購物車',
     '退休試算',
     '退休',
+    '旅行',
+    '我的旅行',
+    '關閉旅行提醒',
+    '開啟旅行提醒',
     '訂閱',
     '我的訂閱',
     '關閉花費提醒',
@@ -346,6 +353,10 @@ export class LineService {
           '',
           '🛒 購物車',
           '「想買 AirPods 7490」我會排什麼時候買得起；傳「購物車」看清單',
+          '',
+          '✈️ 旅行',
+          '「11/1～11/5 想去東京，兩個人，喜歡吃」我排行程、估預算、列行李',
+          '可以放進行事曆、放進購物車存錢；出發前 7 天、前 1 天提醒行李和天氣',
           '',
           '🧓 退休試算',
           '傳「退休試算」，或問「我幾歲可以退休？」「如果每月多存 5000 呢？」',
@@ -652,6 +663,16 @@ export class LineService {
       const enabled = text === '開啟花費提醒';
       await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { spendingAlertEnabled: enabled } });
       await this.reply(replyToken, enabled ? '好，哪個分類花太兇或有特別大的單筆，晚上 9 點會提醒你。' : '好，不會再傳花費提醒了。');
+      return;
+    }
+    if (text === '關閉旅行提醒' || text === '開啟旅行提醒') {
+      const enabled = text === '開啟旅行提醒';
+      await this.prisma.lineAccountLink.update({ where: { id: linkId }, data: { tripReminderEnabled: enabled } });
+      await this.reply(replyToken, enabled ? '好，出發前 7 天、前 1 天和回來隔天會提醒你。' : '好，不會再傳旅行提醒了。');
+      return;
+    }
+    if (text === '旅行' || text === '我的旅行') {
+      await this.reply(replyToken, await this.tripsText(userId));
       return;
     }
     if (text === '關閉訂閱提醒' || text === '開啟訂閱提醒') {
@@ -1993,6 +2014,29 @@ export class LineService {
   }
 
   /** 「AI 用量」：管理員看所有人；其他人只看自己的。 */
+  /** LINE「旅行」：還沒去／正在玩的，加最近一趟去過的。 */
+  private async tripsText(userId: string): Promise<string> {
+    const trips = await this.trips.list(userId);
+    const active = trips.filter((t) => t.status !== 'done');
+    const last = trips.find((t) => t.status === 'done');
+    if (!active.length && !last) {
+      return '✈️ 還沒有排旅行\n\n直接跟我說「11/1～11/5 想去東京，兩個人」，我幫你排行程、估預算、列行李清單。';
+    }
+    const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+    const money = (n: number) => Math.round(n).toLocaleString('en-US');
+    const lines = ['✈️ 我的旅行'];
+    for (const t of active) {
+      const when = t.status === 'ongoing' ? '旅行中' : t.daysUntil === 0 ? '今天出發' : `還有 ${t.daysUntil} 天`;
+      lines.push('', `・${t.destination}（${md(t.startDate)}～${md(t.endDate)}，${when}）`);
+      if (t.budgetTotal) lines.push(`　預估 ${money(t.budgetTotal)} 元${t.spent != null ? `，目前花了 ${money(t.spent)}` : ''}`);
+      const packing = packingText(t.packingList);
+      if (packing && t.status === 'upcoming') lines.push(`　${packing}`);
+    }
+    if (last) lines.push('', `上一趟：${last.destination}（${md(last.startDate)}～${md(last.endDate)}）${last.spent != null ? `花了 ${money(last.spent)} 元` : ''}`);
+    lines.push('', '要看某一天的行程、改行程、行李打勾，直接跟我說就好。');
+    return lines.join('\n');
+  }
+
   private async aiUsageText(userId: string): Promise<string> {
     const user = await this.usersService.findById(userId);
     if (user?.isPlatformAdmin) return this.aiUsageAdmin.summaryText();

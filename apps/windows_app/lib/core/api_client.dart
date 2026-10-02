@@ -21,6 +21,7 @@ import 'models/finance_plan.dart';
 import 'models/memory.dart';
 import 'models/wishlist.dart';
 import 'models/retirement.dart';
+import 'models/trip.dart';
 import 'models/project_todo.dart';
 import 'models/stock.dart';
 
@@ -1361,6 +1362,56 @@ class ApiClient {
   Future<void> setWishlistBudget(double? amount) async {
     await _patch('/wishlist/budget', {'amount': amount});
   }
+
+  // --- 旅行 ---
+
+  Future<List<Trip>> listTrips() async {
+    return [for (final t in await _getList('/trips')) Trip.fromJson(t as Map<String, dynamic>)];
+  }
+
+  Future<Trip> getTrip(String id) async => Trip.fromJson(await _get('/trips/$id'));
+
+  Future<List<String>> getTripCalendarTargets() async {
+    return [for (final t in (await _get('/trips/calendar-targets'))['targets'] as List<dynamic>) t as String];
+  }
+
+  /// plan=true：AI 排行程、估預算、列行李（要 10～30 秒）。
+  Future<Trip> createTrip({
+    required String destination,
+    required String startDate,
+    required String endDate,
+    required int travelers,
+    String? style,
+    String? notes,
+    bool plan = true,
+  }) async {
+    return Trip.fromJson(
+      await _post('/trips', {
+        'destination': destination,
+        'startDate': startDate,
+        'endDate': endDate,
+        'travelers': travelers,
+        'style': ?style,
+        'notes': ?notes,
+        'plan': plan,
+      }),
+    );
+  }
+
+  Future<Trip> updateTrip(String id, Map<String, dynamic> patch) async => Trip.fromJson(await _patch('/trips/$id', patch));
+
+  Future<Trip> replanTrip(String id) async => Trip.fromJson(await _post('/trips/$id/replan', {}));
+
+  Future<Trip> setTripPacking(String id, List<PackingItem> items) async {
+    return Trip.fromJson(await _patch('/trips/$id/packing', {'items': [for (final p in items) p.toJson()]}));
+  }
+
+  Future<Map<String, dynamic>> addTripToCalendar(String id, {String? target}) =>
+      _post('/trips/$id/calendar', {'target': ?target});
+
+  Future<Map<String, dynamic>> saveForTrip(String id) => _post('/trips/$id/save', {});
+
+  Future<void> deleteTrip(String id) => _delete('/trips/$id');
 
   // --- 退休試算 ---
 
