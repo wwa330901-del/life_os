@@ -15,7 +15,7 @@ Future<void> showUpdateAvailableDialog(BuildContext context, UpdateInfo info) {
   );
 }
 
-enum _Stage { prompt, downloading, error }
+enum _Stage { prompt, downloading, installing, error }
 
 class _UpdateDialog extends StatefulWidget {
   const _UpdateDialog({required this.info});
@@ -30,27 +30,24 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   _Stage _stage = _Stage.prompt;
   double _progress = 0;
   String? _errorMessage;
+  AndroidInstallStep? _androidStep;
 
   Future<void> _updateNow() async {
     setState(() => _stage = _Stage.downloading);
     try {
-      await UpdateService().downloadAndInstall(
+      final step = await UpdateService().downloadAndInstall(
         widget.info,
         onProgress: (p) {
           if (mounted) setState(() => _progress = p);
         },
       );
       // Windows：downloadAndInstall 成功會直接結束程式，不會跑到這裡。
-      // Android：交給瀏覽器下載 APK 後就回來，提示使用者點開安裝。
+      // Android：系統安裝畫面（或第一次的權限設定頁）已經蓋在 App 上面。
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      Navigator.of(context).pop();
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('下載完成後點開「life_os.apk」安裝；第一次會要你允許安裝這個來源。'),
-          duration: Duration(seconds: 10),
-        ),
-      );
+      setState(() {
+        _stage = _Stage.installing;
+        _androidStep = step;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -93,6 +90,13 @@ class _UpdateDialogState extends State<_UpdateDialog> {
               Text('${(_progress * 100).toStringAsFixed(0)}%'),
             ],
           ),
+          _Stage.installing => Text(
+            _androidStep == AndroidInstallStep.needsPermission
+                ? '第一次更新要先允許：在跳出的設定頁打開「允許來自這個來源」，'
+                      '再按返回，就會跳出更新畫面，按「更新」即可。'
+                : '在跳出的畫面按「更新」就完成了，資料都會保留。\n'
+                      '如果不小心關掉了，按下面的「再試一次」。',
+          ),
           _Stage.error => Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,6 +120,13 @@ class _UpdateDialogState extends State<_UpdateDialog> {
           FilledButton(onPressed: _updateNow, child: const Text('現在更新')),
         ],
         _Stage.downloading => const [],
+        _Stage.installing => [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('稍後'),
+          ),
+          FilledButton(onPressed: _updateNow, child: const Text('再試一次')),
+        ],
         _Stage.error => [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),

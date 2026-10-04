@@ -54,3 +54,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // FileProvider：App 內更新把下載好的 APK 交給系統安裝畫面（MainActivity.kt）
+    implementation("androidx.core:core:1.13.1")
+}

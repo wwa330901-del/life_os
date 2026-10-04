@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 
 /// A newer release found on GitHub, with what's needed to show it to the
 /// user and let them get it.
@@ -21,6 +21,15 @@ class UpdateInfo {
   final String? installerDownloadUrl;
 }
 
+/// Android 下載完之後走到哪一步（Windows 會直接結束程式，不會回傳）。
+enum AndroidInstallStep {
+  /// 系統安裝畫面已跳出，等使用者按「更新」。
+  installerShown,
+
+  /// 第一次：先開了「允許安裝不明應用程式」設定頁，允許後回到 App 會自動接著跳安裝畫面。
+  needsPermission,
+}
+
 /// Checks GitHub Releases for a newer build than the one currently running,
 /// and can silently download + install it in place.
 ///
@@ -29,6 +38,8 @@ class UpdateInfo {
 /// installer `.exe` attached as a release asset — see
 /// `installer/life_os.iss`.
 class UpdateService {
+  static const _androidUpdater = MethodChannel('yuanxu/updater');
+
   static const _repo = 'wwa330901-del/life_os';
   static const _latestReleaseUrl =
       'https://api.github.com/repos/$_repo/releases/latest';
@@ -87,24 +98,18 @@ class UpdateService {
   /// Downloads the installer to a temp file while reporting 0.0-1.0
   /// progress, then launches it silently and exits this process — the
   /// installer can't overwrite the running exe while it's still open.
+  /// On Android, hands the APK to the system installer instead and returns
+  /// which step the user is now looking at.
   ///
   /// Throws [StateError] if there's no installer asset or the download
   /// fails; callers should fall back to opening [UpdateInfo.releaseUrl].
-  Future<void> downloadAndInstall(
+  Future<AndroidInstallStep?> downloadAndInstall(
     UpdateInfo info, {
     required void Function(double progress) onProgress,
   }) async {
     final url = info.installerDownloadUrl;
     if (url == null) {
       throw StateError('This release has no installer attached.');
-    }
-
-    // Android 不能自己默默安裝（沒有上架商店的 App 一定要使用者按「安裝」），
-    // 交給瀏覽器下載 APK，下載完點開就會跳出系統的安裝畫面，覆蓋舊版、資料保留。
-    if (Platform.isAndroid) {
-      final launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      if (!launched) throw StateError('無法開啟瀏覽器下載');
-      return;
     }
 
     final client = http.Client();
@@ -122,8 +127,16 @@ class UpdateService {
 
     final total = response.contentLength ?? 0;
     var received = 0;
-    final tempDir = Directory.systemTemp.createTempSync('life_os_update_');
-    final installerFile = File('${tempDir.path}${Platform.pathSeparator}life_os_setup.exe');
+    final File installerFile;
+    if (Platform.isAndroid) {
+      // 放在 cacheDir/updates（MainActivity 的 FileProvider 只開放這個資料夾）
+      final cacheDir = await _androidUpdater.invokeMethod<String>('cacheDir');
+      final dir = Directory('$cacheDir/updates')..createSync(recursive: true);
+      installerFile = File('${dir.path}/life_os.apk');
+    } else {
+      final tempDir = Directory.systemTemp.createTempSync('life_os_update_');
+      installerFile = File('${tempDir.path}${Platform.pathSeparator}life_os_setup.exe');
+    }
     final sink = installerFile.openWrite();
 
     try {
@@ -135,6 +148,17 @@ class UpdateService {
     } finally {
       await sink.close();
       client.close();
+    }
+
+    // Android 不能默默安裝（沒上架商店的 App 一定要使用者按「更新」）：叫出系統
+    // 安裝畫面，覆蓋舊版、資料保留。第一次會先跳「允許安裝不明應用程式」設定頁。
+    if (Platform.isAndroid) {
+      final status = await _androidUpdater.invokeMethod<String>('installApk', {
+        'path': installerFile.path,
+      });
+      return status == 'needs_permission'
+          ? AndroidInstallStep.needsPermission
+          : AndroidInstallStep.installerShown;
     }
 
     // /FORCECLOSEAPPLICATIONS backstops us in case this process hasn't

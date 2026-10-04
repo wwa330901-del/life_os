@@ -3,11 +3,17 @@ name: Android smoke test
 # 手動執行：在雲端的 Android 平板模擬器裝上 APK、打開，截圖＋存 logcat，
 # 確認 App 開得起來、不會閃退。本機沒有 Android SDK，平板版改動後用這個驗證。
 # google=true 時再按「使用 Google 登入」，每隔幾秒截一張，看登入流程卡在哪。
+# update=true 時用舊版本號打包，按「現在更新」看 App 內下載＋系統安裝畫面
+# （最後一步會因為模擬器版是 debug 簽章而裝不上，只看安裝畫面有跳出）。
 on:
   workflow_dispatch:
     inputs:
       google:
         description: "也按 Google 登入"
+        type: boolean
+        default: false
+      update:
+        description: "測 App 內更新"
         type: boolean
         default: false
 
@@ -36,8 +42,8 @@ jobs:
           channel: stable
 
       - run: flutter pub get
-      # 版本號設很大，免得一打開就跳「有新版本」擋住畫面。
-      - run: flutter build apk --release --target-platform android-x64 --build-name=99.0.0 --build-number=1
+      # 版本號設很大，免得一打開就跳「有新版本」擋住畫面；測更新時反過來設很舊。
+      - run: flutter build apk --release --target-platform android-x64 --build-name=${{ inputs.update && '2.0.0' || '99.0.0' }} --build-number=1
 
       - name: Write emulator script
         run: |
@@ -50,7 +56,19 @@ jobs:
           sleep 30
           adb exec-out screencap -p > smoke/landscape.png
           adb shell pidof com.yuanxu.life_os_app > smoke/pid.txt || echo "NOT RUNNING" > smoke/pid.txt
-          if [ "$GOOGLE" = "true" ]; then
+          if [ "$UPDATE" = "true" ]; then
+            # 「現在更新」按鈕在橫向 2560x1600 畫面的位置
+            adb shell input tap 1595 882
+            sleep 5
+            adb exec-out screencap -p > smoke/update_1_downloading.png
+            sleep 40
+            adb exec-out screencap -p > smoke/update_2_permission.png
+            # 等於在設定頁打開「允許來自這個來源」再按返回
+            adb shell appops set com.yuanxu.life_os_app REQUEST_INSTALL_PACKAGES allow
+            adb shell input keyevent KEYCODE_BACK
+            sleep 6
+            adb exec-out screencap -p > smoke/update_3_installer.png
+          elif [ "$GOOGLE" = "true" ]; then
             # 跳過 Chrome 第一次開啟的歡迎畫面（會擋住 Google 登入頁）
             adb shell 'echo "_ --disable-fre --no-default-browser-check --no-first-run" > /data/local/tmp/chrome-command-line'
             adb shell am set-debug-app --persistent com.android.chrome
@@ -86,6 +104,7 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         env:
           GOOGLE: ${{ inputs.google }}
+          UPDATE: ${{ inputs.update }}
         with:
           api-level: 34
           target: google_apis
