@@ -60,9 +60,9 @@ jobs:
             # 重點是看 App 回到前景後連得上後端、錯誤是中文）。
             adb shell cat /proc/net/tcp /proc/net/tcp6 > smoke/tcp.txt || true
             uid=$(adb shell dumpsys package com.yuanxu.life_os_app | grep -m1 -oE 'userId=[0-9]+' | cut -d= -f2)
-            # /proc/net/tcp 欄位：第 2 欄 本機位址:埠(16 進位)、第 4 欄 狀態(0A=LISTEN)、第 8 欄 uid
-            port_hex=$(awk -v uid="$uid" '$4=="0A" && $8==uid && $2 ~ /^0100007F:/ {split($2,a,":"); print a[2]; exit}' smoke/tcp.txt)
-            port=$((16#$port_hex))
+            # /proc/net/tcp 欄位：第 2 欄 本機位址:埠(16 進位；Dart 的 127.0.0.1 伺服器出現在 tcp6，寫成 ::ffff:127.0.0.1)、第 4 欄 狀態(0A=LISTEN)、第 8 欄 uid
+            port_hex=$(awk -v uid="$uid" '$4=="0A" && $8==uid && $2 ~ /0100007F:/ {n=split($2,a,":"); print a[n]; exit}' smoke/tcp.txt)
+            port=$((16#${port_hex:-0}))
             echo "uid=$uid port=$port" > smoke/port.txt
             adb shell am start -a android.intent.action.VIEW -d "http://127.0.0.1:$port/?code=fake-code" com.android.chrome
             sleep 8
