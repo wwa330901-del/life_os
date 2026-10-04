@@ -5,6 +5,7 @@ class AppUser {
     required this.email,
     required this.name,
     required this.isPlatformAdmin,
+    this.appTheme,
   });
 
   final String id;
@@ -13,12 +14,16 @@ class AppUser {
   final String name;
   final bool isPlatformAdmin;
 
+  /// 外觀風格 id（core/theme/app_themes.dart）；null＝還沒選過
+  final String? appTheme;
+
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
     id: json['id'] as String,
     username: json['username'] as String,
     email: json['email'] as String,
     name: json['name'] as String,
     isPlatformAdmin: json['isPlatformAdmin'] as bool? ?? false,
+    appTheme: json['appTheme'] as String?,
   );
 }
 

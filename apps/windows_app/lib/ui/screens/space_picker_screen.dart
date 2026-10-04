@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../widgets/reminder_settings_dialog.dart';
+import '../widgets/theme_picker_dialog.dart';
 import '../widgets/export_backup.dart';
 
 import '../../core/api_client.dart';
@@ -66,6 +67,11 @@ class SpacePickerScreen extends ConsumerWidget {
                       tooltip: '匯出全部資料（Excel 備份）',
                       icon: const Icon(Icons.download_outlined),
                       onPressed: () => exportBackup(context, ref),
+                    ),
+                    IconButton(
+                      tooltip: '外觀風格',
+                      icon: const Icon(Icons.palette_outlined),
+                      onPressed: () => showDialog<void>(context: context, builder: (_) => const ThemePickerDialog()),
                     ),
                     IconButton(
                       tooltip: '提醒設定',

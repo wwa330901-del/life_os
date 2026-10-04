@@ -91,10 +91,14 @@ export class UsersService {
 
   /** Self-service: any logged-in user can change their own display name
    * (distinct from the platform-admin user list, which is read-only). */
-  updateName(userId: string, name: string) {
+  /** 改顯示名稱或外觀風格；沒給的欄位不動。 */
+  updateProfile(userId: string, data: { name?: string; appTheme?: string }) {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { name },
+      data: {
+        ...(data.name ? { name: data.name } : {}),
+        ...(data.appTheme ? { appTheme: data.appTheme } : {}),
+      },
     });
   }
 

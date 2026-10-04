@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/theme/app_accents.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/app_themes.dart';
+import 'state/app_theme_provider.dart';
 import 'state/ai_assistant_provider.dart';
 import 'state/auth_provider.dart';
 import 'state/divination_provider.dart';
@@ -29,11 +32,15 @@ class LifeOsApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 登入（或重新整理使用者資料）後，套用伺服器上記的外觀風格
+    ref.listen(authControllerProvider, (_, next) {
+      ref.read(appThemeProvider.notifier).applyFromServer(next.value?.user.appTheme);
+    });
+    final spec = themeById(ref.watch(appThemeProvider));
+    AppAccents.spec = spec;
     return MaterialApp(
       title: '元序',
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.system,
+      theme: AppTheme.fromSpec(spec),
       home: const _AppShell(),
     );
   }

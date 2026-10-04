@@ -49,6 +49,7 @@ dependencies:
   # Flutter/zone error capture by hand instead of getting it for free.
   sentry: ^9.0.0
   table_calendar: ^3.1.2
+  google_fonts: ^8.2.1
 
 dev_dependencies:
   flutter_test:
@@ -71,6 +72,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # 10 套外觀風格的背景圖（tools/theme-backgrounds 產生）
+  assets:
+    - assets/themes/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

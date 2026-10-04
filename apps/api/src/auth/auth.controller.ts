@@ -65,6 +65,7 @@ export class AuthController {
       email: user!.email,
       name: user!.name,
       isPlatformAdmin: user!.isPlatformAdmin,
+      appTheme: user!.appTheme,
     };
   }
 
@@ -83,13 +84,17 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Patch('me')
   async updateMe(@CurrentUser() currentUser: AuthenticatedUser, @Body() dto: UpdateMeDto) {
-    const user = await this.usersService.updateName(currentUser.id, dto.name.trim());
+    const user = await this.usersService.updateProfile(currentUser.id, {
+      name: dto.name?.trim(),
+      appTheme: dto.appTheme,
+    });
     return {
       id: user.id,
       username: user.username,
       email: user.email,
       name: user.name,
       isPlatformAdmin: user.isPlatformAdmin,
+      appTheme: user.appTheme,
     };
   }
 }

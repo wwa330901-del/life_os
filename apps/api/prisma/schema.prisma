@@ -107,6 +107,8 @@ model User {
   /// Claude API 金鑰（2026-10-02 起 AI 主要用 Claude；Gemini 只剩語音轉文字、看影片）。
   /// 跟 geminiApiKey 一樣加密存（common/secret-box）。
   claudeApiKey String?
+  /// 外觀風格（App 設定裡選的 10 套之一，id 見 auth/dto/update-me.dto.ts）；null＝預設「晨光」
+  appTheme String?
 
   /// 算命用的生辰（2026-10-01）：日期必填、時間可以不知道。
   birthDate DateTime? @db.Date

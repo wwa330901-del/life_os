@@ -123,8 +123,9 @@ class ApiClient {
     unawaited(_post('/auth/me/location', const {}).then<void>((_) {}, onError: (_) {}));
   }
 
-  Future<AppUser> updateMe({required String name}) async {
-    final body = await _patch('/auth/me', {'name': name});
+  /// 改顯示名稱或外觀風格（沒給的不動）
+  Future<AppUser> updateMe({String? name, String? appTheme}) async {
+    final body = await _patch('/auth/me', {'name': ?name, 'appTheme': ?appTheme});
     return AppUser.fromJson(body);
   }
 
