@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../../core/theme/app_theme.dart';
 import '../../state/auth_provider.dart';
@@ -84,7 +87,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: Text(
-                            authState.error.toString(),
+                            _errorText(authState.error),
                             style: TextStyle(color: scheme.error),
                           ),
                         ),
@@ -136,4 +139,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
     );
   }
+}
+
+/// 網路層的錯誤（http.ClientException 等）原文是英文，換成看得懂的中文；
+/// 伺服器回的 ApiException 本來就是中文，照原樣顯示。
+String _errorText(Object? error) {
+  if (error is http.ClientException) return '連不上伺服器，請確認網路後再試一次';
+  if (error is TimeoutException) return 'Google 登入逾時，請再試一次';
+  return error.toString();
 }

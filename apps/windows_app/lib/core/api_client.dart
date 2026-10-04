@@ -100,7 +100,15 @@ class ApiClient {
   }
 
   Future<AuthResult> googleLogin({required String code, required String redirectUri}) async {
-    final body = await _post('/auth/google', {'code': code, 'redirectUri': redirectUri});
+    final payload = {'code': code, 'redirectUri': redirectUri};
+    Map<String, dynamic> body;
+    try {
+      body = await _post('/auth/google', payload);
+    } on http.ClientException {
+      // 平板從瀏覽器切回來的瞬間連線可能還沒恢復，再試一次。
+      await Future<void>.delayed(const Duration(seconds: 2));
+      body = await _post('/auth/google', payload);
+    }
     return _authResultFrom(body);
   }
 
