@@ -1,0 +1,61 @@
+name: Android smoke test
+
+# 手動執行：在雲端的 Android 平板模擬器裝上 APK、打開，截圖＋存 logcat，
+# 確認 App 開得起來、不會閃退。本機沒有 Android SDK，平板版改動後用這個驗證。
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/windows_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: flutter pub get
+      - run: flutter build apk --release --target-platform android-x64
+
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: Nexus 10
+          disable-animations: true
+          working-directory: apps/windows_app
+          script: |
+            adb install -r build/app/outputs/flutter-apk/app-release.apk
+            adb logcat -c
+            adb shell am start -n com.yuanxu.life_os_app/.MainActivity
+            sleep 30
+            mkdir -p smoke
+            adb exec-out screencap -p > smoke/landscape.png
+            adb shell pidof com.yuanxu.life_os_app > smoke/pid.txt || echo "NOT RUNNING" > smoke/pid.txt
+            adb shell settings put system accelerometer_rotation 0
+            adb shell settings put system user_rotation 1
+            sleep 10
+            adb exec-out screencap -p > smoke/rotated.png
+            adb logcat -d > smoke/logcat.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke
+          path: apps/windows_app/smoke
