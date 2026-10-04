@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../state/auth_provider.dart';
 
-/// 匯出全部資料成 Excel，存到「下載」資料夾並在檔案總管裡選取它。
+/// 匯出全部資料成 Excel，存到「下載」資料夾（Windows 會在檔案總管裡選取它）。
 Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
   final messenger = ScaffoldMessenger.of(context);
   showDialog<void>(
@@ -25,9 +25,15 @@ Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
   final navigator = Navigator.of(context, rootNavigator: true);
   try {
     final bytes = await ref.read(apiClientProvider).downloadExport();
-    final home = Platform.environment['USERPROFILE'] ?? Directory.systemTemp.path;
-    final downloads = Directory('$home${Platform.pathSeparator}Downloads');
-    final dir = downloads.existsSync() ? downloads : Directory(home);
+    final Directory dir;
+    if (Platform.isAndroid) {
+      // Android 10 以上 App 可以直接在公用「Download」資料夾建自己的檔案，不用要儲存權限。
+      dir = Directory('/storage/emulated/0/Download');
+    } else {
+      final home = Platform.environment['USERPROFILE'] ?? Directory.systemTemp.path;
+      final downloads = Directory('$home${Platform.pathSeparator}Downloads');
+      dir = downloads.existsSync() ? downloads : Directory(home);
+    }
     final now = DateTime.now();
     final stamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
         '-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';

@@ -40,7 +40,17 @@ class _UpdateDialogState extends State<_UpdateDialog> {
           if (mounted) setState(() => _progress = p);
         },
       );
-      // downloadAndInstall exits the process on success — nothing runs after this.
+      // Windows：downloadAndInstall 成功會直接結束程式，不會跑到這裡。
+      // Android：交給瀏覽器下載 APK 後就回來，提示使用者點開安裝。
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('下載完成後點開「life_os.apk」安裝；第一次會要你允許安裝這個來源。'),
+          duration: Duration(seconds: 10),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {

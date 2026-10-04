@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// A newer release found on GitHub, with what's needed to show it to the
 /// user and let them get it.
@@ -60,11 +61,13 @@ class UpdateService {
         return null;
       }
 
+      // 同一個 Release 裡同時有 Windows 安裝檔和 Android APK，挑這台用得到的。
+      final wantedExtension = Platform.isAndroid ? '.apk' : '.exe';
       final assets = (json['assets'] as List?) ?? const [];
       String? downloadUrl;
       for (final asset in assets) {
         final name = asset['name'] as String? ?? '';
-        if (name.endsWith('.exe')) {
+        if (name.endsWith(wantedExtension)) {
           downloadUrl = asset['browser_download_url'] as String?;
           break;
         }
@@ -94,6 +97,14 @@ class UpdateService {
     final url = info.installerDownloadUrl;
     if (url == null) {
       throw StateError('This release has no installer attached.');
+    }
+
+    // Android 不能自己默默安裝（沒有上架商店的 App 一定要使用者按「安裝」），
+    // 交給瀏覽器下載 APK，下載完點開就會跳出系統的安裝畫面，覆蓋舊版、資料保留。
+    if (Platform.isAndroid) {
+      final launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!launched) throw StateError('無法開啟瀏覽器下載');
+      return;
     }
 
     final client = http.Client();

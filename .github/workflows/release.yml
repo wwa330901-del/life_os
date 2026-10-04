@@ -1,4 +1,4 @@
-name: Release Windows installer
+name: Release Windows installer + Android APK
 
 # Triggered by pushing a tag like v2.10.1 — builds straight from that tagged
 # commit and takes the version number from the tag itself (not from
@@ -7,31 +7,24 @@ name: Release Windows installer
 # 2026-09-29 incident this replaces (a locally hand-built installer got
 # installed under a version number that didn't actually change, so the
 # in-app updater couldn't tell it apart from the next real fix).
+#
+# Windows 和 Android 各自打包，兩個都成功才建立 Release——同一個 Release
+# 一定同時有 life_os_setup.exe 和 life_os.apk，App 內更新檢查各挑自己的檔案。
+# workflow_dispatch（手動執行）只打包不發 Release，用來先確認建得起來。
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
-    # 最後一步要建立 GitHub Release，需要寫入權限——repo 預設的
-    # GITHUB_TOKEN 權限是唯讀（2026-10-01 發 v2.10.3 時因此 403 失敗）。
-    permissions:
-      contents: write
     defaults:
       run:
         working-directory: apps/windows_app
     steps:
       - uses: actions/checkout@v4
-
-      - name: Derive version from tag
-        id: version
-        shell: bash
-        run: |
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set pubspec/installer version to match tag
         # Both files are plain UTF-8, no BOM (life_os.iss's Chinese Start
@@ -41,9 +34,10 @@ jobs:
         # rather than relying on the runner's default — a silent mojibake
         # corruption here wouldn't fail the build, it'd just ship a
         # installer with garbled Chinese text.
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $version = "${{ steps.version.outputs.version }}"
+          $version = "${{ github.ref_name }}".Substring(1)
           (Get-Content -Encoding utf8 pubspec.yaml) -replace '^version: .*$', "version: $version+1" | Set-Content -Encoding utf8NoBOM pubspec.yaml
           (Get-Content -Encoding utf8 installer/life_os.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`"" | Set-Content -Encoding utf8NoBOM installer/life_os.iss
 
@@ -68,12 +62,90 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\life_os.iss
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: apps/windows_app/installer/Output/life_os_setup.exe
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/windows_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version
+        # versionCode 一定要每版變大，Android 才肯覆蓋安裝：2.10.16 → 21016。
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(grep -E '^version: ' pubspec.yaml | sed -E 's/^version: ([0-9.]+).*/\1/')"
+          fi
+          IFS=. read -r major minor patch <<< "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "code=$((major * 10000 + minor * 100 + patch))" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Restore signing key
+        # 金鑰本體備份在使用者電腦 C:\Users\chen6\life_os_android_key（不在 repo）。
+        # 換了金鑰，平板上的舊版就沒辦法直接更新，要先解除安裝。
+        shell: bash
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.p12"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
+
+      - run: flutter pub get
+      - name: Build APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: >-
+          flutter build apk --release
+          --build-name=${{ steps.version.outputs.version }}
+          --build-number=${{ steps.version.outputs.code }}
+          --dart-define=SENTRY_DSN=${{ secrets.SENTRY_DSN_FLUTTER }}
+
+      - name: Rename APK
+        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/life_os.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: apps/windows_app/build/app/outputs/flutter-apk/life_os.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    # 建立 GitHub Release 需要寫入權限——repo 預設的 GITHUB_TOKEN 權限是
+    # 唯讀（2026-10-01 發 v2.10.3 時因此 403 失敗）。
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            "installer/Output/life_os_setup.exe" \
+            dist/life_os_setup.exe \
+            dist/life_os.apk \
+            --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes
