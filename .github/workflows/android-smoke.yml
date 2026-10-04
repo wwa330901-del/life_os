@@ -2,8 +2,14 @@ name: Android smoke test
 
 # 手動執行：在雲端的 Android 平板模擬器裝上 APK、打開，截圖＋存 logcat，
 # 確認 App 開得起來、不會閃退。本機沒有 Android SDK，平板版改動後用這個驗證。
+# google=true 時再按「使用 Google 登入」，每隔幾秒截一張，看登入流程卡在哪。
 on:
   workflow_dispatch:
+    inputs:
+      google:
+        description: "也按 Google 登入"
+        type: boolean
+        default: false
 
 jobs:
   smoke:
@@ -30,9 +36,40 @@ jobs:
           channel: stable
 
       - run: flutter pub get
-      - run: flutter build apk --release --target-platform android-x64
+      # 版本號設很大，免得一打開就跳「有新版本」擋住畫面。
+      - run: flutter build apk --release --target-platform android-x64 --build-name=99.0.0 --build-number=1
+
+      - name: Write emulator script
+        run: |
+          mkdir -p smoke
+          cat > smoke/run.sh <<'SH'
+          set -x
+          adb install -r build/app/outputs/flutter-apk/app-release.apk
+          adb logcat -c
+          adb shell am start -n com.yuanxu.life_os_app/.MainActivity
+          sleep 30
+          adb exec-out screencap -p > smoke/landscape.png
+          adb shell pidof com.yuanxu.life_os_app > smoke/pid.txt || echo "NOT RUNNING" > smoke/pid.txt
+          if [ "$GOOGLE" = "true" ]; then
+            adb shell uiautomator dump /sdcard/ui.xml && adb pull /sdcard/ui.xml smoke/ui.xml
+            # 「使用 Google 登入」按鈕在橫向 2560x1600 畫面的位置
+            adb shell input tap 1280 1117
+            for i in 1 2 3 4 5 6; do sleep 8; adb exec-out screencap -p > smoke/google_$i.png; done
+            adb shell am start -n com.yuanxu.life_os_app/.MainActivity
+            sleep 5
+            adb exec-out screencap -p > smoke/google_back.png
+          else
+            adb shell settings put system accelerometer_rotation 0
+            adb shell settings put system user_rotation 1
+            sleep 10
+            adb exec-out screencap -p > smoke/rotated.png
+          fi
+          adb logcat -d > smoke/logcat.txt
+          SH
 
       - uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GOOGLE: ${{ inputs.google }}
         with:
           api-level: 34
           target: google_apis
@@ -40,19 +77,7 @@ jobs:
           profile: Nexus 10
           disable-animations: true
           working-directory: apps/windows_app
-          script: |
-            adb install -r build/app/outputs/flutter-apk/app-release.apk
-            adb logcat -c
-            adb shell am start -n com.yuanxu.life_os_app/.MainActivity
-            sleep 30
-            mkdir -p smoke
-            adb exec-out screencap -p > smoke/landscape.png
-            adb shell pidof com.yuanxu.life_os_app > smoke/pid.txt || echo "NOT RUNNING" > smoke/pid.txt
-            adb shell settings put system accelerometer_rotation 0
-            adb shell settings put system user_rotation 1
-            sleep 10
-            adb exec-out screencap -p > smoke/rotated.png
-            adb logcat -d > smoke/logcat.txt
+          script: bash smoke/run.sh
 
       - uses: actions/upload-artifact@v4
         if: always()
