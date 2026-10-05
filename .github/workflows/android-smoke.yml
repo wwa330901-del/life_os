@@ -61,7 +61,7 @@ jobs:
             adb shell input tap 1595 925
             sleep 5
             adb exec-out screencap -p > smoke/update_1_downloading.png
-            sleep 40
+            sleep 100
             adb exec-out screencap -p > smoke/update_2_permission.png
             # 等於在設定頁打開「允許來自這個來源」再按返回
             adb shell appops set com.yuanxu.life_os_app REQUEST_INSTALL_PACKAGES allow

@@ -50,10 +50,12 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       });
     } catch (e, st) {
       // 自動更新失敗通報管理員（走 main.dart 的錯誤通報），才知道為什麼要改去下載頁
-      FlutterError.reportError(FlutterErrorDetails(
-        exception: StateError('App 內更新 v${widget.info.currentVersion} → v${widget.info.version} 失敗：$e'),
-        stack: st,
-      ));
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: StateError('App 內更新 v${widget.info.currentVersion} → v${widget.info.version} 失敗：$e'),
+          stack: st,
+        ),
+      );
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;
@@ -63,82 +65,71 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   }
 
   Future<void> _openReleasePage() async {
-    await launchUrl(
-      Uri.parse(widget.info.releaseUrl),
-      mode: LaunchMode.externalApplication,
-    );
+    await launchUrl(Uri.parse(widget.info.releaseUrl), mode: LaunchMode.externalApplication);
     if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('有新版本可用：v${widget.info.version}'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: switch (_stage) {
-          _Stage.prompt => SingleChildScrollView(
-            child: Text(
-              '目前版本：v${widget.info.currentVersion}\n\n'
-              '${widget.info.releaseNotes.isEmpty ? '此版本沒有提供更新說明。' : widget.info.releaseNotes}',
-            ),
-          ),
-          _Stage.downloading => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('正在下載更新…'),
-              const SizedBox(height: 12),
-              LinearProgressIndicator(value: _progress > 0 ? _progress : null),
-              const SizedBox(height: 8),
-              Text('${(_progress * 100).toStringAsFixed(0)}%'),
-            ],
-          ),
-          _Stage.installing => Text(
-            _androidStep == AndroidInstallStep.needsPermission
-                ? '第一次更新要先允許：在跳出的設定頁打開「允許來自這個來源」，'
-                      '再按返回，就會跳出更新畫面，按「更新」即可。'
-                : '在跳出的畫面按「更新」就完成了，資料都會保留。\n'
-                      '如果不小心關掉了，按下面的「再試一次」。',
-          ),
-          _Stage.error => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '自動更新失敗：$_errorMessage',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+    // 下載中按返回鍵不關掉對話框（關掉就看不到進度，以為沒在更新）
+    return PopScope(
+      canPop: _stage != _Stage.downloading,
+      child: AlertDialog(
+        title: Text('有新版本可用：v${widget.info.version}'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: switch (_stage) {
+            _Stage.prompt => SingleChildScrollView(
+              child: Text(
+                '目前版本：v${widget.info.currentVersion}\n\n'
+                '${widget.info.releaseNotes.isEmpty ? '此版本沒有提供更新說明。' : widget.info.releaseNotes}',
               ),
-              const SizedBox(height: 8),
-              const Text('可以改成手動前往下載頁安裝。'),
-            ],
-          ),
+            ),
+            _Stage.downloading => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('正在下載更新…'),
+                const SizedBox(height: 12),
+                LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+                const SizedBox(height: 8),
+                Text('${(_progress * 100).toStringAsFixed(0)}%'),
+              ],
+            ),
+            _Stage.installing => Text(
+              _androidStep == AndroidInstallStep.needsPermission
+                  ? '第一次更新要先允許：在跳出的設定頁打開「允許來自這個來源」，'
+                        '再按返回，就會跳出更新畫面，按「更新」即可。'
+                  : '在跳出的畫面按「更新」就完成了，資料都會保留。\n'
+                        '如果不小心關掉了，按下面的「再試一次」。',
+            ),
+            _Stage.error => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('自動更新失敗：$_errorMessage', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                const SizedBox(height: 8),
+                const Text('可以改成手動前往下載頁安裝。'),
+              ],
+            ),
+          },
+        ),
+        actions: switch (_stage) {
+          _Stage.prompt => [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('稍後')),
+            FilledButton(onPressed: _updateNow, child: const Text('現在更新')),
+          ],
+          _Stage.downloading => const [],
+          _Stage.installing => [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('稍後')),
+            FilledButton(onPressed: _updateNow, child: const Text('再試一次')),
+          ],
+          _Stage.error => [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+            FilledButton(onPressed: _openReleasePage, child: const Text('前往下載頁')),
+          ],
         },
       ),
-      actions: switch (_stage) {
-        _Stage.prompt => [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('稍後'),
-          ),
-          FilledButton(onPressed: _updateNow, child: const Text('現在更新')),
-        ],
-        _Stage.downloading => const [],
-        _Stage.installing => [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('稍後'),
-          ),
-          FilledButton(onPressed: _updateNow, child: const Text('再試一次')),
-        ],
-        _Stage.error => [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(onPressed: _openReleasePage, child: const Text('前往下載頁')),
-        ],
-      },
     );
   }
 }
