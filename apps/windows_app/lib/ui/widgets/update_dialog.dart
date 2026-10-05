@@ -48,7 +48,12 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         _stage = _Stage.installing;
         _androidStep = step;
       });
-    } catch (e) {
+    } catch (e, st) {
+      // 自動更新失敗通報管理員（走 main.dart 的錯誤通報），才知道為什麼要改去下載頁
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: StateError('App 內更新 v${widget.info.currentVersion} → v${widget.info.version} 失敗：$e'),
+        stack: st,
+      ));
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;
@@ -74,9 +79,8 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         child: switch (_stage) {
           _Stage.prompt => SingleChildScrollView(
             child: Text(
-              widget.info.releaseNotes.isEmpty
-                  ? '此版本沒有提供更新說明。'
-                  : widget.info.releaseNotes,
+              '目前版本：v${widget.info.currentVersion}\n\n'
+              '${widget.info.releaseNotes.isEmpty ? '此版本沒有提供更新說明。' : widget.info.releaseNotes}',
             ),
           ),
           _Stage.downloading => Column(

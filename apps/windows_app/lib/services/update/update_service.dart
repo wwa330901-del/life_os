@@ -10,12 +10,16 @@ import 'package:flutter/services.dart';
 class UpdateInfo {
   const UpdateInfo({
     required this.version,
+    required this.currentVersion,
     required this.releaseNotes,
     required this.releaseUrl,
     required this.installerDownloadUrl,
   });
 
   final String version;
+
+  /// 這台現在裝的版本（對話框顯示，回報問題時看得出是哪一版）
+  final String currentVersion;
   final String releaseNotes;
   final String releaseUrl;
   final String? installerDownloadUrl;
@@ -86,6 +90,7 @@ class UpdateService {
 
       return UpdateInfo(
         version: remoteVersion,
+        currentVersion: currentVersion,
         releaseNotes: (json['body'] as String? ?? '').trim(),
         releaseUrl: json['html_url'] as String? ?? '',
         installerDownloadUrl: downloadUrl,
