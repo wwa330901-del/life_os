@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsOptional } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload';
 import { PrismaService } from '../prisma/prisma.service';
+import { LineRichMenuService } from '../users/line-rich-menu.service';
 
 const SETTINGS_SELECT = {
   lineUserId: true,
@@ -33,7 +34,16 @@ export class UpdateReminderSettingsDto {
 @UseGuards(JwtAuthGuard)
 @Controller('line/settings')
 export class LineSettingsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly lineRichMenu: LineRichMenuService,
+  ) {}
+
+  /** 重新把 LINE 選單換成目前的外觀風格（換風格時後端已自動做，這是手動補一次）。 */
+  @Post('rich-menu')
+  async syncRichMenu(@CurrentUser() user: AuthenticatedUser) {
+    return { menu: await this.lineRichMenu.applyForUser(user.id) };
+  }
 
   @Get()
   async get(@CurrentUser() user: AuthenticatedUser) {
