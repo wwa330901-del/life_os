@@ -58,7 +58,7 @@ jobs:
           adb shell pidof com.yuanxu.life_os_app > smoke/pid.txt || echo "NOT RUNNING" > smoke/pid.txt
           if [ "$UPDATE" = "true" ]; then
             # 「現在更新」按鈕在橫向 2560x1600 畫面的位置
-            adb shell input tap 1595 882
+            adb shell input tap 1595 925
             sleep 5
             adb exec-out screencap -p > smoke/update_1_downloading.png
             sleep 40
