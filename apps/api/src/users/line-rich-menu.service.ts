@@ -1,6 +1,9 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+const BOOT_DELAY_MS = 60_000;
+const RETRY_DELAYS_MS = [5_000, 30_000];
+
 /** LINE 圖文選單別名：tools/line-richmenu/upload-themes.js 每套外觀風格上傳一份，別名 theme-{id}。 */
 export function themeMenuAlias(appTheme: string | null | undefined): string {
   return `theme-${appTheme || 'dawn'}`;
@@ -20,7 +23,10 @@ export class LineRichMenuService implements OnApplicationBootstrap {
 
   onApplicationBootstrap() {
     if (!this.token) return;
-    this.syncAll().catch((err: Error) => this.logger.error(`LINE 選單啟動同步失敗：${err.message}`));
+    // 剛啟動時對外連線偶爾還沒好（2026-10-05 Render 上 fetch failed），等一下再做
+    setTimeout(() => {
+      this.syncAll().catch((err: Error) => this.logger.error(`LINE 選單啟動同步失敗：${err.message}`));
+    }, BOOT_DELAY_MS).unref();
   }
 
   async syncAll(): Promise<void> {
@@ -45,21 +51,35 @@ export class LineRichMenuService implements OnApplicationBootstrap {
   private async apply(lineUserId: string, appTheme: string | null): Promise<void> {
     if (!this.token) return;
     const alias = themeMenuAlias(appTheme);
-    try {
-      const res = await this.call(`https://api.line.me/v2/bot/richmenu/alias/${alias}`);
-      const { richMenuId } = (await res.json()) as { richMenuId: string };
-      await this.call(`https://api.line.me/v2/bot/user/${lineUserId}/richmenu/${richMenuId}`, 'POST');
-    } catch (err) {
-      this.logger.error(`LINE 選單換成 ${alias} 失敗：${(err as Error).message}`);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await this.call(`https://api.line.me/v2/bot/richmenu/alias/${alias}`);
+        const { richMenuId } = (await res.json()) as { richMenuId: string };
+        await this.call(`https://api.line.me/v2/bot/user/${lineUserId}/richmenu/${richMenuId}`, 'POST');
+        return;
+      } catch (err) {
+        // 連線層的錯（fetch failed）重試；LINE 回的錯誤（4xx）重試也沒用
+        if (!(err instanceof LineApiError) && attempt < RETRY_DELAYS_MS.length) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          continue;
+        }
+        const cause = (err as Error & { cause?: Error }).cause?.message;
+        this.logger.error(`LINE 選單換成 ${alias} 失敗：${(err as Error).message}${cause ? `（${cause}）` : ''}`);
+        return;
+      }
     }
   }
 
   private async call(url: string, method = 'GET'): Promise<Response> {
     const res = await fetch(url, {
       method,
-      headers: { Authorization: `Bearer ${this.token}`, ...(method === 'POST' ? { 'Content-Length': '0' } : {}) },
+      headers: { Authorization: `Bearer ${this.token}` },
+      // 空字串 body：讓 fetch 自己帶 Content-Length: 0（LINE 的 POST 沒有它會回 411）
+      ...(method === 'POST' ? { body: '' } : {}),
     });
-    if (!res.ok) throw new Error(`${method} ${url} → ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new LineApiError(`${method} ${url} → ${res.status} ${await res.text()}`);
     return res;
   }
 }
+
+class LineApiError extends Error {}
