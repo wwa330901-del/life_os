@@ -13,6 +13,7 @@ import { CurrentUser } from './current-user.decorator';
 import type { AuthenticatedUser } from './jwt-payload';
 import { UsersService } from '../users/users.service';
 import { clientIp, UserLocationService } from '../users/user-location.service';
+import { LineRichMenuService } from '../users/line-rich-menu.service';
 
 @Controller('auth')
 export class AuthController {
@@ -20,6 +21,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
     private readonly location: UserLocationService,
+    private readonly lineRichMenu: LineRichMenuService,
   ) {}
 
   // 帳號相關端點（註冊/驗證/登入）比全域預設（每分鐘 100 次）收得更緊——
@@ -88,6 +90,7 @@ export class AuthController {
       name: dto.name?.trim(),
       appTheme: dto.appTheme,
     });
+    if (dto.appTheme) void this.lineRichMenu.applyForUser(user.id);
     return {
       id: user.id,
       username: user.username,

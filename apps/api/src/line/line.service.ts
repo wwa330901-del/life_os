@@ -15,6 +15,7 @@ import { RetirementService } from '../finance/retirement.service';
 import { TripsService } from '../trips/trips.service';
 import { packingText } from '../trips/trip';
 import { UserLocationService } from '../users/user-location.service';
+import { LineRichMenuService } from '../users/line-rich-menu.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
@@ -138,6 +139,7 @@ export class LineService {
     private readonly financeBudgetsService: FinanceBudgetsService,
     private readonly financeLoansService: FinanceLoansService,
     private readonly financeAdvancesService: FinanceAdvancesService,
+    private readonly lineRichMenu: LineRichMenuService,
     private readonly calendarEventsService: CalendarEventsService,
     private readonly stocksHoldingsService: StocksHoldingsService,
     private readonly stocksRecurringService: StocksRecurringService,
@@ -283,6 +285,7 @@ export class LineService {
       where: { id: pending.id },
       data: { lineUserId, linkCode: null, linkCodeExpiresAt: null },
     });
+    void this.lineRichMenu.applyForUser(pending.userId);
     await this.reply(
       replyToken,
       '綁定成功！點下面選單試試看：記帳／財務總覽／代辦事項／代辦事項總覽，或直接傳「新增行事曆 7/31 14:00 開會 @地點」。',
