@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/stock.dart';
 import '../../../../state/stocks_provider.dart';
 import '../../finance/widgets/finance_format.dart';
+import '../widgets/stock_openings_dialog.dart';
 
 /// 持股總覽 — one card per stock code, aggregated server-side from every
 /// StockTransaction against it (average-cost-basis method). `currentPrice`/
@@ -21,9 +22,24 @@ class StockHoldingsTab extends ConsumerWidget {
 
     return holdingsAsync.when(
       data: (holdings) {
+        final openingsButton = OutlinedButton.icon(
+          onPressed: () => showStockOpeningsDialog(context, spaceId),
+          icon: const Icon(Icons.inventory_2_outlined),
+          label: const Text('期初持股'),
+        );
         if (holdings.isEmpty) {
-          return const Center(
-            child: Text('目前沒有任何持股\n到「交易紀錄」分頁新增一筆買入即可', textAlign: TextAlign.center),
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '目前沒有任何持股\n開始記帳前就有的股票按「期初持股」填\n之後的買賣到「交易紀錄」分頁新增',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                openingsButton,
+              ],
+            ),
           );
         }
         final totalCostBasis = holdings.fold<double>(0, (sum, h) => sum + h.costBasis);
@@ -57,7 +73,9 @@ class StockHoldingsTab extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            Align(alignment: Alignment.centerRight, child: openingsButton),
+            const SizedBox(height: 8),
             ...holdings.map((h) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _HoldingCard(holding: h),

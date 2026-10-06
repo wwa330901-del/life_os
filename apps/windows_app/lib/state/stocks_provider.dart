@@ -10,6 +10,10 @@ final stockHoldingsProvider = FutureProvider.autoDispose.family<List<StockHoldin
   return ref.read(apiClientProvider).listStockHoldings(spaceId);
 });
 
+final stockOpeningsProvider = FutureProvider.autoDispose.family<List<StockOpening>, String>((ref, spaceId) {
+  return ref.read(apiClientProvider).listStockOpenings(spaceId);
+});
+
 /// Cursor-paginated (30/page) — mirrors `KnowledgeItemsPageState`'s
 /// shape/loadMore pattern (see 大系統V1.43.0), duplicated locally rather
 /// than shared.

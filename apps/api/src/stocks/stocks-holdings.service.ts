@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StocksAccessService } from './stocks-access.service';
 import { StockTransactionType } from '../../generated/prisma/client.js';
@@ -43,11 +43,11 @@ export class StocksHoldingsService {
     // anyone reads it after this feature shipped. Every read after that is
     // a plain cache-table read again.
     if (holdings.length === 0) {
-      const traded = await this.prisma.stockTransaction.findMany({
-        where: { spaceId },
-        distinct: ['stockCode'],
-        select: { stockCode: true },
-      });
+      const [tradedRows, openingRows] = await Promise.all([
+        this.prisma.stockTransaction.findMany({ where: { spaceId }, distinct: ['stockCode'], select: { stockCode: true } }),
+        this.prisma.stockOpeningPosition.findMany({ where: { spaceId }, select: { stockCode: true } }),
+      ]);
+      const traded = [...new Set([...tradedRows, ...openingRows].map((r) => r.stockCode))].map((stockCode) => ({ stockCode }));
       for (const { stockCode } of traded) {
         await this.recompute(spaceId, stockCode);
       }
@@ -85,6 +85,9 @@ export class StocksHoldingsService {
    * Upserts the cache row, or deletes it once shares round to ~0 (so
    * `list()` never has to filter zero-share rows itself). */
   async recompute(spaceId: string, stockCode: string): Promise<void> {
+    const opening = await this.prisma.stockOpeningPosition.findUnique({
+      where: { spaceId_stockCode: { spaceId, stockCode } },
+    });
     const transactions = await this.prisma.stockTransaction.findMany({
       // pending:true 是定期定額到期還沒填成交價的佔位列（0 股、金額是
       // 目標金額不是真的成交價），絕對不能被算進平均成本，否則會把
@@ -93,8 +96,9 @@ export class StocksHoldingsService {
       orderBy: [{ tradeDate: 'asc' }, { createdAt: 'asc' }],
     });
 
-    let shares = 0;
-    let costBasis = 0;
+    // 期初持股當成最早的一筆買入。
+    let shares = opening?.shares ?? 0;
+    let costBasis = opening?.totalCost ?? 0;
     for (const t of transactions) {
       if (t.type === StockTransactionType.BUY) {
         shares += t.shares;
@@ -117,5 +121,44 @@ export class StocksHoldingsService {
       create: { spaceId, stockCode, shares, costBasis },
       update: { shares, costBasis },
     });
+  }
+
+  /** 期初持股（2026-10-06）：開始記帳前就有的股票，跟帳戶期初餘額一樣不動到任何帳戶。 */
+  async listOpenings(userId: string, spaceId: string) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    const rows = await this.prisma.stockOpeningPosition.findMany({ where: { spaceId }, orderBy: { stockCode: 'asc' } });
+    const prices = await this.prisma.stockPriceCache.findMany({
+      where: { stockCode: { in: rows.map((r) => r.stockCode) } },
+      select: { stockCode: true, stockName: true },
+    });
+    const names = new Map(prices.map((p) => [p.stockCode, p.stockName]));
+    return rows.map((r) => ({
+      stockCode: r.stockCode,
+      stockName: names.get(r.stockCode) ?? null,
+      shares: r.shares,
+      totalCost: r.totalCost,
+      averageCost: r.shares > 0 ? r.totalCost / r.shares : 0,
+    }));
+  }
+
+  async setOpening(userId: string, spaceId: string, input: { stockCode: string; shares: number; averageCost: number }) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    const stockCode = input.stockCode.trim().toUpperCase();
+    if (!stockCode) throw new BadRequestException('請填股票代號');
+    const totalCost = input.shares * input.averageCost;
+    await this.prisma.stockOpeningPosition.upsert({
+      where: { spaceId_stockCode: { spaceId, stockCode } },
+      create: { spaceId, stockCode, shares: input.shares, totalCost },
+      update: { shares: input.shares, totalCost },
+    });
+    await this.recompute(spaceId, stockCode);
+    return { stockCode, shares: input.shares, totalCost };
+  }
+
+  async removeOpening(userId: string, spaceId: string, stockCode: string) {
+    await this.access.assertPersonalSpace(userId, spaceId);
+    await this.prisma.stockOpeningPosition.deleteMany({ where: { spaceId, stockCode } });
+    await this.recompute(spaceId, stockCode);
+    return { ok: true };
   }
 }

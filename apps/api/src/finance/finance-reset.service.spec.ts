@@ -5,13 +5,18 @@ function makeService() {
     deleteMany: jest.fn().mockReturnValue('deleteMany'),
     updateMany: jest.fn().mockReturnValue('updateMany'),
     update: jest.fn().mockReturnValue('update'),
+    createMany: jest.fn().mockReturnValue('createMany'),
   });
   const prisma = {
     financeLoan: model(),
     financeAdvance: model(),
     financeTransaction: model(),
     stockTransaction: model(),
-    stockHolding: model(),
+    stockHolding: {
+      ...model(),
+      findMany: jest.fn().mockResolvedValue([{ stockCode: '0050', shares: 1000, costBasis: 150000 }]),
+    },
+    stockOpeningPosition: model(),
     financeNetWorthSnapshot: model(),
     financeAlertLog: model(),
     space: model(),
@@ -51,6 +56,11 @@ describe('FinanceResetService.reset', () => {
       where: { id: 'bank' },
       data: { initialBalance: 5000, cardReminderKey: null },
     });
+    // 現在的持股變成期初持股，持股快取原樣放回。
+    expect(prisma.stockOpeningPosition.createMany).toHaveBeenCalledWith({
+      data: [{ spaceId: 's1', stockCode: '0050', shares: 1000, totalCost: 150000 }],
+    });
+    expect(prisma.stockHolding.createMany).toHaveBeenCalled();
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
@@ -62,5 +72,7 @@ describe('FinanceResetService.reset', () => {
     expect(prisma.financeBudget.deleteMany).toHaveBeenCalled();
     expect(prisma.financeRecurringTransaction.deleteMany).toHaveBeenCalled();
     expect(prisma.financeAccount.update).not.toHaveBeenCalled();
+    expect(prisma.stockOpeningPosition.deleteMany).toHaveBeenCalled();
+    expect(prisma.stockOpeningPosition.createMany).not.toHaveBeenCalled();
   });
 });

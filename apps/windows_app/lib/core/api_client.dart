@@ -1128,6 +1128,28 @@ class ApiClient {
     return body.map((e) => StockHolding.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Future<List<StockOpening>> listStockOpenings(String spaceId) async {
+    final body = await _getList('/spaces/$spaceId/stocks/holdings/openings');
+    return body.map((e) => StockOpening.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> setStockOpening({
+    required String spaceId,
+    required String stockCode,
+    required double shares,
+    required double averageCost,
+  }) async {
+    await _put('/spaces/$spaceId/stocks/holdings/openings', {
+      'stockCode': stockCode,
+      'shares': shares,
+      'averageCost': averageCost,
+    });
+  }
+
+  Future<void> deleteStockOpening({required String spaceId, required String stockCode}) async {
+    await _delete('/spaces/$spaceId/stocks/holdings/openings/${Uri.encodeComponent(stockCode)}');
+  }
+
   Future<StockTransactionsPage> listStockTransactions(String spaceId, {String? cursor}) async {
     final query = _queryString({'cursor': cursor});
     final body = await _get('/spaces/$spaceId/stocks/transactions$query');
@@ -1697,6 +1719,11 @@ class ApiClient {
       headers: _headers,
       body: jsonEncode(body),
     );
+    return _decodeObject(res);
+  }
+
+  Future<Map<String, dynamic>> _put(String path, Map<String, dynamic> body) async {
+    final res = await http.put(Uri.parse('$baseUrl$path'), headers: _headers, body: jsonEncode(body));
     return _decodeObject(res);
   }
 

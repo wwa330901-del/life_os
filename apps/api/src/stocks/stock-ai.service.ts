@@ -11,8 +11,8 @@ const RECENT_TRANSACTIONS = 10;
 
 /** Gemini Interactions API tool declarations for 股票 — composed into the
  * LINE 萬用 AI (`AiAgentService`). 2026-10-01 使用者要求 AI 要能看持股
- * 損益、分析持股走向（之前是刻意不給 AI 碰投資資料）。只讀，不會下單或記錄
- * 交易；股票買賣還是走固定指令。 */
+ * 損益、分析持股走向（之前是刻意不給 AI 碰投資資料）。不會下單或記錄
+ * 交易；唯一會寫的是 set_stock_opening（期初持股）。 */
 export const STOCK_TOOLS = [
   {
     type: 'function' as const,
@@ -46,10 +46,25 @@ export const STOCK_TOOLS = [
       required: ['stockCode'],
     },
   },
+  {
+    type: 'function' as const,
+    name: 'set_stock_opening',
+    description:
+      '設定期初持股：開始記帳前就有的股票（像帳戶的期初餘額，不會從任何帳戶扣錢）。「我本來就有 0050 1000 股，均價 150」。同一檔再設會覆蓋；shares=0 代表刪掉這檔的期初持股。這次之後才買賣的要記成交易，不是期初。',
+    parameters: {
+      type: 'object',
+      properties: {
+        stockCode: { type: 'string', description: '4-6 位數股票代碼' },
+        shares: { type: 'number', description: '股數（1 張＝1000 股）' },
+        averageCost: { type: 'number', description: '每股平均成本；沒講就先問' },
+      },
+      required: ['stockCode', 'shares'],
+    },
+  },
 ];
 
 export const STOCK_AI_GUIDE = [
-  '問持股、損益、賺多少 → get_stock_portfolio。問某檔（或全部持股）走勢、怎麼看、要不要續抱 → analyze_stock_trend（全部持股就每檔都查），用算好的數據分析：短中期漲跌、股價在均線上還是下（多頭/空頭排列）、離高點多遠、波動大不大、量有沒有放大、跟他的成本比。',
+  '說本來就有某檔股票、補登原本的持股 → set_stock_opening（不是買進交易，不動帳戶）。問持股、損益、賺多少 → get_stock_portfolio。問某檔（或全部持股）走勢、怎麼看、要不要續抱 → analyze_stock_trend（全部持股就每檔都查），用算好的數據分析：短中期漲跌、股價在均線上還是下（多頭/空頭排列）、離高點多遠、波動大不大、量有沒有放大、跟他的成本比。',
   '要分析一檔股票（怎麼看、要不要續抱/加碼）時，analyze_stock_trend 看價格，再 get_stock_fundamentals 看基本面和新聞：本益比貴不貴、殖利率、營收是成長還是衰退、EPS、最近新聞是利多還利空，把價格面和基本面一起講。問「X 最近有什麼新聞」「營收怎樣」也用它。',
   '分析要具體、講數字，可以說偏多/偏空/盤整以及要留意的價位，但最後提醒一句這是依過去資料的分析、不保證未來，決定權在他。不要編造新聞或財報數字，工具沒給的就說沒有資料；新聞只有標題，不要自己補內容。',
 ].join('\n');
@@ -79,6 +94,19 @@ export class StockAiService {
         const stockCode = String(args.stockCode ?? '').trim();
         if (!/^\d{4,6}[A-Z]?$/.test(stockCode)) throw new Error('股票代碼要是 4-6 位數字，例如 2330');
         return this.fundamentals.get(stockCode);
+      }
+      case 'set_stock_opening': {
+        const stockCode = String(args.stockCode ?? '').trim().toUpperCase();
+        if (!/^\d{4,6}[A-Z]?$/.test(stockCode)) throw new Error('股票代碼要是 4-6 位數字，例如 2330');
+        const shares = Number(args.shares);
+        if (shares === 0) {
+          await this.holdings.removeOpening(userId, space.id, stockCode);
+          return { removed: stockCode };
+        }
+        if (!(shares > 0)) throw new Error('股數要大於 0');
+        const averageCost = Number(args.averageCost);
+        if (args.averageCost == null || !(averageCost >= 0)) throw new Error('要問使用者每股平均成本（均價）');
+        return this.holdings.setOpening(userId, space.id, { stockCode, shares, averageCost });
       }
       default:
         throw new Error(`未知的工具：${name}`);

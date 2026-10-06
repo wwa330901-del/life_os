@@ -116,15 +116,18 @@ export class StocksPriceService {
   }
 
   private async trackedStockCodes(): Promise<string[]> {
-    const [fromTransactions, fromPlans] = await Promise.all([
+    const [fromTransactions, fromPlans, fromOpenings] = await Promise.all([
       this.prisma.stockTransaction.findMany({ distinct: ['stockCode'], select: { stockCode: true } }),
       this.prisma.stockRecurringInvestment.findMany({
         where: { active: true },
         distinct: ['stockCode'],
         select: { stockCode: true },
       }),
+      this.prisma.stockOpeningPosition.findMany({ distinct: ['stockCode'], select: { stockCode: true } }),
     ]);
-    return [...new Set([...fromTransactions.map((t) => t.stockCode), ...fromPlans.map((p) => p.stockCode)])];
+    return [
+      ...new Set([...fromTransactions, ...fromPlans, ...fromOpenings].map((r) => r.stockCode)),
+    ];
   }
 }
 

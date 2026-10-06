@@ -231,6 +231,7 @@ model Space {
   stockTransactions            StockTransaction[]
   stockRecurringInvestments    StockRecurringInvestment[]
   stockHoldings                StockHolding[]
+  stockOpeningPositions        StockOpeningPosition[]
   financeNetWorthSnapshots     FinanceNetWorthSnapshot[]
 }
 
@@ -890,6 +891,22 @@ model StockHolding {
   stockCode String
   shares    Float
   costBasis Float
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([spaceId, stockCode])
+}
+
+/// 期初持股（2026-10-06）：像帳戶的期初餘額——開始記帳前就有的股票，不經過
+/// 任何帳戶扣款。StocksHoldingsService.recompute 從這裡起算再套交易。
+model StockOpeningPosition {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  stockCode String
+  shares    Float
+  totalCost Float
 
   updatedAt DateTime @updatedAt
 

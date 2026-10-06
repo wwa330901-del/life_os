@@ -162,3 +162,28 @@ class StockHolding {
     gainLoss: (json['gainLoss'] as num?)?.toDouble(),
   );
 }
+
+/// 期初持股：開始記帳前就有的股票，像帳戶的期初餘額，不經過任何帳戶。
+class StockOpening {
+  const StockOpening({
+    required this.stockCode,
+    required this.stockName,
+    required this.shares,
+    required this.totalCost,
+    required this.averageCost,
+  });
+
+  final String stockCode;
+  final String? stockName;
+  final double shares;
+  final double totalCost;
+  final double averageCost;
+
+  factory StockOpening.fromJson(Map<String, dynamic> json) => StockOpening(
+    stockCode: json['stockCode'] as String,
+    stockName: json['stockName'] as String?,
+    shares: (json['shares'] as num).toDouble(),
+    totalCost: (json['totalCost'] as num).toDouble(),
+    averageCost: (json['averageCost'] as num).toDouble(),
+  );
+}
