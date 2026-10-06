@@ -70,4 +70,10 @@ describe('設定', () => {
     expect(() => validateRetirementPatch({ retireAge: null })).toThrow('不能空白');
     expect(validateRetirementPatch({ monthlyExpense: null })).toEqual({ monthlyExpense: null });
   });
+
+  it('App 只改一項時，其他欄位是 undefined 不能當成空白', () => {
+    // ValidationPipe 轉出的 DTO 每個欄位都存在，沒傳的是 undefined。
+    const patch = { retireAge: undefined, lifeExpectancy: undefined, returnRate: 6, monthlyExpense: undefined };
+    expect(validateRetirementPatch(patch)).toEqual({ returnRate: 6 });
+  });
 });

@@ -188,9 +188,11 @@ export function parseRetirementSettings(raw: unknown): RetirementSettings {
 export function validateRetirementPatch(patch: Partial<Record<keyof RetirementSettings, number | null>>): Partial<RetirementSettings> {
   const out: Partial<Record<keyof RetirementSettings, number | null>> = {};
   const range = (key: keyof RetirementSettings, min: number, max: number, label: string, nullable = false) => {
-    if (!(key in patch)) return;
+    // undefined＝沒要改：ValidationPipe 轉出來的 DTO 每個欄位都在（沒傳的是
+    // undefined），用 `key in` 判斷會把沒改的欄位當成空白擋掉（2026-10-07 使用者回報）。
     const v = patch[key];
-    if (v === null || v === undefined) {
+    if (v === undefined) return;
+    if (v === null) {
       if (!nullable) throw new Error(`${label}不能空白`);
       out[key] = null;
       return;
