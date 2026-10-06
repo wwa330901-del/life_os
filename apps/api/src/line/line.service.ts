@@ -665,6 +665,8 @@ export class LineService {
     }
 
     if (text === '理財評估' || text === '財務規劃') {
+      // 先問收入、固定支出、想法再規劃（2026-10-07 使用者要求）——交給 AI 問。
+      if (claudeApiKey && (await this.tryAiAgent(link, '我想做財務規劃', replyToken, claudeApiKey, true))) return;
       try {
         const { plan, structured } = await this.financePlan.generate(userId);
         const tail = structured.budgets.length ? '想照建議設預算，回我「套用預算」就幫你設好。' : '';

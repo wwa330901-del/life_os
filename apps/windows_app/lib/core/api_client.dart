@@ -1379,9 +1379,14 @@ class ApiClient {
   // --- 理財評估 ---
 
   /// 產生新的財務規劃（AI，大約 10 秒）。
-  Future<FinancePlan> generateFinancePlan(String spaceId) async {
-    final body = await _post('/spaces/$spaceId/finance/report/plan', {});
+  Future<FinancePlan> generateFinancePlan(String spaceId, {FinancePlanAnswers? answers}) async {
+    final body = await _post('/spaces/$spaceId/finance/report/plan', answers?.toJson() ?? {});
     return FinancePlan.fromJson(body['structured'] as Map<String, dynamic>);
+  }
+
+  /// 規劃前的問卷：上次填的答案＋從記帳抓的建議值。
+  Future<FinancePlanProfileForm> getFinancePlanProfile(String spaceId) async {
+    return FinancePlanProfileForm.fromJson(await _get('/spaces/$spaceId/finance/report/plan/profile'));
   }
 
   /// 最近一次的財務規劃；還沒做過是 null。

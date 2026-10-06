@@ -202,6 +202,8 @@ model Space {
   /// 最近一次財務規劃（AI 結構化結果：分配、建議預算、步驟），App「規劃」分頁與 LINE「套用預算」用。
   financePlan           Json?
   financePlanAt         DateTime?
+  /// 財務規劃前問使用者的（2026-10-07）：每月收入、固定支出、想法目標，見 finance-plan-profile.ts。
+  financePlanProfile    Json?
   /// 退休試算設定（退休年齡、活到幾歲、報酬率、通膨、退休金…），見 src/finance/retirement.ts。
   retirementSettings    Json?
   /// 股票帳戶（2026-10-07）：股票買賣固定用的交割帳戶，記交易沒指定帳戶就用它。

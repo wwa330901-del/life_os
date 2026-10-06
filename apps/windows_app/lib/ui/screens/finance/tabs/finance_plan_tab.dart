@@ -6,6 +6,7 @@ import '../../../../core/models/finance_plan.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
+import '../widgets/finance_plan_questions_dialog.dart';
 
 /// 財務規劃（2026-10-02）：AI 依固定薪資、近 3 個月的收支、財務健檢和購物車，
 /// 建議每月怎麼分配、各分類預算多少（可以一鍵套用）、接下來做什麼。
@@ -23,10 +24,22 @@ class _FinancePlanTabState extends ConsumerState<FinancePlanTab> {
   bool _applying = false;
 
   Future<void> _generate() async {
-    setState(() => _generating = true);
     final container = ProviderScope.containerOf(context, listen: false);
+    final api = ref.read(apiClientProvider);
+    // 先問收入、固定支出、想法，再規劃。
+    final FinancePlanAnswers? answers;
     try {
-      await ref.read(apiClientProvider).generateFinancePlan(widget.spaceId);
+      final form = await api.getFinancePlanProfile(widget.spaceId);
+      if (!mounted) return;
+      answers = await showFinancePlanQuestionsDialog(context, form);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+    if (answers == null || !mounted) return;
+    setState(() => _generating = true);
+    try {
+      await api.generateFinancePlan(widget.spaceId, answers: answers);
       container.invalidate(financePlanProvider(widget.spaceId));
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -70,7 +83,7 @@ class _FinancePlanTabState extends ConsumerState<FinancePlanTab> {
               Expanded(
                 child: Text(
                   plan == null
-                      ? 'AI 會看你的固定薪資（在「定期交易」設每月收入）、近 3 個月的收支、財務健檢和購物車，建議每月怎麼分配、各分類預算多少。'
+                      ? '先問你每月收入、固定支出和想法，AI 再加上近 3 個月的記帳、財務健檢和購物車，建議每月怎麼分配、各分類預算多少。'
                       : '上次規劃：${plan.generatedAt.month}/${plan.generatedAt.day} ${plan.generatedAt.hour.toString().padLeft(2, '0')}:${plan.generatedAt.minute.toString().padLeft(2, '0')}',
                   style: muted,
                 ),

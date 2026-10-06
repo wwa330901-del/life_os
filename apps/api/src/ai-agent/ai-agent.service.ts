@@ -107,8 +107,26 @@ const AGENT_TOOLS = [
     type: 'function' as const,
     name: 'get_financial_plan_inputs',
     description:
-      '理財評估要用的數據：固定月收入（薪資）與固定支出、近 3 個月平均收入/支出、各分類月平均花費與目前預算、可設預算的分類、財務健檢、淨資產。做理財評估、推薦預算、問「薪水怎麼分配」時先呼叫。',
+      '理財評估要用的數據：固定月收入（薪資）與固定支出、近 3 個月有記帳的月數與平均收入/支出、各分類月平均花費與目前預算、可設預算的分類、財務健檢、淨資產，以及 profile（他上次親口說的收入、固定支出、想法；null＝還沒問過）。做理財評估、推薦預算、問「薪水怎麼分配」時先呼叫。',
     parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
+    name: 'make_finance_plan',
+    description:
+      '產生正式的財務規劃（每月分配、建議預算、接下來 3 步），存起來給 App「規劃」分頁和「套用預算」用。一定要先問過他每月收入、固定支出、想法目標再呼叫，把他說的填進來（會記住，下次不用重講）；回傳整理好的規劃文字。',
+    parameters: {
+      type: 'object',
+      properties: {
+        monthlyIncome: { type: 'number', description: '他說的每月收入；沒講就不填' },
+        fixedExpenses: {
+          type: 'array',
+          description: '他說的每月固定支出（房租、保險、孝親費、貸款、訂閱…）',
+          items: { type: 'object', properties: { name: { type: 'string' }, amount: { type: 'number' } }, required: ['name', 'amount'] },
+        },
+        thoughts: { type: 'string', description: '他的想法、目標、在意的事（想存多少、想買什麼、想投資、要出國…），用他的話整理' },
+      },
+    },
   },
   {
     type: 'function' as const,
@@ -870,10 +888,11 @@ export class AiAgentService {
       TRIP_AI_GUIDE,
       '',
       '【理財評估】',
-      '講薪水、問「薪水怎麼分配」「幫我做理財評估」→ 沒設固定薪資就先 set_fixed_income（問清楚金額和發薪日），再 get_financial_plan_inputs，依實際花費給：每月分配（固定支出/生活費/儲蓄/投資各多少）、3～5 個分類的建議預算、接下來 3 步。最後問他要不要幫他把預算設好 → propose_budgets。',
+      '要做財務規劃、理財評估、問「薪水怎麼分配」→ 不要馬上給建議，先 get_financial_plan_inputs，然後問他（一次問完，口語、簡短）：1. 每月收入大概多少 2. 每月固定要付的有哪些、各多少（房租、保險、孝親費、貸款、訂閱…）3. 最近有什麼想法或目標（想存多少、想買什麼、想投資、有什麼大支出要準備）。' +
+        'profile 有上次的答案就列出來問「還是這樣嗎？有要改的嗎？」；記帳有固定支出或大筆分類也列出來讓他確認有沒有漏。他回答後 → make_finance_plan（把他說的填進去），用口語講重點，最後問要不要幫他把預算設好 → propose_budgets。他說「直接規劃就好」才不問直接 make_finance_plan。',
       '',
-      '【財務規劃】',
-      '問財務狀況、要做財務規劃時：先 get_financial_health 拿分數跟每項建議，存錢目標再 list_life_goals 看進度，算出「每月要存多少、預備金還差多少、先還哪筆債」，用具體數字給 3 個以內的優先步驟。分數是規則算的，照實說不要自己改分數。',
+      '【財務狀況】',
+      '只是問財務狀況怎樣、健檢幾分時：get_financial_health 拿分數跟每項建議，存錢目標再 list_life_goals 看進度，用具體數字給 3 個以內的優先步驟。分數是規則算的，照實說不要自己改分數。',
       '',
       '【規劃】',
       '使用者要你幫忙規劃（這週怎麼安排、今天先做什麼、這個月預算、目標怎麼達成）時：先用 list_calendar_events、list_todos、list_life_goals、get_finance_overview 看他真實的行程、代辦、目標、收支，再給具體建議（排出時間表、列出優先順序、算出每月要存多少）。',
@@ -968,6 +987,15 @@ export class AiAgentService {
       }
       case 'get_financial_plan_inputs':
         return this.financePlan.inputs(ctx.userId);
+      case 'make_finance_plan': {
+        const answers = {
+          ...(typeof args.monthlyIncome === 'number' && { monthlyIncome: args.monthlyIncome }),
+          ...(Array.isArray(args.fixedExpenses) && { fixedExpenses: args.fixedExpenses as Array<{ name?: unknown; amount?: unknown }> }),
+          ...(typeof args.thoughts === 'string' && { thoughts: args.thoughts }),
+        };
+        const { plan, structured } = await this.financePlan.generate(ctx.userId, Object.keys(answers).length ? answers : undefined);
+        return { plan, canApplyBudgets: structured.budgets.length > 0, note: '把規劃重點用口語講給他，最後問要不要幫他把建議預算設好（propose_budgets）' };
+      }
       case 'set_fixed_income':
         return this.financePlan.setFixedIncome(ctx.userId, {
           amount: Number(args.amount),
