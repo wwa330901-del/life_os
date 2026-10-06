@@ -937,19 +937,23 @@ class ApiClient {
     required FinanceLoanDirection direction,
     required String counterpartyName,
     required double amount,
-    required String accountId,
+    required String? accountId,
     required DateTime date,
     String? note,
     DateTime? dueDate,
+    bool opening = false,
+    LoanInstallment? installment,
   }) async {
     await _post('/spaces/$spaceId/finance/loans', {
       'direction': direction.toJson(),
       'counterpartyName': counterpartyName,
       'amount': amount,
-      'accountId': accountId,
+      if (!opening) 'accountId': accountId,
+      if (opening) 'opening': true,
       'date': _dateOnly(date),
       if (note != null && note.isNotEmpty) 'note': note,
       if (dueDate != null) 'dueDate': _dateOnly(dueDate),
+      ...?installment?.toJson(),
     });
   }
 
@@ -979,8 +983,12 @@ class ApiClient {
     String? note,
     bool setDueDate = false,
     DateTime? dueDate,
+    bool setInstallment = false,
+    LoanInstallment? installment,
   }) async {
     await _patch('/spaces/$spaceId/finance/loans/$id', {
+      // [setInstallment] 才送：installment 是 null 代表取消每月固定還款。
+      if (setInstallment) ...(installment?.toJson() ?? {'installmentAmount': null}),
       if (counterpartyName != null) 'counterpartyName': counterpartyName,
       if (amount != null) 'amount': amount,
       if (accountId != null) 'accountId': accountId,

@@ -5,6 +5,7 @@ import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { taipeiDateKey, utcDateKey } from '../common/taipei-date';
 import { daysBetween } from './credit-card';
 import { FinanceLoanDirection } from '../../generated/prisma/client.js';
+import { loanPrincipal } from './loan-installment';
 
 /** 前 3 天、當天、過期後每 7 天（7、14、21…天）提醒。 */
 export function shouldRemindLoan(daysLeft: number): boolean {
@@ -53,7 +54,7 @@ export class LoanDueReminderService {
         const key = `${dueDate}:${daysLeft}`;
         if (loan.dueReminderKey === key) continue;
         const repaid = loan.repayments.reduce((sum, r) => sum + (r.transaction?.amount ?? 0), 0);
-        const outstanding = (loan.initialTransaction?.amount ?? 0) - repaid;
+        const outstanding = loanPrincipal(loan) - repaid;
         if (outstanding <= 0) continue;
         await this.prisma.financeLoan.update({ where: { id: loan.id }, data: { dueReminderKey: key } });
         await this.notifier.notifyBySpace(loan.spaceId, loanReminderText({ ...loan, dueDate }, outstanding, daysLeft));

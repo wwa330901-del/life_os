@@ -247,6 +247,8 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
             date: result.date,
             note: result.note,
             dueDate: result.dueDate,
+            opening: result.opening,
+            installment: result.installment,
           );
       _invalidate();
     } on ApiException catch (e) {
@@ -271,11 +273,13 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
             id: loan.id,
             counterpartyName: result.counterpartyName,
             amount: result.amount,
-            accountId: result.accountId,
+            accountId: loan.opening ? null : result.accountId,
             date: result.date,
             note: result.note ?? '',
             setDueDate: true,
             dueDate: result.dueDate,
+            setInstallment: result.installment != null || loan.installmentAmount != null,
+            installment: result.installment,
           );
       _invalidate();
     } on ApiException catch (e) {
@@ -411,10 +415,22 @@ class _LoanCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '本金 ${formatAmount(loan.amount)}（${accountNameOf[loan.accountId] ?? '?'}）'
-              '${loan.settled ? '' : ' · 還剩 ${formatAmount(loan.outstanding)}'}',
+              loan.opening
+                  ? '開始記錄時欠 ${formatAmount(loan.amount)}（之前就欠的，不動帳戶）'
+                        '${loan.settled ? '' : ' · 還剩 ${formatAmount(loan.outstanding)}'}'
+                  : '本金 ${formatAmount(loan.amount)}（${accountNameOf[loan.accountId] ?? '?'}）'
+                        '${loan.settled ? '' : ' · 還剩 ${formatAmount(loan.outstanding)}'}',
               style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
             ),
+            if (loan.installmentAmount != null && !loan.settled)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '每月 ${loan.installmentDay} 號從「${accountNameOf[loan.installmentAccountId] ?? '?'}」自動還 '
+                  '${formatAmount(loan.installmentAmount!)}（前 3 天 LINE 提醒）',
+                  style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
+                ),
+              ),
             if (loan.dueDate != null && !loan.settled)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
@@ -468,6 +484,8 @@ class _LoanCard extends StatelessWidget {
                   ),
                 ),
             ],
+            // 期初借貸多半是銀行（學貸、房貸），不用邀請對方確認。
+            if (!loan.opening || loan.inviteSentToName != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: onInvite != null
@@ -500,12 +518,18 @@ class _LoanCreateResult {
     required this.date,
     this.note,
     this.dueDate,
+    this.opening = false,
+    this.installment,
   });
 
+  final bool opening;
+
+  /// null＝沒有每月固定還款。
+  final LoanInstallment? installment;
   final FinanceLoanDirection direction;
   final String counterpartyName;
   final double amount;
-  final String accountId;
+  final String? accountId;
   final DateTime date;
   final String? note;
   final DateTime? dueDate;
@@ -536,12 +560,21 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
   late final _noteController = TextEditingController(text: widget.existing?.note ?? '');
   late DateTime _date = widget.existing?.date ?? DateTime.now();
   late DateTime? _dueDate = widget.existing?.dueDate;
+  late bool _opening = widget.existing?.opening ?? false;
+  late bool _hasInstallment = widget.existing?.installmentAmount != null;
+  late final _installmentAmountController = TextEditingController(
+    text: widget.existing?.installmentAmount?.toStringAsFixed(0) ?? '',
+  );
+  late int _installmentDay = widget.existing?.installmentDay ?? 1;
+  late String? _installmentAccountId =
+      widget.existing?.installmentAccountId ?? widget.existing?.accountId.nullIfEmpty ?? widget.accounts.firstOrNull?.id;
 
   @override
   void dispose() {
     _counterpartyController.dispose();
     _amountController.dispose();
     _noteController.dispose();
+    _installmentAmountController.dispose();
     super.dispose();
   }
 
@@ -569,17 +602,26 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
     final accountId = _accountId;
     final counterpartyName = _counterpartyController.text.trim();
     final amount = double.tryParse(_amountController.text.trim());
-    if (accountId == null || counterpartyName.isEmpty || amount == null || amount <= 0) return;
+    if ((!_opening && accountId == null) || counterpartyName.isEmpty || amount == null || amount <= 0) return;
+    LoanInstallment? installment;
+    if (_hasInstallment) {
+      final perMonth = double.tryParse(_installmentAmountController.text.trim());
+      final from = _installmentAccountId;
+      if (perMonth == null || perMonth <= 0 || from == null) return;
+      installment = LoanInstallment(amount: perMonth, day: _installmentDay, accountId: from);
+    }
 
     Navigator.of(context).pop(
       _LoanCreateResult(
         direction: _direction,
         counterpartyName: counterpartyName,
         amount: amount,
-        accountId: accountId,
+        accountId: _opening ? null : accountId,
         date: _date,
         note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
         dueDate: _dueDate,
+        opening: _opening,
+        installment: installment,
       ),
     );
   }
@@ -604,8 +646,19 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
                 selected: {_direction},
                 onSelectionChanged: isEditing
                     ? null
-                    : (selection) => setState(() => _direction = selection.first),
+                    : (selection) => setState(() {
+                        _direction = selection.first;
+                        if (_direction == FinanceLoanDirection.lend) _opening = false;
+                      }),
               ),
+              if (!isEditing && _direction == FinanceLoanDirection.borrow)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _opening,
+                  onChanged: (v) => setState(() => _opening = v ?? false),
+                  title: const Text('之前就欠的（學貸、房貸、車貸…）'),
+                  subtitle: const Text('只記現在還欠多少，不會把錢加進帳戶'),
+                ),
               const SizedBox(height: 12),
               TextField(
                 controller: _counterpartyController,
@@ -617,23 +670,25 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
               TextField(
                 controller: _amountController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: '金額'),
+                decoration: InputDecoration(labelText: _opening ? (isEditing ? '開始記錄時欠多少' : '現在還欠多少') : '金額'),
               ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _accountId,
-                decoration: const InputDecoration(labelText: '帳戶'),
-                items: widget.accounts
-                    .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
-                    .toList(),
-                onChanged: (value) => setState(() => _accountId = value),
-              ),
+              if (!_opening) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _accountId,
+                  decoration: const InputDecoration(labelText: '帳戶'),
+                  items: widget.accounts
+                      .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
+                      .toList(),
+                  onChanged: (value) => setState(() => _accountId = value),
+                ),
+              ],
               const SizedBox(height: 12),
               InkWell(
                 onTap: _pickDate,
                 child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: '日期',
+                  decoration: InputDecoration(
+                    labelText: _opening ? '開始記錄的日期' : '日期',
                     suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
                   ),
                   child: Text('${_date.year}/${_date.month}/${_date.day}'),
@@ -656,6 +711,44 @@ class _LoanCreateDialogState extends State<_LoanCreateDialog> {
                   child: Text(_dueDate == null ? '不設定' : '${_dueDate!.year}/${_dueDate!.month}/${_dueDate!.day}'),
                 ),
               ),
+              const SizedBox(height: 4),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _hasInstallment,
+                onChanged: (v) => setState(() => _hasInstallment = v),
+                title: const Text('每月固定還款'),
+                subtitle: const Text('時間到自動記一筆還款，前 3 天 LINE 提醒'),
+              ),
+              if (_hasInstallment) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _installmentAmountController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(labelText: '每月還多少'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 110,
+                      child: DropdownButtonFormField<int>(
+                        initialValue: _installmentDay,
+                        decoration: const InputDecoration(labelText: '每月幾號'),
+                        items: [for (var d = 1; d <= 31; d++) DropdownMenuItem(value: d, child: Text('$d 號'))],
+                        onChanged: (v) => setState(() => _installmentDay = v ?? 1),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _installmentAccountId,
+                  decoration: const InputDecoration(labelText: '從哪個帳戶扣'),
+                  items: widget.accounts.map((a) => DropdownMenuItem(value: a.id, child: Text(a.name))).toList(),
+                  onChanged: (v) => setState(() => _installmentAccountId = v),
+                ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _noteController,
@@ -1011,4 +1104,8 @@ class _LoanInvitesDialog extends ConsumerWidget {
       }
     }
   }
+}
+
+extension on String {
+  String? get nullIfEmpty => isEmpty ? null : this;
 }

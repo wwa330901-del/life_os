@@ -7,6 +7,15 @@ import { CreateFinanceLoanDto } from './dto/create-finance-loan.dto';
 import { CreateFinanceLoanRepaymentDto } from './dto/create-finance-loan-repayment.dto';
 import { UpdateFinanceLoanDto } from './dto/update-finance-loan.dto';
 import { UpdateFinanceLoanRepaymentDto } from './dto/update-finance-loan-repayment.dto';
+import { LoanInstallmentFields } from './dto/loan-installment-fields';
+import { taipeiDateKey } from '../common/taipei-date';
+import { initialInstallmentLastMonth, loanPrincipal } from './loan-installment';
+
+type PrincipalShape = {
+  initialTransaction: { amount: number } | null;
+  openingAmount: number | null;
+  repayments: { transaction: { amount: number } | null }[];
+};
 
 const loanInclude = {
   initialTransaction: true,
@@ -51,9 +60,10 @@ export class FinanceLoansService {
         spaceId,
         ...(filter.settled !== undefined && { settled: filter.settled }),
         ...((filter.from || filter.to) && {
-          initialTransaction: {
-            date: { ...(filter.from && { gte: filter.from }), ...(filter.to && { lte: filter.to }) },
-          },
+          OR: [
+            { initialTransaction: { date: { ...(filter.from && { gte: filter.from }), ...(filter.to && { lte: filter.to }) } } },
+            { openingDate: { ...(filter.from && { gte: filter.from }), ...(filter.to && { lte: filter.to }) } },
+          ],
         }),
       },
       include: loanInclude,
@@ -71,6 +81,26 @@ export class FinanceLoansService {
 
   async create(userId: string, spaceId: string, dto: CreateFinanceLoanDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
+    const installment = await this.installmentData(spaceId, dto, null);
+    if (dto.opening) {
+      // 期初借貸（學貸這種之前就欠的）：只記現在還欠多少，不動任何帳戶。
+      const opening = await this.prisma.financeLoan.create({
+        data: {
+          spaceId,
+          direction: dto.direction,
+          counterpartyName: dto.counterpartyName,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+          openingAmount: dto.amount,
+          openingDate: new Date(dto.date),
+          openingNote: dto.note ?? null,
+          ...installment,
+        },
+        include: loanInclude,
+      });
+      await this.syncSettled(opening.id, opening);
+      return this.withOutstanding(opening);
+    }
+    if (!dto.accountId) throw new BadRequestException('請選帳戶');
     await this.assertAccount(spaceId, dto.accountId);
 
     const type =
@@ -84,6 +114,7 @@ export class FinanceLoansService {
         direction: dto.direction,
         counterpartyName: dto.counterpartyName,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+        ...installment,
         initialTransaction: {
           create: {
             spaceId,
@@ -158,10 +189,12 @@ export class FinanceLoansService {
     const loan = await this.getOrThrow(spaceId, loanId);
     if (dto.accountId) await this.assertAccount(spaceId, dto.accountId);
 
-    if (dto.counterpartyName !== undefined || dto.dueDate !== undefined) {
+    const installment = await this.installmentData(spaceId, dto, loan);
+    if (dto.counterpartyName !== undefined || dto.dueDate !== undefined || Object.keys(installment).length > 0) {
       await this.prisma.financeLoan.update({
         where: { id: loanId },
         data: {
+          ...installment,
           ...(dto.counterpartyName !== undefined && { counterpartyName: dto.counterpartyName }),
           // 改日期就重新開始提醒。
           ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null, dueReminderKey: null }),
@@ -176,15 +209,27 @@ export class FinanceLoansService {
           throw new BadRequestException(`本金不能低於已還款的 ${repaid} 元`);
         }
       }
-      await this.prisma.financeTransaction.update({
-        where: { id: loan.initialTransaction!.id },
-        data: {
-          ...(dto.amount !== undefined && { amount: dto.amount }),
-          ...(dto.accountId !== undefined && { accountId: dto.accountId }),
-          ...(dto.date !== undefined && { date: new Date(dto.date) }),
-          ...(dto.note !== undefined && { note: dto.note }),
-        },
-      });
+      if (loan.initialTransaction) {
+        await this.prisma.financeTransaction.update({
+          where: { id: loan.initialTransaction.id },
+          data: {
+            ...(dto.amount !== undefined && { amount: dto.amount }),
+            ...(dto.accountId !== undefined && { accountId: dto.accountId }),
+            ...(dto.date !== undefined && { date: new Date(dto.date) }),
+            ...(dto.note !== undefined && { note: dto.note }),
+          },
+        });
+      } else {
+        // 期初借貸：本金/日期/備註存在借貸本身，沒有帳戶。
+        await this.prisma.financeLoan.update({
+          where: { id: loanId },
+          data: {
+            ...(dto.amount !== undefined && { openingAmount: dto.amount }),
+            ...(dto.date !== undefined && { openingDate: new Date(dto.date) }),
+            ...(dto.note !== undefined && { openingNote: dto.note }),
+          },
+        });
+      }
     }
 
     const updatedAmount = await this.getOrThrow(spaceId, loanId);
@@ -208,7 +253,7 @@ export class FinanceLoansService {
     }
 
     if (dto.amount !== undefined) {
-      const principal = loan.initialTransaction?.amount ?? 0;
+      const principal = loanPrincipal(loan);
       const otherRepaid = loan.repayments
         .filter((r) => r.id !== repaymentId)
         .reduce((sum, r) => sum + (r.transaction?.amount ?? 0), 0);
@@ -308,10 +353,10 @@ export class FinanceLoansService {
           create: {
             spaceId: mySpace.id,
             type: mirroredType,
-            amount: sourceLoan.initialTransaction!.amount,
+            amount: loanPrincipal(sourceLoan),
             accountId: account.id,
-            date: sourceLoan.initialTransaction!.date,
-            note: sourceLoan.initialTransaction!.note,
+            date: sourceLoan.initialTransaction?.date ?? sourceLoan.openingDate ?? new Date(),
+            note: sourceLoan.initialTransaction?.note ?? sourceLoan.openingNote,
           },
         },
       },
@@ -366,35 +411,91 @@ export class FinanceLoansService {
     }
   }
 
-  private outstandingOf(loan: {
-    initialTransaction: { amount: number } | null;
-    repayments: { transaction: { amount: number } | null }[];
-  }): number {
-    const principal = loan.initialTransaction?.amount ?? 0;
+  private outstandingOf(loan: PrincipalShape): number {
+    const principal = loanPrincipal(loan);
     const repaid = loan.repayments.reduce((sum, r) => sum + (r.transaction?.amount ?? 0), 0);
     return Math.max(0, principal - repaid);
   }
 
-  private withOutstanding<
-    T extends {
-      initialTransaction: { amount: number } | null;
-      repayments: { transaction: { amount: number } | null }[];
-    },
-  >(loan: T) {
+  private withOutstanding<T extends PrincipalShape & { openingDate: Date | null; openingNote: string | null }>(loan: T) {
     const outstanding = this.outstandingOf(loan);
-    return { ...loan, outstanding, settled: outstanding <= 0 };
+    return {
+      ...loan,
+      // 期初借貸沒有交易：給一個同形狀的 initialTransaction（accountId 空字串），
+      // App 照常顯示金額/日期；opening=true 時 App 不顯示帳戶。
+      initialTransaction:
+        loan.initialTransaction ??
+        { id: null, amount: loan.openingAmount ?? 0, date: loan.openingDate ?? new Date(0), accountId: '', note: loan.openingNote },
+      opening: loan.initialTransaction == null,
+      outstanding,
+      settled: outstanding <= 0,
+    };
+  }
+
+  /** 每月固定還款欄位：三個都有才算設定；installmentAmount=null 取消。
+   * 改扣款日（或第一次設）時，這個月的扣款日已經過了就從下個月開始。 */
+  private async installmentData(
+    spaceId: string,
+    dto: LoanInstallmentFields,
+    existing: { installmentAmount: number | null; installmentDay: number | null; installmentAccountId: string | null } | null,
+  ) {
+    if (dto.installmentAmount === undefined && dto.installmentDay === undefined && dto.installmentAccountId === undefined) return {};
+    if (dto.installmentAmount === null) {
+      return { installmentAmount: null, installmentDay: null, installmentAccountId: null, installmentLastMonth: null, installmentReminderKey: null };
+    }
+    const amount = dto.installmentAmount ?? existing?.installmentAmount ?? null;
+    const day = dto.installmentDay ?? existing?.installmentDay ?? null;
+    const accountId = dto.installmentAccountId ?? existing?.installmentAccountId ?? null;
+    if (amount == null || day == null || !accountId) {
+      throw new BadRequestException('每月固定還款要填金額、每月幾號、從哪個帳戶扣');
+    }
+    await this.assertAccount(spaceId, accountId);
+    const dayChanged = day !== existing?.installmentDay;
+    return {
+      installmentAmount: amount,
+      installmentDay: day,
+      installmentAccountId: accountId,
+      ...(dayChanged && { installmentLastMonth: initialInstallmentLastMonth(taipeiDateKey(new Date()), day), installmentReminderKey: null }),
+    };
+  }
+
+  /** 排程用：記這個月的固定還款（只還剩下的），不檢查使用者權限。回傳記了多少、還欠多少。 */
+  async recordInstallment(loanId: string, month: string, date: string): Promise<{ paid: number; outstanding: number } | null> {
+    const loan = await this.prisma.financeLoan.findUnique({ where: { id: loanId }, include: loanInclude });
+    if (!loan || !loan.installmentAmount || !loan.installmentAccountId) return null;
+    // 先佔這個月，避免同時跑兩次記兩筆。
+    const claimed = await this.prisma.financeLoan.updateMany({
+      where: { id: loanId, OR: [{ installmentLastMonth: null }, { installmentLastMonth: { lt: month } }] },
+      data: { installmentLastMonth: month },
+    });
+    if (claimed.count === 0) return null;
+    const outstanding = this.outstandingOf(loan);
+    const paid = Math.min(loan.installmentAmount, outstanding);
+    if (paid <= 0) return null;
+    await this.prisma.financeLoanRepayment.create({
+      data: {
+        loanId,
+        transaction: {
+          create: {
+            spaceId: loan.spaceId,
+            type: loan.direction === FinanceLoanDirection.LEND ? FinanceTransactionType.LOAN_IN : FinanceTransactionType.LOAN_OUT,
+            amount: paid,
+            accountId: loan.installmentAccountId,
+            date: new Date(date),
+            note: '每月固定還款（自動）',
+          },
+        },
+      },
+    });
+    const updated = await this.getOrThrow(loan.spaceId, loanId);
+    await this.syncSettled(loanId, updated);
+    return { paid, outstanding: this.outstandingOf(updated) };
   }
 
   /** Persists the real `settled` column so `list()` can filter on it at the
    * query level (see `list`'s doc comment) — called after every write that
    * can change a loan's outstanding balance. */
-  private async syncSettled(
-    loanId: string,
-    loan: {
-      initialTransaction: { amount: number } | null;
-      repayments: { transaction: { amount: number } | null }[];
-    },
-  ) {
+  private async syncSettled(loanId: string, loan: PrincipalShape) {
     await this.prisma.financeLoan.update({
       where: { id: loanId },
       data: { settled: this.outstandingOf(loan) <= 0 },

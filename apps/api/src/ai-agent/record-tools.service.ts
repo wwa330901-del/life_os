@@ -17,7 +17,23 @@ type Args = Record<string, unknown>;
 /** A write that only runs after the user confirms in a later message —
  * the agent stores it as its `pendingAiAction`. */
 export type RecordPending =
-  | { kind: 'loan'; summary: string; data: { direction: FinanceLoanDirection; counterpartyName: string; amount: number; accountId: string; date: string; note?: string; dueDate?: string } }
+  | {
+      kind: 'loan';
+      summary: string;
+      data: {
+        direction: FinanceLoanDirection;
+        counterpartyName: string;
+        amount: number;
+        accountId?: string;
+        date: string;
+        note?: string;
+        dueDate?: string;
+        opening?: boolean;
+        installmentAmount?: number;
+        installmentDay?: number;
+        installmentAccountId?: string;
+      };
+    }
   | { kind: 'loan_repayment'; summary: string; data: { loanId: string; amount: number; accountId: string; date: string } }
   | { kind: 'advance'; summary: string; data: { title: string; amount: number; accountId: string; date: string; note?: string } }
   | { kind: 'advance_repayment'; summary: string; data: { advanceId: string; amount: number; accountId: string; date: string } }
@@ -95,6 +111,40 @@ export const RECORD_TOOLS = [
         ...optionalDate,
       },
       required: ['direction', 'counterpartyName', 'amount'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'propose_existing_debt',
+    description:
+      '登記之前就欠的錢（學貸、房貸、車貸、信貸、分期、欠家人的…）：只記「現在還欠多少」，不會加進任何帳戶（錢早就用掉了）。有每月固定還款就一起填 installmentAmount/installmentDay/installmentAccountName（三個都要，沒講就問），之後每月自動記還款、前 3 天提醒。回傳 needsConfirmation，要問使用者確認。',
+    parameters: {
+      type: 'object',
+      properties: {
+        counterpartyName: { type: 'string', description: '跟誰借，例如「台灣銀行學貸」' },
+        outstanding: { type: 'number', description: '現在還欠多少' },
+        installmentAmount: { type: 'number', description: '每月還多少' },
+        installmentDay: { type: 'integer', minimum: 1, maximum: 31, description: '每月幾號扣' },
+        installmentAccountName: { type: 'string', description: '從哪個帳戶扣' },
+        note: { type: 'string' },
+      },
+      required: ['counterpartyName', 'outstanding'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'set_loan_installment',
+    description:
+      '設定或改借貸的每月固定還款（loanId 從 list_loans_and_advances 取得）：每月 day 號從 accountName 自動記一筆 amount 的還款，最後一期只還剩下的。amount 給 0＝取消。',
+    parameters: {
+      type: 'object',
+      properties: {
+        loanId: { type: 'string' },
+        amount: { type: 'number' },
+        day: { type: 'integer', minimum: 1, maximum: 31 },
+        accountName: { type: 'string' },
+      },
+      required: ['loanId', 'amount'],
     },
   },
   {
@@ -279,6 +329,8 @@ export class RecordToolsService {
             counterparty: l.counterpartyName,
             outstanding: l.outstanding,
             dueDate: l.dueDate ? utcDateKey(l.dueDate) : null,
+            ...(l.opening && { existingDebt: true }),
+            ...(l.installmentAmount && { monthlyInstallment: `每月 ${l.installmentDay} 號還 ${fmt(l.installmentAmount)}` }),
           })),
           advances: advances.items.map((a) => ({ id: a.id, title: a.title, outstanding: a.outstanding })),
         };
@@ -292,6 +344,47 @@ export class RecordToolsService {
         const dueDate = typeof args.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.dueDate) ? args.dueDate : undefined;
         const summary = `${direction === FinanceLoanDirection.LEND ? `借出 ${fmt(amount)} 給${who}，從` : `跟${who}借 ${fmt(amount)}，存進`}「${account.name}」（${date}）${dueDate ? `，約好 ${dueDate} 還` : ''}`;
         return { pending: { kind: 'loan', summary, data: { direction, counterpartyName: who, amount, accountId: account.id, date, ...(typeof args.note === 'string' && args.note && { note: args.note }), ...(dueDate && { dueDate }) } } };
+      }
+      case 'propose_existing_debt': {
+        const outstanding = Number(args.outstanding);
+        if (!(outstanding > 0)) throw new Error('金額要大於 0');
+        const who = String(args.counterpartyName ?? '').trim();
+        if (!who) throw new Error('要知道是跟誰借的');
+        const installmentAmount = Number(args.installmentAmount);
+        const installmentDay = Number(args.installmentDay);
+        const hasInstallment = installmentAmount > 0 && installmentDay >= 1 && installmentDay <= 31;
+        const payAccount = hasInstallment ? await this.resolveAccount(spaceId, args.installmentAccountName) : null;
+        const summary =
+          `記一筆之前就欠的：跟${who}還欠 ${fmt(outstanding)}（不動帳戶）` +
+          (payAccount ? `，每月 ${installmentDay} 號從「${payAccount.name}」自動還 ${fmt(installmentAmount)}` : '');
+        return {
+          pending: {
+            kind: 'loan',
+            summary,
+            data: {
+              direction: FinanceLoanDirection.BORROW,
+              counterpartyName: who,
+              amount: outstanding,
+              date: taipeiDateKey(new Date()),
+              opening: true,
+              ...(typeof args.note === 'string' && args.note && { note: args.note }),
+              ...(payAccount && { installmentAmount, installmentDay, installmentAccountId: payAccount.id }),
+            },
+          },
+        };
+      }
+      case 'set_loan_installment': {
+        const loanId = String(args.loanId ?? '');
+        const amount = Number(args.amount);
+        if (!(amount > 0)) {
+          const loan = await this.loans.update(userId, spaceId, loanId, { installmentAmount: null });
+          return { saved: true, counterparty: loan.counterpartyName, monthlyInstallment: '已取消' };
+        }
+        const day = Number(args.day);
+        if (!(day >= 1 && day <= 31)) throw new Error('要問每月幾號扣');
+        const account = await this.resolveAccount(spaceId, args.accountName);
+        const loan = await this.loans.update(userId, spaceId, loanId, { installmentAmount: amount, installmentDay: day, installmentAccountId: account.id });
+        return { saved: true, counterparty: loan.counterpartyName, monthlyInstallment: `每月 ${day} 號從「${account.name}」自動還 ${fmt(amount)}，前 3 天提醒` };
       }
       case 'set_loan_due_date': {
         const raw = String(args.dueDate ?? '').trim();

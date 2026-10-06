@@ -1,7 +1,8 @@
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, MinLength, ValidateIf } from 'class-validator';
 import { FinanceLoanDirection } from '../../../generated/prisma/client.js';
+import { LoanInstallmentFields } from './loan-installment-fields';
 
-export class CreateFinanceLoanDto {
+export class CreateFinanceLoanDto extends LoanInstallmentFields {
   @IsEnum(FinanceLoanDirection)
   direction: FinanceLoanDirection;
 
@@ -9,12 +10,19 @@ export class CreateFinanceLoanDto {
   @MinLength(1)
   counterpartyName: string;
 
+  /// 一般借貸＝這次借的金額；期初借貸（opening）＝現在還欠多少。
   @IsNumber()
   @Min(0.01)
   amount: number;
 
+  /// 期初借貸（之前就欠的，例如學貸）：不動任何帳戶，accountId 不用填。
+  @IsOptional()
+  @IsBoolean()
+  opening?: boolean;
+
+  @ValidateIf((o: CreateFinanceLoanDto) => !o.opening)
   @IsString()
-  accountId: string;
+  accountId?: string;
 
   @IsDateString()
   date: string;

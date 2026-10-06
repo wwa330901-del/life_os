@@ -21,6 +21,7 @@ import { FinanceAdvancesController } from './finance-advances.controller';
 import { FinanceAdvancesService } from './finance-advances.service';
 import { CreditCardService } from './credit-card.service';
 import { LoanDueReminderService } from './loan-due-reminder.service';
+import { LoanInstallmentService } from './loan-installment.service';
 import { SpendingAlertService } from './spending-alert.service';
 import { SubscriptionService } from './subscription.service';
 import { FinanceResetController } from './finance-reset.controller';
@@ -50,6 +51,7 @@ import { FinanceResetService } from './finance-reset.service';
     FinanceAdvancesService,
     CreditCardService,
     LoanDueReminderService,
+    LoanInstallmentService,
     SpendingAlertService,
     SubscriptionService,
     FinanceResetService,

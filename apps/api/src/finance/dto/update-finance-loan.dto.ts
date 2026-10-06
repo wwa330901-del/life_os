@@ -1,6 +1,7 @@
 import { IsDateString, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { LoanInstallmentFields } from './loan-installment-fields';
 
-export class UpdateFinanceLoanDto {
+export class UpdateFinanceLoanDto extends LoanInstallmentFields {
   @IsOptional()
   @IsString()
   @MinLength(1)

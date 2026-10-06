@@ -438,7 +438,19 @@ class FinanceLoan {
     this.dueDate,
     this.inviteSentToName,
     this.inviteAccepted,
+    this.opening = false,
+    this.installmentAmount,
+    this.installmentDay,
+    this.installmentAccountId,
   });
+
+  /// 期初借貸（學貸這種之前就欠的）：[amount] 是開始記錄時還欠多少，沒有帳戶。
+  final bool opening;
+
+  /// 每月固定還款：每月 [installmentDay] 號從 [installmentAccountId] 自動記一筆。
+  final double? installmentAmount;
+  final int? installmentDay;
+  final String? installmentAccountId;
 
   /// 約定還款日（可不填），到期前 LINE 會提醒。
   final DateTime? dueDate;
@@ -477,6 +489,10 @@ class FinanceLoan {
           .toList(),
       inviteSentToName: (json['inviteSent'] as Map<String, dynamic>?)?['toUser']?['name'] as String?,
       inviteAccepted: (json['inviteSent'] as Map<String, dynamic>?)?['accepted'] as bool?,
+      opening: json['opening'] as bool? ?? false,
+      installmentAmount: (json['installmentAmount'] as num?)?.toDouble(),
+      installmentDay: (json['installmentDay'] as num?)?.toInt(),
+      installmentAccountId: json['installmentAccountId'] as String?,
     );
   }
 }
@@ -593,4 +609,15 @@ class FinanceLoanInvite {
       date: DateTime.parse(initial['date'] as String),
     );
   }
+}
+
+/// 借貸的每月固定還款設定（學貸、分期）。
+class LoanInstallment {
+  const LoanInstallment({required this.amount, required this.day, required this.accountId});
+
+  final double amount;
+  final int day;
+  final String accountId;
+
+  Map<String, dynamic> toJson() => {'installmentAmount': amount, 'installmentDay': day, 'installmentAccountId': accountId};
 }

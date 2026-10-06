@@ -609,6 +609,21 @@ model FinanceLoan {
   dueDate        DateTime? @db.Date
   dueReminderKey String?
 
+  /// 期初借貸（2026-10-07，學貸這種之前就欠的）：像帳戶的期初餘額，只記「現在
+  /// 還欠多少」，沒有 initialTransaction、不動任何帳戶。本金＝openingAmount。
+  openingAmount Float?
+  openingDate   DateTime? @db.Date
+  openingNote   String?
+
+  /// 每月固定還款（2026-10-07）：每月 installmentDay 號（月底不足用月底）從
+  /// installmentAccountId 自動記一筆還款，最後一期只還剩下的；前 3 天 LINE 提醒。
+  /// installmentLastMonth＝最後自動記的月份（YYYY-MM），installmentReminderKey 防重發。
+  installmentAmount      Float?
+  installmentDay         Int?
+  installmentAccountId   String?
+  installmentLastMonth   String?
+  installmentReminderKey String?
+
   initialTransaction FinanceTransaction?    @relation("LoanInitialTransaction")
   repayments         FinanceLoanRepayment[]
 

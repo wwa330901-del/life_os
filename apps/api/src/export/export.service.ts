@@ -147,12 +147,12 @@ export class ExportService {
           { header: '備註', width: 30 },
         ],
         rows: loans.map((l) => [
-          day(l.initialTransaction?.date),
+          day(l.initialTransaction?.date ?? l.openingDate),
           l.direction === 'LEND' ? '借出' : '借入',
           l.counterpartyName,
-          l.initialTransaction?.amount ?? null,
+          l.initialTransaction?.amount ?? l.openingAmount ?? null,
           sum(l.repayments),
-          l.initialTransaction?.note ?? null,
+          l.initialTransaction?.note ?? l.openingNote ?? (l.openingAmount != null ? '期初借貸' : null),
         ]),
       },
       {
