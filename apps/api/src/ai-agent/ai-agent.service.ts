@@ -168,6 +168,23 @@ const AGENT_TOOLS = [
   },
   {
     type: 'function' as const,
+    name: 'record_transfer',
+    description:
+      '記一筆自己帳戶之間的轉帳（錢從一個帳戶移到另一個，不算收入也不算支出）：「從台新轉 5000 到郵局」「領 3000 現金」（銀行→現金）「把現金 2000 存進銀行」。fromAccountName/toAccountName 從系統提示的帳戶挑；使用者沒講清楚哪一邊就先問，不要猜。繳信用卡費用 propose_card_payment。',
+    parameters: {
+      type: 'object',
+      properties: {
+        amount: { type: 'number' },
+        fromAccountName: { type: 'string', description: '錢轉出的帳戶' },
+        toAccountName: { type: 'string', description: '錢轉入的帳戶' },
+        note: { type: 'string' },
+        date: { type: 'string', description: 'YYYY-MM-DD，不填＝今天' },
+      },
+      required: ['amount', 'fromAccountName', 'toAccountName'],
+    },
+  },
+  {
+    type: 'function' as const,
     name: 'create_todo',
     description:
       '新增代辦事項。有日期就填 dueDate（有時間再填 dueTime）；沒有日期就設 isOngoing=true（持續性任務）。有日期而且使用者有連結行事曆時，calendarTarget 必填（GOOGLE 或 ICLOUD），使用者沒講就先問他「要存到 Google 還是 iPhone？」。',
@@ -819,6 +836,7 @@ export class AiAgentService {
       `支出分類：${expense.join('、') || '（無）'}`,
       `收入分類：${income.join('、') || '（無）'}`,
       '分類一律從上面挑意思最接近的；使用者沒講帳戶就不要填 accountName，系統猜完你要問他確認。使用者說「改成 X 帳戶」就用 accountName=X 重新 record_transaction。',
+      '錢在自己的帳戶之間移動（轉帳、匯到自己另一個帳戶、提款領現金、現金存進銀行）→ record_transfer，不要記成支出加收入。',
       '',
       '【行程】',
       `已連結的行事曆：${targets}`,
@@ -911,6 +929,8 @@ export class AiAgentService {
         return getWeather(String(args.placeName ?? ''), Number(args.latitude), Number(args.longitude));
       case 'record_transaction':
         return this.recordTransaction(ctx, args);
+      case 'record_transfer':
+        return this.recordTransfer(ctx, args);
       case 'create_todo':
         return this.createTodo(ctx, args);
       case 'create_reminder':
@@ -1021,6 +1041,43 @@ export class AiAgentService {
       turnId: ctx.turnId,
     };
     return { needsConfirmation: true, guessedAccount: guessed.name, summary };
+  }
+
+  /** Both accounts come from the user's words (the tool tells the model to
+   * ask rather than guess), so it writes straight away like an explicit-
+   * account record_transaction. */
+  private async recordTransfer(ctx: AgentContext, args: ToolArgs) {
+    const spaceId = ctx.personalSpaceId;
+    if (!spaceId) throw new Error('找不到個人空間，請先登入 App 一次');
+    const amount = Number(args.amount);
+    if (!(amount > 0)) throw new Error('金額要大於 0');
+
+    const accounts = await this.prisma.financeAccount.findMany({ where: { spaceId }, orderBy: { sortOrder: 'asc' } });
+    if (accounts.length < 2) throw new Error('轉帳需要至少兩個帳戶，請先到 App 的記帳「帳戶」分頁新增');
+    const find = (raw: unknown) => {
+      const wanted = typeof raw === 'string' ? raw.trim() : '';
+      const account = wanted
+        ? accounts.find((a) => a.name === wanted) ??
+          accounts.find((a) => a.name.includes(wanted) || wanted.includes(a.name))
+        : undefined;
+      if (!account) throw new Error(`沒有「${wanted}」這個帳戶，可用的：${accounts.map((a) => a.name).join('、')}`);
+      return account;
+    };
+    const from = find(args.fromAccountName);
+    const to = find(args.toAccountName);
+    if (from.id === to.id) throw new Error('轉出跟轉入是同一個帳戶，問使用者是哪兩個帳戶');
+
+    const date = typeof args.date === 'string' && args.date ? args.date : taipeiDateKey(new Date());
+    const note = typeof args.note === 'string' && args.note.trim() ? args.note.trim() : null;
+    await this.transactions.create(ctx.userId, spaceId, {
+      type: FinanceTransactionType.TRANSFER,
+      amount,
+      accountId: from.id,
+      toAccountId: to.id,
+      date,
+      ...(note && { note }),
+    });
+    return { recorded: true, transfer: `${from.name} → ${to.name}`, amount, date };
   }
 
   /** Most-used account for this category over the last 180 days, else the
