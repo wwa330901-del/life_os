@@ -681,6 +681,23 @@ class ApiClient {
     await _delete('/spaces/$spaceId/finance/accounts/$accountId');
   }
 
+  /// 清空記帳重來。[deleteSetup] true＝連帳戶/分類/預算/定期交易都刪；
+  /// false 時 [balances]（帳戶 id → 現在實際餘額）會變成帳戶的新期初餘額。
+  Future<void> resetFinance({
+    required String spaceId,
+    required bool deleteSetup,
+    Map<String, double> balances = const {},
+  }) async {
+    await _post('/spaces/$spaceId/finance/reset', {
+      'confirm': '清空',
+      'deleteSetup': deleteSetup,
+      if (!deleteSetup)
+        'balances': [
+          for (final e in balances.entries) {'accountId': e.key, 'balance': e.value},
+        ],
+    });
+  }
+
   Future<List<FinanceCategory>> listFinanceCategories(String spaceId) async {
     final body = await _getList('/spaces/$spaceId/finance/categories');
     return body.map((e) => FinanceCategory.fromJson(e as Map<String, dynamic>)).toList();

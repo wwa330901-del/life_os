@@ -23,6 +23,8 @@ import { CreditCardService } from './credit-card.service';
 import { LoanDueReminderService } from './loan-due-reminder.service';
 import { SpendingAlertService } from './spending-alert.service';
 import { SubscriptionService } from './subscription.service';
+import { FinanceResetController } from './finance-reset.controller';
+import { FinanceResetService } from './finance-reset.service';
 
 @Module({
   imports: [SpacesModule, LineNotifierModule, UsersModule, FriendsModule],
@@ -35,6 +37,7 @@ import { SubscriptionService } from './subscription.service';
     FinanceLoansController,
     FinanceLoanInvitesController,
     FinanceAdvancesController,
+    FinanceResetController,
   ],
   providers: [
     FinanceAccessService,
@@ -49,6 +52,7 @@ import { SubscriptionService } from './subscription.service';
     LoanDueReminderService,
     SpendingAlertService,
     SubscriptionService,
+    FinanceResetService,
   ],
   // Reused directly by LineModule so the LINE 財務總覽 command shares the
   // exact same balance/summary logic as the app's own finance screens,
