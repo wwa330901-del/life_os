@@ -1655,15 +1655,19 @@ export class LineService {
       where: { spaceId: space.id },
       orderBy: { sortOrder: 'asc' },
     });
+    const stockAccount = accounts.find((a) => a.id === space.stockAccountId);
     await this.reply(
       replyToken,
       [
         '📈 股票買賣',
-        '買股0050 152 20 國泰世華',
-        '（代碼／成交價／股數／帳戶，金額自動算）',
+        stockAccount ? '買股0050 152 20' : '買股0050 152 20 國泰世華',
+        stockAccount
+          ? `（代碼／成交價／股數，金額自動算；帳戶不用打，固定用「${stockAccount.name}」）`
+          : '（代碼／成交價／股數／帳戶，金額自動算）',
         '賣出用「賣股」開頭',
         '',
         `帳戶　${accounts.length ? accounts.map((a) => a.name).join('、') : '（還沒有，請到 App 新增）'}`,
+        ...(stockAccount ? [] : ['（到 App 股票頁設定「股票帳戶」之後就不用每次打帳戶）']),
         '',
         '交割日（T+2）自動記帳｜傳「持股總覽」看損益',
       ].join('\n'),
@@ -1734,13 +1738,14 @@ export class LineService {
       await respond('你還沒有任何記帳帳戶，請先到元序 App 的記帳「帳戶」分頁新增一個。');
       return true;
     }
-    if (!parsed.accountId) {
+    // 沒打帳戶 → 用設定的股票帳戶。
+    const accountId = parsed.accountId ?? accounts.find((a) => a.id === space.stockAccountId)?.id;
+    if (!accountId) {
       await respond(
-        `帳戶錯誤，請在指令裡包含正確的帳戶名稱：${accounts.map((a) => a.name).join('、')}`,
+        `帳戶錯誤，請在指令裡包含正確的帳戶名稱：${accounts.map((a) => a.name).join('、')}（或到 App 股票頁設定「股票帳戶」就不用打）`,
       );
       return true;
     }
-    const accountId = parsed.accountId;
 
     const tradeDate = new Date();
     const totalCost = parsed.shares * parsed.pricePerShare;

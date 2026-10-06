@@ -14,10 +14,12 @@ import { StocksSettlementService } from './stocks-settlement.service';
 import { StockHistoryService } from './stock-history.service';
 import { StockFundamentalsService } from './stock-fundamentals.service';
 import { StockAiService } from './stock-ai.service';
+import { StocksSettingsController } from './stocks-settings.controller';
+import { StocksSettingsService } from './stocks-settings.service';
 
 @Module({
   imports: [SpacesModule, FinanceModule, LineNotifierModule],
-  controllers: [StocksTransactionsController, StocksHoldingsController, StocksRecurringController],
+  controllers: [StocksTransactionsController, StocksHoldingsController, StocksRecurringController, StocksSettingsController],
   providers: [
     StocksAccessService,
     StocksTransactionsService,
@@ -28,8 +30,9 @@ import { StockAiService } from './stock-ai.service';
     StockHistoryService,
     StockAiService,
     StockFundamentalsService,
+    StocksSettingsService,
   ],
   // Reused directly by LineModule for 股票買賣／持股總攬／定期定額回覆 commands.
-  exports: [StocksTransactionsService, StocksHoldingsService, StocksRecurringService, StockAiService, StockHistoryService],
+  exports: [StocksTransactionsService, StocksHoldingsService, StocksRecurringService, StockAiService, StockHistoryService, StocksSettingsService],
 })
 export class StocksModule {}

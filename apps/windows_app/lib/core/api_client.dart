@@ -1150,6 +1150,16 @@ class ApiClient {
     await _delete('/spaces/$spaceId/stocks/holdings/openings/${Uri.encodeComponent(stockCode)}');
   }
 
+  /// 股票帳戶：股票買賣固定用的交割帳戶 id，沒設定是 null。
+  Future<String?> getStockAccountId(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/stocks/settings');
+    return body['accountId'] as String?;
+  }
+
+  Future<void> setStockAccountId({required String spaceId, required String? accountId}) async {
+    await _put('/spaces/$spaceId/stocks/settings', {'accountId': accountId});
+  }
+
   Future<StockTransactionsPage> listStockTransactions(String spaceId, {String? cursor}) async {
     final query = _queryString({'cursor': cursor});
     final body = await _get('/spaces/$spaceId/stocks/transactions$query');

@@ -24,6 +24,7 @@ class StockRecurringTab extends ConsumerWidget {
     final plansAsync = ref.watch(stockRecurringInvestmentsProvider(spaceId));
     final accountsAsync = ref.watch(financeAccountsProvider(spaceId));
     final accounts = accountsAsync.value ?? const [];
+    ref.watch(stockAccountIdProvider(spaceId));
     final accountNameOf = {for (final a in accounts) a.id: a.name};
 
     return Scaffold(
@@ -213,7 +214,11 @@ class StockRecurringTab extends ConsumerWidget {
   ) async {
     final result = await showDialog<_StockRecurringEditorResult>(
       context: context,
-      builder: (_) => _StockRecurringEditorDialog(accounts: accounts, existing: existing),
+      builder: (_) => _StockRecurringEditorDialog(
+        accounts: accounts,
+        existing: existing,
+        defaultAccountId: ref.read(stockAccountIdProvider(spaceId)).value,
+      ),
     );
     if (result == null || !context.mounted) return;
 
@@ -265,17 +270,23 @@ class _StockRecurringEditorResult {
 }
 
 class _StockRecurringEditorDialog extends StatefulWidget {
-  const _StockRecurringEditorDialog({required this.accounts, this.existing});
+  const _StockRecurringEditorDialog({required this.accounts, this.existing, this.defaultAccountId});
 
   final List<FinanceAccount> accounts;
   final StockRecurringInvestment? existing;
+
+  /// 設定的股票帳戶，新增時預設選它。
+  final String? defaultAccountId;
 
   @override
   State<_StockRecurringEditorDialog> createState() => _StockRecurringEditorDialogState();
 }
 
 class _StockRecurringEditorDialogState extends State<_StockRecurringEditorDialog> {
-  late String? _accountId = widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
+  late String? _accountId =
+      widget.existing?.accountId ??
+      widget.accounts.where((a) => a.id == widget.defaultAccountId).firstOrNull?.id ??
+      widget.accounts.firstOrNull?.id;
   late DateTime _pickedDate = _initialPickedDate();
   late FinanceRecurringHolidayAdjustment _holidayAdjustment =
       widget.existing?.holidayAdjustment ?? FinanceRecurringHolidayAdjustment.none;

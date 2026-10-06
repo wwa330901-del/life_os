@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'tabs/stock_holdings_tab.dart';
 import 'tabs/stock_recurring_tab.dart';
 import 'tabs/stock_transactions_tab.dart';
+import 'widgets/stock_account_button.dart';
 
 /// 投資股票系統 — 個人空間的第二個模組（跟記帳系統平行）。持股總覽（成本／
 /// 現價／損益，derived server-side）、交易紀錄（手動買賣，T+2 自動交割）、
@@ -30,14 +31,22 @@ class _StocksHomeScreenState extends State<StocksHomeScreen> with SingleTickerPr
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs: const [
-            Tab(text: '持股總覽'),
-            Tab(text: '交易紀錄'),
-            Tab(text: '定期定額'),
+        Row(
+          children: [
+            Expanded(
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                tabs: const [
+                  Tab(text: '持股總覽'),
+                  Tab(text: '交易紀錄'),
+                  Tab(text: '定期定額'),
+                ],
+              ),
+            ),
+            StockAccountButton(spaceId: widget.spaceId),
+            const SizedBox(width: 8),
           ],
         ),
         Expanded(

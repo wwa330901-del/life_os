@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StocksHoldingsService } from './stocks-holdings.service';
 import { StocksTransactionsService } from './stocks-transactions.service';
 import { StockHistoryService, summarizeTrend } from './stock-history.service';
+import { StocksSettingsService } from './stocks-settings.service';
 import { StockFundamentalsService } from './stock-fundamentals.service';
 
 const DEFAULT_TREND_MONTHS = 4; // 夠算 60 日均線
@@ -12,7 +13,7 @@ const RECENT_TRANSACTIONS = 10;
 /** Gemini Interactions API tool declarations for 股票 — composed into the
  * LINE 萬用 AI (`AiAgentService`). 2026-10-01 使用者要求 AI 要能看持股
  * 損益、分析持股走向（之前是刻意不給 AI 碰投資資料）。不會下單或記錄
- * 交易；唯一會寫的是 set_stock_opening（期初持股）。 */
+ * 交易；會寫的只有 set_stock_opening（期初持股）、set_stock_account（股票帳戶）。 */
 export const STOCK_TOOLS = [
   {
     type: 'function' as const,
@@ -61,10 +62,21 @@ export const STOCK_TOOLS = [
       required: ['stockCode', 'shares'],
     },
   },
+  {
+    type: 'function' as const,
+    name: 'set_stock_account',
+    description:
+      '設定股票帳戶：股票買賣固定用的交割帳戶（「我股票都用國泰證券那個帳戶」）。設了之後記股票沒講帳戶就用它。accountName 從系統提示的帳戶挑；空字串＝取消設定。',
+    parameters: {
+      type: 'object',
+      properties: { accountName: { type: 'string' } },
+      required: ['accountName'],
+    },
+  },
 ];
 
 export const STOCK_AI_GUIDE = [
-  '說本來就有某檔股票、補登原本的持股 → set_stock_opening（不是買進交易，不動帳戶）。問持股、損益、賺多少 → get_stock_portfolio。問某檔（或全部持股）走勢、怎麼看、要不要續抱 → analyze_stock_trend（全部持股就每檔都查），用算好的數據分析：短中期漲跌、股價在均線上還是下（多頭/空頭排列）、離高點多遠、波動大不大、量有沒有放大、跟他的成本比。',
+  '說本來就有某檔股票、補登原本的持股 → set_stock_opening（不是買進交易，不動帳戶）。說股票都用哪個帳戶 → set_stock_account。問持股、損益、賺多少 → get_stock_portfolio。問某檔（或全部持股）走勢、怎麼看、要不要續抱 → analyze_stock_trend（全部持股就每檔都查），用算好的數據分析：短中期漲跌、股價在均線上還是下（多頭/空頭排列）、離高點多遠、波動大不大、量有沒有放大、跟他的成本比。',
   '要分析一檔股票（怎麼看、要不要續抱/加碼）時，analyze_stock_trend 看價格，再 get_stock_fundamentals 看基本面和新聞：本益比貴不貴、殖利率、營收是成長還是衰退、EPS、最近新聞是利多還利空，把價格面和基本面一起講。問「X 最近有什麼新聞」「營收怎樣」也用它。',
   '分析要具體、講數字，可以說偏多/偏空/盤整以及要留意的價位，但最後提醒一句這是依過去資料的分析、不保證未來，決定權在他。不要編造新聞或財報數字，工具沒給的就說沒有資料；新聞只有標題，不要自己補內容。',
 ].join('\n');
@@ -77,6 +89,7 @@ export class StockAiService {
     private readonly transactions: StocksTransactionsService,
     private readonly history: StockHistoryService,
     private readonly fundamentals: StockFundamentalsService,
+    private readonly settings: StocksSettingsService,
   ) {}
 
   static readonly toolNames = new Set(STOCK_TOOLS.map((t) => t.name));
@@ -107,6 +120,15 @@ export class StockAiService {
         const averageCost = Number(args.averageCost);
         if (args.averageCost == null || !(averageCost >= 0)) throw new Error('要問使用者每股平均成本（均價）');
         return this.holdings.setOpening(userId, space.id, { stockCode, shares, averageCost });
+      }
+      case 'set_stock_account': {
+        const wanted = String(args.accountName ?? '').trim();
+        if (!wanted) return this.settings.setAccount(userId, space.id, null);
+        const accounts = await this.prisma.financeAccount.findMany({ where: { spaceId: space.id }, orderBy: { sortOrder: 'asc' } });
+        const account =
+          accounts.find((a) => a.name === wanted) ?? accounts.find((a) => a.name.includes(wanted) || wanted.includes(a.name));
+        if (!account) throw new Error(`沒有「${wanted}」這個帳戶，可用的：${accounts.map((a) => a.name).join('、')}`);
+        return this.settings.setAccount(userId, space.id, account.id);
       }
       default:
         throw new Error(`未知的工具：${name}`);

@@ -204,6 +204,9 @@ model Space {
   financePlanAt         DateTime?
   /// 退休試算設定（退休年齡、活到幾歲、報酬率、通膨、退休金…），見 src/finance/retirement.ts。
   retirementSettings    Json?
+  /// 股票帳戶（2026-10-07）：股票買賣固定用的交割帳戶，記交易沒指定帳戶就用它。
+  /// 帳戶被刪掉時這裡不會自動清，讀的地方要確認帳戶還在。
+  stockAccountId        String?
   createdAt             DateTime  @default(now())
 
   // Only set when type = PERSONAL. Each user has exactly one personal space.

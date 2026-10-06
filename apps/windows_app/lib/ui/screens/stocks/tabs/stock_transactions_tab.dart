@@ -54,6 +54,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
     final transactionsAsync = ref.watch(stockTransactionsProvider(spaceId));
     final accountsAsync = ref.watch(financeAccountsProvider(spaceId));
     final accounts = accountsAsync.value ?? const [];
+    ref.watch(stockAccountIdProvider(spaceId));
     final accountNameOf = {for (final a in accounts) a.id: a.name};
 
     return Scaffold(
@@ -234,7 +235,11 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
   }) async {
     final result = await showDialog<_StockTransactionEditorResult>(
       context: context,
-      builder: (_) => _StockTransactionEditorDialog(accounts: accounts, existing: existing),
+      builder: (_) => _StockTransactionEditorDialog(
+        accounts: accounts,
+        existing: existing,
+        defaultAccountId: ref.read(stockAccountIdProvider(widget.spaceId)).value,
+      ),
     );
     if (result == null || !context.mounted) return;
 
@@ -289,7 +294,7 @@ class _StockTransactionEditorResult {
 }
 
 class _StockTransactionEditorDialog extends StatefulWidget {
-  const _StockTransactionEditorDialog({required this.accounts, this.existing});
+  const _StockTransactionEditorDialog({required this.accounts, this.existing, this.defaultAccountId});
 
   final List<FinanceAccount> accounts;
 
@@ -299,13 +304,19 @@ class _StockTransactionEditorDialog extends StatefulWidget {
   /// semantic flip than a plain field edit.
   final StockTransaction? existing;
 
+  /// 設定的股票帳戶，新增時預設選它。
+  final String? defaultAccountId;
+
   @override
   State<_StockTransactionEditorDialog> createState() => _StockTransactionEditorDialogState();
 }
 
 class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDialog> {
   late StockTransactionType _type = widget.existing?.type ?? StockTransactionType.buy;
-  late String? _accountId = widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
+  late String? _accountId =
+      widget.existing?.accountId ??
+      widget.accounts.where((a) => a.id == widget.defaultAccountId).firstOrNull?.id ??
+      widget.accounts.firstOrNull?.id;
   late DateTime _tradeDate = widget.existing?.tradeDate ?? DateTime.now();
   late final _stockCodeController = TextEditingController(text: widget.existing?.stockCode ?? '');
   late final _priceController = TextEditingController(

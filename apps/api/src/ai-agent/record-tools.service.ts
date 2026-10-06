@@ -561,6 +561,9 @@ export class RecordToolsService {
       return match;
     }
     if (purpose === 'stock') {
+      const space = await this.prisma.space.findUnique({ where: { id: spaceId }, select: { stockAccountId: true } });
+      const preset = space?.stockAccountId && accounts.find((a) => a.id === space.stockAccountId);
+      if (preset) return preset;
       const last = await this.prisma.stockTransaction.findFirst({ where: { spaceId }, orderBy: { tradeDate: 'desc' } });
       const account = last && accounts.find((a) => a.id === last.accountId);
       if (account) return account;

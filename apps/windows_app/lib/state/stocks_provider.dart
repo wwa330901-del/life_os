@@ -10,6 +10,10 @@ final stockHoldingsProvider = FutureProvider.autoDispose.family<List<StockHoldin
   return ref.read(apiClientProvider).listStockHoldings(spaceId);
 });
 
+final stockAccountIdProvider = FutureProvider.autoDispose.family<String?, String>((ref, spaceId) {
+  return ref.read(apiClientProvider).getStockAccountId(spaceId);
+});
+
 final stockOpeningsProvider = FutureProvider.autoDispose.family<List<StockOpening>, String>((ref, spaceId) {
   return ref.read(apiClientProvider).listStockOpenings(spaceId);
 });
