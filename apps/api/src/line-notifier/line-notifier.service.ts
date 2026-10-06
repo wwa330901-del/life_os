@@ -1,6 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+/** 訊息下方的快速按鈕：按了會回傳 data（postback），聊天室顯示 label。 */
+export interface LineQuickReplyButton {
+  label: string;
+  data: string;
+}
+
+export function toQuickReply(buttons: LineQuickReplyButton[]) {
+  return {
+    items: buttons.map((b) => ({ type: 'action', action: { type: 'postback', label: b.label, data: b.data, displayText: b.label } })),
+  };
+}
+
 /** Proactively pushes a LINE text message outside of any inbound webhook
  * event — used by background jobs (e.g. `FinanceRecurringTransactionsService`'s
  * daily cron) that have no `replyToken` to work with. Split out of
@@ -25,13 +37,13 @@ export class LineNotifierService {
   }
 
   /** No-op if this user never linked a LINE account. */
-  async notifyByUser(userId: string, text: string): Promise<void> {
+  async notifyByUser(userId: string, text: string, quickReply?: LineQuickReplyButton[]): Promise<void> {
     const link = await this.prisma.lineAccountLink.findUnique({ where: { userId } });
     if (!link?.lineUserId) return;
-    await this.push(link.lineUserId, text);
+    await this.push(link.lineUserId, text, quickReply);
   }
 
-  private async push(lineUserId: string, text: string): Promise<void> {
+  private async push(lineUserId: string, text: string, quickReply?: LineQuickReplyButton[]): Promise<void> {
     if (!this.channelAccessToken) {
       this.logger.warn('LINE_CHANNEL_ACCESS_TOKEN not set, skipping push');
       return;
@@ -43,7 +55,7 @@ export class LineNotifierService {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.channelAccessToken}`,
         },
-        body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text }] }),
+        body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text, ...(quickReply?.length && { quickReply: toQuickReply(quickReply) }) }] }),
       });
     } catch (error) {
       this.logger.error('Failed to send LINE push', error);

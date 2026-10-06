@@ -13,6 +13,7 @@ interface SyncableTodo {
   isOngoing: boolean;
   personalOwnerUserId: string | null;
   calendarSyncTarget: CalendarSyncTarget | null;
+  remindAt: Date | null;
 }
 
 /** 代辦事項 has no upper bound otherwise — completed items just kept
@@ -90,6 +91,7 @@ export class TodosService {
         priority: dto.priority,
         notes: dto.notes,
         calendarSyncTarget: dto.calendarSyncTarget,
+        remindAt: dto.remindAt ? new Date(dto.remindAt) : null,
         sortOrder: await this.nextSortOrder(userId),
       },
     });
@@ -112,6 +114,13 @@ export class TodosService {
 
     const justCompleted = dto.done === true && !existing.done;
     const justReopened = dto.done === false && existing.done;
+    // LINE 提醒的代辦在 App 改了時間 → 提醒跟著改（改成全天就不再提醒）。
+    // （App 存檔會把日期原封不動再送一次，所以要比對真的有變才算。）
+    const nextDue = dto.dueDate !== undefined ? dto.dueDate : existing.dueDate;
+    const nextAllDay = dto.dueDateAllDay ?? existing.dueDateAllDay;
+    const remindMoved =
+      existing.remindAt != null &&
+      ((nextDue ? new Date(nextDue).getTime() : null) !== (existing.dueDate?.getTime() ?? null) || nextAllDay !== existing.dueDateAllDay);
 
     const todo = await this.prisma.projectTodo.update({
       where: { id },
@@ -124,6 +133,7 @@ export class TodosService {
         // 到期時間改了，到期前提醒要重新算。
         ...((dto.dueDate !== undefined || dto.dueDateAllDay !== undefined) && { dueReminderSentAt: null }),
         ...(dto.dueDateAllDay !== undefined && { dueDateAllDay: dto.dueDateAllDay }),
+        ...(remindMoved && { remindAt: nextDue && !nextAllDay ? new Date(nextDue) : null, remindCount: 0 }),
         ...(dto.isOngoing !== undefined && { isOngoing: dto.isOngoing }),
         ...(dto.priority !== undefined && { priority: dto.priority }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
@@ -187,7 +197,8 @@ export class TodosService {
         where: { sourceTodoId: todo.id },
       });
 
-      if (!ownerUserId || !todo.dueDate || todo.isOngoing) {
+      // LINE 短時間提醒（倒垃圾、關火）不放行事曆，免得行事曆被塞滿。
+      if (!ownerUserId || !todo.dueDate || todo.isOngoing || todo.remindAt) {
         if (existing) await this.removeSyncedEvent(existing);
         return;
       }

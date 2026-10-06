@@ -209,6 +209,13 @@ export class LineService {
           where: { lineUserId },
         });
 
+        // LINE 代辦提醒下面的「完成了」「10 分鐘後」按鈕。
+        if (event.type === 'postback') {
+          const data = event.postback?.data ?? '';
+          if (link && data.startsWith('todo:')) await this.handleTodoPostback(link.userId, data, replyToken);
+          continue;
+        }
+
         if (event.type === 'message' && event.message?.type === 'image') {
           if (!link) continue;
           await this.handleImageMessage(link, event.message.id, replyToken);
@@ -262,6 +269,30 @@ export class LineService {
     }
   }
 
+  private async handleTodoPostback(userId: string, data: string, replyToken: string) {
+    const [, action, todoId, minutesRaw] = data.split(':');
+    const todo = await this.prisma.projectTodo.findUnique({ where: { id: todoId } });
+    if (!todo || todo.personalOwnerUserId !== userId) {
+      await this.reply(replyToken, '這件代辦已經刪掉了。');
+      return;
+    }
+    if (todo.done) {
+      await this.reply(replyToken, `「${todo.title}」已經完成了 👍`);
+      return;
+    }
+    if (action === 'done') {
+      await this.todosService.update(userId, todo.id, { done: true });
+      await this.reply(replyToken, `👍 「${todo.title}」完成，已打勾。`);
+      return;
+    }
+    if (action === 'snooze') {
+      const minutes = Math.min(24 * 60, Math.max(1, Number(minutesRaw) || 10));
+      const at = new Date(Date.now() + minutes * 60 * 1000);
+      await this.prisma.projectTodo.update({ where: { id: todo.id }, data: { remindAt: at } });
+      await this.reply(replyToken, `好，${formatTaipeiDateTime(at, false).split(' ').pop()} 再提醒你「${todo.title}」。`);
+    }
+  }
+
   private async tryCompleteLinking(
     lineUserId: string,
     code: string,
@@ -298,7 +329,7 @@ export class LineService {
    * while no AI conversation is active — routed to it before the
    * batch/command parsers so e.g. a multi-line book reflection isn't split
    * into per-line 記帳 commands. */
-  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我|天氣|下雨|帶傘|氣溫|想買|想要買|購物車|買得起|撥.*買東西|旅行|旅遊|出國|去玩|行李|退休/;
+  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|分鐘後|小時後|叫我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我|天氣|下雨|帶傘|氣溫|想買|想要買|購物車|買得起|撥.*買東西|旅行|旅遊|出國|去玩|行李|退休/;
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務'];
   // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
@@ -369,6 +400,7 @@ export class LineService {
           '',
           '✅ 代辦',
           '「提醒我週五交報告」「報告做完了」',
+          '「10 分鐘後提醒我關火」「3 點提醒我打電話」時間到 LINE 叫你，沒按完成每天再提醒',
           '「我還有什麼沒做？」',
           '',
           '📅 行程',

@@ -1032,6 +1032,11 @@ model ProjectTodo {
   priority           TodoPriority        @default(MEDIUM)
   /// 有時間的代辦到期前 1 小時 LINE 提醒過了（2026-10-01）；改到期時間會清掉重來。
   dueReminderSentAt  DateTime?
+  /// LINE「10 分鐘後／3 點提醒我…」（2026-10-06）：下次要 LINE 提醒的時間。
+  /// 時間到推播後往後加一天，沒按完成就每天同一時間再提醒。有這個的代辦不放行事曆。
+  remindAt           DateTime?
+  /// 已經提醒過幾次（0＝還沒到第一次）。
+  remindCount        Int                 @default(0)
   notes              String?
 
   /// The auto-created 行事曆 event mirroring this todo's due date/time, if
@@ -1043,6 +1048,7 @@ model ProjectTodo {
   updatedAt DateTime @updatedAt
 
   @@index([personalOwnerUserId])
+  @@index([remindAt])
 }
 
 enum KnowledgeItemStatus {

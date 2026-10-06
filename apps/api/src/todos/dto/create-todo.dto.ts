@@ -36,4 +36,9 @@ export class CreateTodoDto {
   @IsOptional()
   @IsEnum(CalendarSyncTarget)
   calendarSyncTarget?: CalendarSyncTarget;
+
+  /// LINE 短時間提醒（2026-10-06）：時間到推播，沒完成每天同一時間再提醒。
+  @IsOptional()
+  @IsDateString()
+  remindAt?: string;
 }

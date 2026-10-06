@@ -192,6 +192,22 @@ const AGENT_TOOLS = [
   },
   {
     type: 'function' as const,
+    name: 'create_reminder',
+    description:
+      '「10 分鐘後提醒我關火」「3 點提醒我打電話」「明天早上 9 點提醒我繳費」：在指定時間用 LINE 提醒他，同時記成代辦（不放行事曆，不用問存哪）。他沒按完成，之後每天同一時間再提醒。講幾分鐘/幾小時後就填 inMinutes；講時刻就填 time（沒講日期＝今天，填 date 可指定別天）。',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: '要提醒的事，簡短（例：關火、打電話給媽媽）' },
+        inMinutes: { type: 'number', description: '幾分鐘後（1 小時＝60）' },
+        date: { type: 'string', description: 'YYYY-MM-DD，不填＝今天' },
+        time: { type: 'string', description: 'HH:mm（台北時間，24 小時制）' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    type: 'function' as const,
     name: 'create_calendar_event',
     description:
       '使用者有講明確時間時，直接新增行程。target 必填（GOOGLE 或 ICLOUD，只能用系統提示列出已連結的），使用者沒講就先問「要存到 Google 還是 iPhone？」。沒有 startTime 代表全天。',
@@ -807,6 +823,7 @@ export class AiAgentService {
       '【行程】',
       `已連結的行事曆：${targets}`,
       '新增行程或有日期的代辦時，使用者沒講存哪一邊（而且有連結）就一定要先問，不能自己決定。',
+      '「X 分鐘後／幾點提醒我…」「叫我…」要你到時候提醒他 → create_reminder（不是行程，不用問存哪個行事曆）。只講哪天要做、沒講時間 → create_todo。',
       '使用者有講時間 → create_calendar_event。只講要做什麼、沒講時間 → 先判斷是工作還是私人的事，find_free_slots，再用 propose_calendar_event 提議第一個時段（順便列出其他選項），等他確認。',
       '',
       '【人生目標】',
@@ -896,6 +913,8 @@ export class AiAgentService {
         return this.recordTransaction(ctx, args);
       case 'create_todo':
         return this.createTodo(ctx, args);
+      case 'create_reminder':
+        return this.createReminder(ctx, args);
       case 'complete_todo': {
         const todo = await this.todos.update(ctx.userId, String(args.todoId), { done: true });
         return { completed: todo.title };
@@ -1057,6 +1076,33 @@ export class AiAgentService {
       created: todo.title,
       due: dueDate ? `${dueDate}${dueTime == null ? '' : ` ${args.dueTime}`}` : '持續性任務',
       calendar: dueDate ? (target ? TARGET_LABEL[target] : '元序') : null,
+    };
+  }
+
+  private async createReminder(ctx: AgentContext, args: ToolArgs) {
+    const now = new Date();
+    let at: Date;
+    const minutes = Number(args.inMinutes);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      at = new Date(now.getTime() + Math.round(minutes) * 60 * 1000);
+    } else {
+      const time = parseClock(typeof args.time === 'string' ? args.time : undefined);
+      if (time == null) throw new Error('要知道幾點或幾分鐘後提醒，先問使用者。');
+      const date = typeof args.date === 'string' && args.date ? args.date : taipeiDateKey(now);
+      const [y, m, d] = date.split('-').map(Number);
+      at = taipeiWallClockToUtc(y, m - 1, d, Math.floor(time / 60), time % 60);
+    }
+    if (at.getTime() <= now.getTime()) throw new Error('這個時間已經過了，問使用者是不是指明天或別的時間。');
+    const todo = await this.todos.create(ctx.userId, {
+      title: String(args.title),
+      dueDate: at.toISOString(),
+      dueDateAllDay: false,
+      remindAt: at.toISOString(),
+    });
+    return {
+      created: todo.title,
+      remindAt: formatTaipeiDateTime(at, false),
+      note: '已記在代辦；時間到 LINE 會傳提醒，下面有「完成了」按鈕，沒按就每天同一時間再提醒。',
     };
   }
 
