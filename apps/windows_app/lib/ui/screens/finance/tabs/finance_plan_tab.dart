@@ -114,6 +114,34 @@ class _FinancePlanTabState extends ConsumerState<FinancePlanTab> {
                 ),
                 child: _BudgetTable(budgets: plan.budgets),
               ),
+            if (plan.goals.isNotEmpty)
+              _Section(
+                title: '目標怎麼存',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final g in plan.goals)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${g.name}　${formatAmount(g.amount)}：每月存 ${formatAmount(g.monthlySaving)}'
+                              '${g.eta == null ? '' : '，大約 ${g.eta!.substring(0, 4)} 年 ${int.parse(g.eta!.substring(5, 7))} 月達成'}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: g.onTrack ? null : theme.colorScheme.error,
+                              ),
+                            ),
+                            if (!g.onTrack) Text('照原本希望的時間來不及', style: TextStyle(color: theme.colorScheme.error)),
+                            if (g.advice.isNotEmpty) Text(g.advice, style: muted),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             if (plan.wishlistAdvice != null) _Section(title: '購物車', child: Text(plan.wishlistAdvice!)),
             _Section(
               title: '接下來',

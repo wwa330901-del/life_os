@@ -12,9 +12,12 @@ import { agentModel, claudeJson, needClaudeKey, usageFields } from '../ai/claude
 import { taipeiCurrentMonth } from '../common/taipei-date';
 import { AiUsageStatus, FinanceCategoryKind, FinanceTransactionType, Prisma } from '../../generated/prisma/client.js';
 import { FINANCE_PLAN_SCHEMA, financePlanText, parseFinancePlan, type FinancePlanResult } from './finance-plan-format';
+import { SubscriptionService } from './subscription.service';
+import { loanPrincipal } from './loan-installment';
 import {
   mergeFinancePlanProfile,
   parseFinancePlanProfile,
+  profileForPrompt,
   type FinancePlanProfile,
   type FinancePlanProfileInput,
 } from './finance-plan-profile';
@@ -42,6 +45,7 @@ export class FinancePlanService {
     private readonly health: FinanceHealthService,
     private readonly aiUsage: AiUsageService,
     private readonly wishlist: WishlistService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   async spaceIdOf(userId: string): Promise<string> {
@@ -108,16 +112,67 @@ export class FinancePlanService {
 
   /** App 規劃前的問卷：上次填的，加上從記帳抓的建議值（第一次填時帶入）。 */
   async profileForm(userId: string) {
-    const data = await this.inputs(userId);
+    const spaceId = await this.spaceIdOf(userId);
+    const [data, loans, subs, holdings, goals, fixedIncome] = await Promise.all([
+      this.inputs(userId),
+      this.prisma.financeLoan.findMany({
+        where: { spaceId, settled: false, direction: 'BORROW' },
+        include: { initialTransaction: { select: { amount: true } }, repayments: { include: { transaction: { select: { amount: true } } } } },
+      }),
+      this.subscriptions.listForUser(userId).catch(() => null),
+      this.prisma.stockHolding.findMany({ where: { spaceId } }),
+      this.prisma.lifeGoal.findMany({
+        where: { ownerUserId: userId, status: 'ACTIVE', unit: '元', targetValue: { not: null } },
+        select: { title: true, targetValue: true, currentValue: true, targetDate: true },
+      }),
+      this.prisma.financeRecurringTransaction.findFirst({
+        where: { spaceId, active: true, type: FinanceTransactionType.INCOME },
+        orderBy: { amount: 'desc' },
+      }),
+    ]);
+    // 固定支出建議：定期交易＋有每月還款的借貸（學貸…）＋偵測到的訂閱，名稱重複只留一個。
+    const fixed = new Map<string, number>();
+    for (const e of data.fixedExpenses) fixed.set(e.name, round(e.amount));
+    for (const l of loans) if (l.installmentAmount) fixed.set(`${l.counterpartyName}還款`, round(l.installmentAmount));
+    for (const sub of subs ?? []) if (!fixed.has(sub.name)) fixed.set(sub.name, round(sub.monthlyCost));
+    const today = new Date();
+    const monthKey = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const termOf = (target: string | null) => {
+      if (!target) return 'mid' as const;
+      const months = (Number(target.slice(0, 4)) - today.getUTCFullYear()) * 12 + Number(target.slice(5, 7)) - (today.getUTCMonth() + 1);
+      return months <= 12 ? ('short' as const) : months <= 60 ? ('mid' as const) : ('long' as const);
+    };
+    const goalSuggestions = [
+      ...goals.map((g) => {
+        const targetMonth = g.targetDate ? monthKey(g.targetDate) : null;
+        return { name: g.title, amount: round(Math.max(0, g.targetValue! - (g.currentValue ?? 0))), targetMonth, term: termOf(targetMonth) };
+      }),
+      ...data.wishlist.items.map((i) => {
+        const targetMonth = i.targetDate ? String(i.targetDate).slice(0, 7) : null;
+        return { name: i.name, amount: round(i.price), targetMonth, term: termOf(targetMonth) };
+      }),
+    ].filter((g) => g.amount > 0);
+    const fixedTotal = [...fixed.values()].reduce((sum, v) => sum + v, 0);
     return {
       profile: data.profile,
       suggestions: {
         monthlyIncome: data.fixedMonthlyIncome || data.averageMonthlyIncome || null,
-        fixedExpenses: data.fixedExpenses.map((e) => ({ name: e.name, amount: round(e.amount) })),
+        payDay: fixedIncome?.dayOfMonth ?? null,
+        fixedExpenses: [...fixed.entries()].map(([name, amount]) => ({ name, amount })),
+        // 生活費＝平均支出扣掉固定支出（沒記帳就 null）。
+        livingExpense: data.recordedMonths > 0 ? Math.max(0, round(data.averageMonthlyExpense - fixedTotal)) || null : null,
+        goals: goalSuggestions,
         recordedMonths: data.recordedMonths,
         averageMonthlyIncome: data.averageMonthlyIncome,
         averageMonthlyExpense: data.averageMonthlyExpense,
         topCategories: data.categoryAverages.slice(0, 5).map((c) => ({ name: c.name, monthlyAverage: c.monthlyAverage })),
+        // 家底：系統已經知道的，問卷直接顯示。
+        netWorth: data.netWorth,
+        stockCost: round(holdings.reduce((sum, h) => sum + h.costBasis, 0)),
+        debts: loans.map((l) => ({
+          name: l.counterpartyName,
+          outstanding: round(loanPrincipal(l) - l.repayments.reduce((sum, rp) => sum + (rp.transaction?.amount ?? 0), 0)),
+        })),
       },
     };
   }
@@ -168,9 +223,13 @@ export class FinancePlanService {
       '你是專業、務實的個人理財顧問。依下面這位使用者的真實數據（JSON，金額是新台幣）做理財評估與建議。',
       incomeSource,
       profile
-        ? `規劃前他親口告訴你的（profile）：固定支出 ${profile.fixedExpenses.map((e) => `${e.name} ${e.amount}`).join('、') || '沒講'}（合計 ${profileFixed}）；想法與目標：${profile.thoughts ?? '沒講'}。` +
-          '這是最重要的依據：分配、預算、步驟都要以他說的支出和想法為主，具體回應他的目標（要存多少、多久達成）。'
-        : '他沒有先講自己的支出和想法，只能依記帳資料推估。',
+        ? [
+            '規劃前他親口告訴你的（這是最重要的依據，分配、預算、步驟都以這個為主）：',
+            profileForPrompt(profile),
+            `（每月固定支出合計 ${profileFixed}）`,
+            '規劃原則：一年一次的大筆支出要換算成每月先存多少（年度準備金）；緊急預備金照他想留的月數算還差多少、幾個月存到；照他排的優先順序分配；投資比例配合他的風險偏好（先不投資就不要建議投資）；他說想減少的花費要具體給預算；收入不穩定或要變動時保守一點。',
+          ].join('\n')
+        : '他沒有先講自己的狀況和想法，只能依記帳資料推估，summary 最後建議他先填規劃問卷會更準。',
       data.recordedMonths > 0
         ? `記帳紀錄（近 ${data.recordedMonths} 個月有記）當參考：用來對照他說的支出——記帳裡出現但他沒提到的大筆花費、或跟他說的差很多的地方，在 summary 點出來。`
         : '他最近沒有記帳紀錄，就照他說的規劃，最後提醒記帳一陣子後再重新規劃會更準。',
@@ -179,9 +238,10 @@ export class FinancePlanService {
       '',
       '用繁體中文，回傳 JSON（每個文字欄位簡短、講具體數字、不要 Markdown 符號）：',
       '- summary：現況 2～3 句——收入、固定支出、平均花費、每月大概能存多少；財務健檢分數與最弱的一項；他說的跟記帳對不上的地方。',
-      `- allocation：把每月 ${income} 元分成 固定支出／生活費／儲蓄（預備金）／投資${data.wishlist.items.length ? '／購物車' : ''}，每項 name、amount（元）、percent、reason（一句理由；可參考 50/30/20，但要依他的實際狀況調整）。amount 加起來等於 ${income}。`,
+      `- allocation：把每月 ${income} 元分成 固定支出／生活費／年度準備金（有一年一次的支出才要）／緊急預備金／各個目標／投資（他不投資就不要）${data.wishlist.items.length ? '／購物車' : ''}，每項 name、amount（元）、percent、reason（一句理由；要依他的實際狀況和優先順序）。amount 加起來等於 ${income}。`,
       `- budgets：挑 3～5 個花費最多的分類建議每月預算（比現在平均少一點但做得到），category 一定要是 budgetableCategories 裡的名稱，amount 是元，reason 一句。`,
       '- steps：接下來 3 步，依優先順序的具體行動（例如先把預備金存到多少、每月定期定額多少、哪個分類要控制）。',
+      '- goals：他說的每個目標各一筆：name、amount、monthlySaving（每月要撥多少，要跟 allocation 對得上）、eta（照這樣存大約哪個月達成，YYYY-MM）、onTrack（能不能在他希望的時間前達成）、advice（一句；來不及的話建議怎麼調：延後到哪個月、每月多存多少、或先做哪個）。他沒講目標就給空陣列。',
       ...(data.wishlist.items.length
         ? ['- wishlistAdvice：購物車（wishlist）的建議 1～2 句——每月撥多少買東西、哪樣先買、哪樣可以等，用 affordableMonth 講大概幾月買得起；預備金不夠時先顧預備金。']
         : []),

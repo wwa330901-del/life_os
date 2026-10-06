@@ -41,6 +41,51 @@ import { forNextTurn, historyForStorage, parseHistory } from './claude-history';
 import { activeTurns, agentInput, appendTurns, parseTurns, transcript, type ChatTurn } from './chat-router';
 
 const MAX_TOOL_ROUNDS = 6;
+
+/** 財務規劃問卷的欄位（App 問卷同一份，見 finance/finance-plan-profile.ts）。 */
+const FINANCE_PLAN_ANSWER_PROPS = {
+  monthlyIncome: { type: 'number', description: '每月實拿薪水' },
+  payDay: { type: 'integer', description: '每月幾號發薪' },
+  otherIncome: {
+    type: 'array',
+    description: '其他收入，金額是一年大概多少（年終、獎金、兼職、租金、股利…）',
+    items: { type: 'object', properties: { name: { type: 'string' }, annualAmount: { type: 'number' } }, required: ['name', 'annualAmount'] },
+  },
+  incomeStability: { type: 'string', enum: ['stable', 'variable', 'changing'], description: '穩定／每月會變動／接下來可能有變化' },
+  incomeChangeNote: { type: 'string', description: '收入會怎麼變（加薪、換工作、留停…）' },
+  fixedExpenses: {
+    type: 'array',
+    description: '每月固定支出（房租房貸、管理費水電網路、電話、保險、孝親、小孩寵物、貸款、交通、訂閱…）',
+    items: { type: 'object', properties: { name: { type: 'string' }, amount: { type: 'number' } }, required: ['name', 'amount'] },
+  },
+  annualExpenses: {
+    type: 'array',
+    description: '一年才付一次的大筆支出（牌照稅燃料稅、保險年繳、車子保養、紅包、旅遊、所得稅、年費…），month 是大約幾月',
+    items: { type: 'object', properties: { name: { type: 'string' }, amount: { type: 'number' }, month: { type: 'integer' } }, required: ['name', 'amount'] },
+  },
+  livingExpense: { type: 'number', description: '每月生活費（餐飲、購物、娛樂）' },
+  emergencyMonths: { type: 'integer', description: '緊急預備金想留幾個月生活費（3、6、12）' },
+  otherAssets: { type: 'string', description: '股票以外的投資或資產（基金、儲蓄險…）' },
+  goals: {
+    type: 'array',
+    description: '目標：要做什麼、多少錢、希望哪個月前（YYYY-MM），term＝short（1 年內）/mid（1～5 年）/long',
+    items: {
+      type: 'object',
+      properties: { name: { type: 'string' }, amount: { type: 'number' }, targetMonth: { type: 'string' }, term: { type: 'string', enum: ['short', 'mid', 'long'] } },
+      required: ['name', 'amount'],
+    },
+  },
+  savingTarget: { type: 'number', description: '每月想存多少（金額）' },
+  savingRate: { type: 'integer', description: '或收入的幾 %' },
+  priorities: {
+    type: 'array',
+    description: '優先順序，前面最重要',
+    items: { type: 'string', enum: ['debt', 'emergency', 'goals', 'invest', 'lifestyle'] },
+  },
+  riskProfile: { type: 'string', enum: ['conservative', 'balanced', 'aggressive', 'none'], description: '保守／穩健／積極／先不投資' },
+  cutBack: { type: 'string', description: '想減少的花費' },
+  thoughts: { type: 'string', description: '其他想法' },
+};
 export const CONVERSATION_WINDOW_MS = 10 * 60 * 1000;
 /** What the model answers when a message is nothing it can act on. */
 const NOT_HANDLED = 'NOT_HANDLED';
@@ -112,21 +157,23 @@ const AGENT_TOOLS = [
   },
   {
     type: 'function' as const,
+    name: 'get_finance_plan_questionnaire',
+    description:
+      '財務規劃問卷：profile＝他上次填的答案（null＝沒填過），suggestions＝系統已經知道的（固定收入和發薪日、定期交易/貸款還款/訂閱算出的固定支出、生活費估計、購物車和人生目標裡的存錢目標、淨資產、股票、負債）。要做財務規劃時先呼叫。',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
+    name: 'save_finance_plan_answers',
+    description: '把他這次回答的問卷內容先存起來（只填這次講到的欄位，其他保留上次的）。一段一段問的時候每段答完就存。',
+    parameters: { type: 'object', properties: FINANCE_PLAN_ANSWER_PROPS },
+  },
+  {
+    type: 'function' as const,
     name: 'make_finance_plan',
     description:
-      '產生正式的財務規劃（每月分配、建議預算、接下來 3 步），存起來給 App「規劃」分頁和「套用預算」用。一定要先問過他每月收入、固定支出、想法目標再呼叫，把他說的填進來（會記住，下次不用重講）；回傳整理好的規劃文字。',
-    parameters: {
-      type: 'object',
-      properties: {
-        monthlyIncome: { type: 'number', description: '他說的每月收入；沒講就不填' },
-        fixedExpenses: {
-          type: 'array',
-          description: '他說的每月固定支出（房租、保險、孝親費、貸款、訂閱…）',
-          items: { type: 'object', properties: { name: { type: 'string' }, amount: { type: 'number' } }, required: ['name', 'amount'] },
-        },
-        thoughts: { type: 'string', description: '他的想法、目標、在意的事（想存多少、想買什麼、想投資、要出國…），用他的話整理' },
-      },
-    },
+      '產生正式的財務規劃（每月分配、各目標每月存多少和幾月達成、建議預算、接下來 3 步），存起來給 App「規劃」分頁和「套用預算」用。問卷問完（或他說直接規劃）才呼叫；這次還沒存的答案可以一起帶進來。回傳整理好的規劃文字。',
+    parameters: { type: 'object', properties: FINANCE_PLAN_ANSWER_PROPS },
   },
   {
     type: 'function' as const,
@@ -888,8 +935,9 @@ export class AiAgentService {
       TRIP_AI_GUIDE,
       '',
       '【理財評估】',
-      '要做財務規劃、理財評估、問「薪水怎麼分配」→ 不要馬上給建議，先 get_financial_plan_inputs，然後問他（一次問完，口語、簡短）：1. 每月收入大概多少 2. 每月固定要付的有哪些、各多少（房租、保險、孝親費、貸款、訂閱…）3. 最近有什麼想法或目標（想存多少、想買什麼、想投資、有什麼大支出要準備）。' +
-        'profile 有上次的答案就列出來問「還是這樣嗎？有要改的嗎？」；記帳有固定支出或大筆分類也列出來讓他確認有沒有漏。他回答後 → make_finance_plan（把他說的填進去），用口語講重點，最後問要不要幫他把預算設好 → propose_budgets。他說「直接規劃就好」才不問直接 make_finance_plan。',
+      '要做財務規劃、理財評估、問「薪水怎麼分配」→ 不要馬上給建議，先 get_finance_plan_questionnaire，再分幾則訊息一段一段問（每則問一兩類，口語、簡短，系統已知的直接列出來請他確認，例如「你的學貸每月 4000 我已經算進去了」）：' +
+        '1 收入：每月實拿、幾號發薪、其他收入（年終幾個月、獎金、兼職、租金、股利）、穩不穩定。2 每月固定支出：逐類問有沒有、多少（住：房租房貸管理費水電網路；電話；保險；孝親、小孩、寵物；貸款；交通；訂閱）。3 一年一次的大筆支出：牌照稅燃料稅、保險年繳、車子保養、紅包、旅遊、所得稅、年費，大約幾月。4 每月生活費（餐飲購物娛樂，有記帳就給平均讓他確認）。5 家底：緊急預備金想留幾個月（3/6/12）、股票以外的投資。6 目標：短期（1 年內）、中期（1～5 年）、長期，各要多少錢、希望什麼時候（購物車和人生目標裡的先列出來）。7 想法：每月想存多少、優先順序（還債/預備金/目標/投資/生活品質）、投資風險（保守/穩健/積極/先不投資）、想減少的花費。' +
+        '每段答完就 save_finance_plan_answers 存起來；profile 有上次的答案就整段列出來問「還是這樣嗎？」，沒變就跳下一段。也可以跟他說在 App 財務「規劃」用問卷填比較快。問完 → make_finance_plan，用口語講重點（每月怎麼分、各目標幾月達成），最後問要不要把建議預算設好 → propose_budgets。他說「直接規劃就好」才不問直接 make_finance_plan。',
       '',
       '【財務狀況】',
       '只是問財務狀況怎樣、健檢幾分時：get_financial_health 拿分數跟每項建議，存錢目標再 list_life_goals 看進度，用具體數字給 3 個以內的優先步驟。分數是規則算的，照實說不要自己改分數。',
@@ -987,12 +1035,15 @@ export class AiAgentService {
       }
       case 'get_financial_plan_inputs':
         return this.financePlan.inputs(ctx.userId);
+      case 'get_finance_plan_questionnaire':
+        return this.financePlan.profileForm(ctx.userId);
+      case 'save_finance_plan_answers': {
+        const answers = financePlanAnswers(args);
+        if (Object.keys(answers).length === 0) throw new Error('沒有要存的答案');
+        return { saved: Object.keys(answers), profile: await this.financePlan.saveProfile(ctx.userId, answers) };
+      }
       case 'make_finance_plan': {
-        const answers = {
-          ...(typeof args.monthlyIncome === 'number' && { monthlyIncome: args.monthlyIncome }),
-          ...(Array.isArray(args.fixedExpenses) && { fixedExpenses: args.fixedExpenses as Array<{ name?: unknown; amount?: unknown }> }),
-          ...(typeof args.thoughts === 'string' && { thoughts: args.thoughts }),
-        };
+        const answers = financePlanAnswers(args);
         const { plan, structured } = await this.financePlan.generate(ctx.userId, Object.keys(answers).length ? answers : undefined);
         return { plan, canApplyBudgets: structured.budgets.length > 0, note: '把規劃重點用口語講給他，最後問要不要幫他把建議預算設好（propose_budgets）' };
       }
@@ -1336,4 +1387,9 @@ function describeEvent(data: CalendarEventData): string {
   if (data.allDay) return data.endAt && data.endAt !== data.startAt ? `${data.startAt}～${data.endAt} 全天` : `${data.startAt} 全天`;
   const start = new Date(data.startAt);
   return data.endAt ? slotLabel(start, new Date(data.endAt)) : `${slotLabel(start, start).split('–')[0]}`;
+}
+
+/** AI 帶來的問卷欄位：只留問卷有的 key（內容由 finance-plan-profile.ts 清理）。 */
+function financePlanAnswers(args: ToolArgs): Record<string, unknown> {
+  return Object.fromEntries(Object.keys(FINANCE_PLAN_ANSWER_PROPS).filter((k) => args[k] !== undefined).map((k) => [k, args[k]]));
 }

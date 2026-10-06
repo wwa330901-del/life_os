@@ -16,6 +16,17 @@ export interface PlanBudget {
   reason: string;
 }
 
+/** 每個目標怎麼存（2026-10-07）。 */
+export interface PlanGoal {
+  name: string;
+  amount: number;
+  monthlySaving: number;
+  /** 照這樣存大概哪個月達成（YYYY-MM）。 */
+  eta: string | null;
+  onTrack: boolean;
+  advice: string;
+}
+
 export interface FinancePlanResult {
   summary: string;
   monthlyIncome: number;
@@ -23,6 +34,7 @@ export interface FinancePlanResult {
   budgets: PlanBudget[];
   steps: string[];
   wishlistAdvice: string | null;
+  goals: PlanGoal[];
   generatedAt: string;
 }
 
@@ -48,6 +60,21 @@ export const FINANCE_PLAN_SCHEMA = {
     },
     steps: { type: 'array', items: { type: 'string' } },
     wishlistAdvice: { type: 'string' },
+    goals: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          amount: { type: 'number' },
+          monthlySaving: { type: 'number' },
+          eta: { type: 'string' },
+          onTrack: { type: 'boolean' },
+          advice: { type: 'string' },
+        },
+        required: ['name', 'amount', 'monthlySaving', 'eta', 'onTrack', 'advice'],
+      },
+    },
   },
   required: ['summary', 'allocation', 'budgets', 'steps'],
 };
@@ -78,6 +105,16 @@ export function parseFinancePlan(
       .map((b) => ({ ...b, currentAverage: avg.get(b.category) ?? null })),
     steps: (Array.isArray(data.steps) ? data.steps : []).map(str).filter(Boolean).slice(0, 5),
     wishlistAdvice: str(data.wishlistAdvice) || null,
+    goals: list(data.goals)
+      .map((g) => ({
+        name: str(g.name),
+        amount: Math.round(num(g.amount)),
+        monthlySaving: Math.round(num(g.monthlySaving)),
+        eta: /^\d{4}-\d{2}$/.test(str(g.eta)) ? str(g.eta) : null,
+        onTrack: g.onTrack === true,
+        advice: str(g.advice),
+      }))
+      .filter((g) => g.name && g.amount > 0),
     generatedAt: now.toISOString(),
   };
 }
@@ -96,6 +133,16 @@ export function financePlanText(p: FinancePlanResult): string {
           '',
           '【建議預算】',
           ...p.budgets.map((b) => `・${b.category} ${fmt(b.amount)}${b.currentAverage != null ? `（現在平均 ${fmt(b.currentAverage)}）` : ''}`),
+        ]
+      : []),
+    ...(p.goals?.length
+      ? [
+          '',
+          '【目標怎麼存】',
+          ...p.goals.map(
+            (g) =>
+              `・${g.name} ${fmt(g.amount)}：每月存 ${fmt(g.monthlySaving)}${g.eta ? `，大約 ${g.eta.replace('-', ' 年 ')} 月達成` : ''}${g.onTrack ? '' : '（照原本的時間來不及）'}${g.advice ? `。${g.advice}` : ''}`,
+          ),
         ]
       : []),
     ...(p.wishlistAdvice ? ['', '【購物車】', p.wishlistAdvice] : []),

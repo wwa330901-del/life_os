@@ -20,7 +20,7 @@ function makeService(existingSalary: boolean) {
     create: jest.fn((_u, _s, dto) => Promise.resolve({ amount: dto.amount, dayOfMonth: dto.dayOfMonth })),
     update: jest.fn((_u, _s, _id, dto) => Promise.resolve({ amount: dto.amount, dayOfMonth: dto.dayOfMonth })),
   };
-  const service = new FinancePlanService(prisma as never, {} as never, {} as never, recurring as never, {} as never, {} as never, {} as never);
+  const service = new FinancePlanService(prisma as never, {} as never, {} as never, recurring as never, {} as never, {} as never, {} as never, {} as never);
   return { service, recurring };
 }
 
