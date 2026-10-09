@@ -7,8 +7,8 @@ import '../../state/ai_usage_provider.dart';
 import '../../state/auth_provider.dart';
 
 /// AI 設定（2026-10-02 起 AI 主要用 Claude）：每個人用自己的金鑰，用量算在自己的
-/// 帳戶——沒有平台共用金鑰。Claude 負責全部 AI（LINE／App 對話、規劃、收據、
-/// 知識庫）；Gemini 只負責 Claude 做不到的語音轉文字跟看影片，可以不設。
+/// 帳戶——沒有平台共用金鑰。Claude 負責 LINE／App 對話、規劃、收據；Gemini 負責
+/// 語音轉文字跟知識庫分析（2026-10-09 起知識庫全部用 Gemini）。
 class AiSettingsDialog extends ConsumerWidget {
   const AiSettingsDialog({super.key});
 
@@ -30,7 +30,7 @@ class AiSettingsDialog extends ConsumerWidget {
               const SizedBox(height: 16),
               _KeySection(
                 title: 'Claude 金鑰（必填）',
-                purpose: 'LINE 和 App 的 AI 對話、記帳、排行程、規劃、拍收據、知識庫分析都用它。',
+                purpose: 'LINE 和 App 的 AI 對話、記帳、排行程、規劃、拍收據都用它。',
                 steps: '1. 前往 console.anthropic.com，用 Google 帳號登入\n'
                     '2. 左邊「Billing」綁信用卡並儲值（最少 5 美元），建議到「Limits」設每月上限\n'
                     '3. 左邊「API Keys」→「Create Key」→ 複製 sk-ant- 開頭的金鑰（只會顯示一次）\n'
@@ -43,8 +43,8 @@ class AiSettingsDialog extends ConsumerWidget {
               ),
               const Divider(height: 32),
               _KeySection(
-                title: 'Gemini 金鑰（選填）',
-                purpose: 'Claude 聽不到聲音、看不了影片，所以 LINE 語音訊息轉文字、知識庫的影片分析用 Gemini。免費的金鑰就夠用。',
+                title: 'Gemini 金鑰（知識庫要用）',
+                purpose: '知識庫分析（文章、網頁、圖片、影片）和 LINE 語音訊息轉文字都用 Gemini。免費的金鑰就夠用。',
                 steps: '1. 前往 aistudio.google.com，用 Google 帳號登入\n'
                     '2. 「Get API key」→「Create API key」，選「建立新專案」（沒綁信用卡＝免費）\n'
                     '3. 複製金鑰貼到下面的欄位',

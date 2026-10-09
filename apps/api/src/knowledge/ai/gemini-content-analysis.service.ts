@@ -88,7 +88,7 @@ export interface RawAnalysisOutput {
   fieldValues?: { name: string; value: string }[];
 }
 
-/** 看影片（YouTube、LINE 傳的影片）用 Gemini——Claude 看不了影片。 */
+/** 知識庫內容分析（2026-10-09 起全部用 Gemini）：文字、網頁、圖片、影片。 */
 @Injectable()
 export class GeminiContentAnalysisService implements AiContentAnalysisService {
   private readonly logger = new Logger(GeminiContentAnalysisService.name);

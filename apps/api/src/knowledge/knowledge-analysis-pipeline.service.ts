@@ -16,12 +16,10 @@ import { GEMINI_MODEL } from './ai/gemini-content-analysis.service';
 import { AI_CONTENT_ANALYSIS_SERVICE } from './ai/ai-content-analysis.interface';
 import type { AiContentAnalysisService } from './ai/ai-content-analysis.interface';
 import { AiUsageStatus } from '../../generated/prisma/client.js';
-import { aiUnavailableMessage, claudeUnavailable, geminiUnavailable } from '../ai/ai-errors';
-import { agentModel } from '../ai/claude';
-import { VIDEO_NEEDS_GEMINI_MESSAGE } from './ai/claude-content-analysis.service';
+import { aiUnavailableMessage, geminiUnavailable } from '../ai/ai-errors';
 
 const NO_API_KEY_MESSAGE =
-  '你還沒有設定自己的 AI 金鑰，請先到 App 的「AI 設定」貼上你的 Claude 金鑰才能使用知識庫分析功能。';
+  '你還沒有設定自己的 AI 金鑰，請先到 App 的「AI 設定」貼上你的 Gemini 金鑰才能使用知識庫分析功能（知識庫只用 Gemini，免費的金鑰就可以）。';
 
 /** Ties fetch -> AI analysis -> persistence together, run fire-and-forget
  * from the LINE webhook handler (which has already replied "收到，分析中"
@@ -221,19 +219,19 @@ export class KnowledgeAnalysisPipeline {
     const message = this.errorMessage(error);
     // 使用者自己能處理的照實說；其他（含 IG session 過期）是系統問題，細節
     // 已經 logger.error 通知管理員，使用者只看到「已通知管理員」。
-    return message === NO_API_KEY_MESSAGE || message === INSTAGRAM_UNSUPPORTED_MESSAGE || message === VIDEO_NEEDS_GEMINI_MESSAGE
+    return message === NO_API_KEY_MESSAGE || message === INSTAGRAM_UNSUPPORTED_MESSAGE
       ? message
       : `這則知識庫內容分析失敗了。${SYSTEM_TROUBLE_MESSAGE}`;
   }
 
   private unavailable(error: unknown) {
-    return claudeUnavailable(error) ?? geminiUnavailable(error);
+    return geminiUnavailable(error);
   }
 
-  /** 使用者自己能處理的（沒金鑰、帳戶沒錢、影片要 Gemini）只記 warn，其他才通知管理員。 */
+  /** 使用者自己能處理的（沒金鑰、額度用完）只記 warn，其他才通知管理員。 */
   private logFailure(label: string, error: unknown) {
     const message = this.errorMessage(error);
-    if (this.unavailable(error) || message === NO_API_KEY_MESSAGE || message === VIDEO_NEEDS_GEMINI_MESSAGE) {
+    if (this.unavailable(error) || message === NO_API_KEY_MESSAGE) {
       this.logger.warn(`${label}：${message}`);
     } else {
       this.logger.error(label, error as Error);
@@ -242,7 +240,8 @@ export class KnowledgeAnalysisPipeline {
 
   private async requireApiKey(userId: string): Promise<{ claude: string | null; gemini: string | null }> {
     const user = await this.usersService.findById(userId);
-    if (!user?.claudeApiKey && !user?.geminiApiKey) {
+    // 知識庫（2026-10-09 起）全部用 Gemini，只看 Gemini 金鑰。
+    if (!user?.geminiApiKey) {
       throw new Error(NO_API_KEY_MESSAGE);
     }
     return { claude: user.claudeApiKey, gemini: user.geminiApiKey };
@@ -281,7 +280,7 @@ export class KnowledgeAnalysisPipeline {
         await this.aiUsageService.record({
           userId: ownerUserId,
           feature: 'knowledge',
-          model: keys.claude ? agentModel() : GEMINI_MODEL,
+          model: GEMINI_MODEL,
           inputTokens: 0,
           outputTokens: 0,
           durationMs: Date.now() - startedAt,

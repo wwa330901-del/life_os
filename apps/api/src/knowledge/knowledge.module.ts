@@ -8,7 +8,6 @@ import { AiUsageService } from './ai-usage.service';
 import { ContentFetcherService } from './content-fetcher.service';
 import { InstagramFetcherService } from './instagram-fetcher.service';
 import { GeminiContentAnalysisService } from './ai/gemini-content-analysis.service';
-import { ClaudeContentAnalysisService } from './ai/claude-content-analysis.service';
 import { AI_CONTENT_ANALYSIS_SERVICE } from './ai/ai-content-analysis.interface';
 import { KnowledgeAnalysisPipeline } from './knowledge-analysis-pipeline.service';
 import { KnowledgeExhibitionReminderService } from './knowledge-exhibition-reminder.service';
@@ -37,7 +36,7 @@ import { UsersModule } from '../users/users.module';
     GeminiContentAnalysisService,
     {
       provide: AI_CONTENT_ANALYSIS_SERVICE,
-      useClass: ClaudeContentAnalysisService,
+      useExisting: GeminiContentAnalysisService,
     },
   ],
   exports: [
