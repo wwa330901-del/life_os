@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
 import { FinanceBudgetsService } from '../finance/finance-budgets.service';
+import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { TodosService } from '../todos/todos.service';
-import { FinanceTransactionType } from '../../generated/prisma/client.js';
+import { FinanceAccountType, FinanceTransactionType } from '../../generated/prisma/client.js';
 import { taipeiCurrentMonth } from '../common/taipei-date';
 
 /** Gemini Interactions API's tool-declaration shape (`FunctionT` in the SDK
@@ -27,6 +28,13 @@ export const AI_QUERY_TOOLS = [
         month: { type: 'string', description: '格式 "YYYY-MM"，不填則預設當月' },
       },
     },
+  },
+  {
+    type: 'function' as const,
+    name: 'list_account_balances',
+    description:
+      '取得每個帳戶「現在」的餘額（現金、銀行、信用卡、電子支付…）和全部加總。問「帳戶餘額」「我還有多少錢」「國泰還剩多少」「信用卡欠多少」都用這個。信用卡餘額是負的＝欠款。',
+    parameters: { type: 'object', properties: {} },
   },
   {
     type: 'function' as const,
@@ -79,6 +87,7 @@ export class AiQueryToolsService {
     private readonly prisma: PrismaService,
     private readonly financeTransactions: FinanceTransactionsService,
     private readonly financeBudgets: FinanceBudgetsService,
+    private readonly financeAccounts: FinanceAccountsService,
     private readonly calendarEvents: CalendarEventsService,
     private readonly todosService: TodosService,
   ) {}
@@ -91,6 +100,8 @@ export class AiQueryToolsService {
     switch (name) {
       case 'get_finance_overview':
         return this.getFinanceOverview(userId, args);
+      case 'list_account_balances':
+        return this.listAccountBalances(userId);
       case 'list_finance_transactions':
         return this.listFinanceTransactions(userId, args);
       case 'list_todos':
@@ -126,6 +137,28 @@ export class AiQueryToolsService {
         monthlyAmount: b.monthlyAmount,
         spent: b.spent,
       })),
+    };
+  }
+
+  /** 2026-10-12 使用者說「沒辦法知道我目前所有帳戶的餘額」——AI 原本只看得到
+   * 月收支、看不到帳戶餘額。算法同 App「帳戶」分頁、LINE「財務總覽」。 */
+  private async listAccountBalances(userId: string) {
+    const spaceId = await this.personalSpaceId(userId);
+    if (!spaceId) return { error: '這個使用者還沒有個人空間' };
+    const accounts = await this.financeAccounts.list(userId, spaceId);
+    if (accounts.length === 0) return { accounts: [], note: '還沒有任何帳戶，請先到 App 的記帳「帳戶」分頁新增' };
+    const isCard = (a: (typeof accounts)[number]) => a.type === FinanceAccountType.CREDIT_CARD;
+    const sum = (list: typeof accounts) => Math.round(list.reduce((total, a) => total + a.balance, 0));
+    return {
+      accounts: accounts.map((a) => ({
+        name: a.name,
+        type: a.type,
+        balance: Math.round(a.balance),
+        ...(isCard(a) && a.balance < 0 && { creditCardDebt: Math.round(-a.balance) }),
+      })),
+      total: sum(accounts),
+      totalWithoutCreditCards: sum(accounts.filter((a) => !isCard(a))),
+      creditCardDebt: -sum(accounts.filter((a) => isCard(a) && a.balance < 0)),
     };
   }
 

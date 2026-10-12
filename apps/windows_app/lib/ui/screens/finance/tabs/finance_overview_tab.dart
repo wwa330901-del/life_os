@@ -175,19 +175,43 @@ class _TotalAssetsCard extends StatelessWidget {
       color: scheme.primaryContainer.withValues(alpha: 0.3),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('總資產（${accounts.length} 個帳戶）', style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  Text(formatAmount(total), style: Theme.of(context).textTheme.headlineMedium),
-                ],
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('總資產（${accounts.length} 個帳戶）', style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: 4),
+                      Text(formatAmount(total), style: Theme.of(context).textTheme.headlineMedium),
+                    ],
+                  ),
+                ),
+                Icon(Icons.account_balance_wallet_outlined, size: 32, color: scheme.primary),
+              ],
             ),
-            Icon(Icons.account_balance_wallet_outlined, size: 32, color: scheme.primary),
+            // 2026-10-12 使用者說「沒辦法知道我目前所有帳戶的餘額」——原本只有
+            // 總數、要切到「帳戶」分頁才看得到每個，這裡直接列出來。
+            if (accounts.isNotEmpty) ...[
+              const Divider(height: 24),
+              for (final a in accounts)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(a.name, overflow: TextOverflow.ellipsis)),
+                      Text(
+                        a.type == FinanceAccountType.creditCard && a.balance < 0
+                            ? '欠款 ${formatAmount(-a.balance)}'
+                            : formatAmount(a.balance),
+                        style: TextStyle(fontWeight: FontWeight.w600, color: a.balance < 0 ? scheme.error : null),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ],
         ),
       ),
