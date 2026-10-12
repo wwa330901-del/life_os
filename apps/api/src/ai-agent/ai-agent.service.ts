@@ -900,7 +900,8 @@ export class AiAgentService {
       `帳戶：${accounts.map((a) => a.name).join('、') || '（還沒有帳戶）'}`,
       `支出分類：${expense.join('、') || '（無）'}`,
       `收入分類：${income.join('、') || '（無）'}`,
-      '分類一律從上面挑意思最接近的；使用者沒講帳戶就不要填 accountName，系統猜完你要問他確認。使用者說「改成 X 帳戶」就用 accountName=X 重新 record_transaction。',
+      '分類一律從上面挑意思最接近的；使用者沒講帳戶就不要填 accountName，系統猜完你要問他確認。使用者說「改成 X 帳戶」就用 accountName=X 重新 record_transaction。' +
+        '一則訊息裡有好幾筆（分好幾行或用逗號隔開，例如「交通 250 現金」換行「晚餐 700 中信卡」）→ 每一筆各自 record_transaction（可以同一輪一起呼叫），最後一則回覆逐筆列出記了什麼；有哪筆記不起來就說是哪一筆、為什麼。',
       '錢在自己的帳戶之間移動（轉帳、匯到自己另一個帳戶、提款領現金、現金存進銀行）→ record_transfer，不要記成支出加收入。',
       '',
       '【行程】',

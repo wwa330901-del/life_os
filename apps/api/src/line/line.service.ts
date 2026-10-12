@@ -564,6 +564,14 @@ export class LineService {
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
     if (batchLines.length >= 2) {
+      // 2026-10-12 使用者回報「交通 250 現金／晚餐 700 中信卡」分兩行就全部
+      // 「看不懂」（一行一則 AI 都記得起來）。有固定格式以外的行、又有 AI →
+      // 整則交給 AI 一筆一筆記；AI 接不住才回到逐行固定格式。
+      const allFixedFormat = batchLines.every((line) =>
+        LineService.BATCH_LINE_PREFIXES.some((p) => line.replace(LineService.LEADING_LINE_NUMBER, '').startsWith(p)),
+      );
+      const aiAlreadyFailed = this.eventState.getStore()?.aiFailed === true;
+      if (claudeApiKey && !allFixedFormat && !aiAlreadyFailed && (await this.tryAiAgent(link, text, replyToken, claudeApiKey, true))) return;
       const summaries: string[] = [];
       for (let i = 0; i < batchLines.length; i++) {
         const result = await this.tryBatchLine(link, batchLines[i]);
@@ -807,6 +815,8 @@ export class LineService {
   }
 
   private static readonly LEADING_LINE_NUMBER = /^\d+[.\)、\-]\s*/;
+  /** 開頭是這些的行 `tryBatchLine` 才看得懂（順序同 tryBatchLine）。 */
+  private static readonly BATCH_LINE_PREFIXES = ['新增', '買股', '賣股', '支出', '收入', '借出', '借入', '代墊'];
 
   /** One line of a 條列式批次訊息 (see the batch check in
    * `handleTextForLinkedUser`) — tries each 登陸-style command in turn
