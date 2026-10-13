@@ -152,7 +152,7 @@ const AGENT_TOOLS = [
     type: 'function' as const,
     name: 'get_financial_plan_inputs',
     description:
-      '理財評估要用的數據：固定月收入（薪資）與固定支出、近 3 個月有記帳的月數與平均收入/支出、各分類月平均花費與目前預算、可設預算的分類、財務健檢、淨資產，以及 profile（他上次親口說的收入、固定支出、想法；null＝還沒問過）。做理財評估、推薦預算、問「薪水怎麼分配」時先呼叫。',
+      '理財評估要用的數據：固定月收入（薪資）與固定支出、近 3 個月有記帳的月數與平均收入/支出、各分類月平均花費與目前預算、可設預算的分類、財務健檢、淨資產，以及 profile（他上次親口說的收入、固定支出、想法；null＝還沒問過）。只是要看數據時用；要給分配建議或推薦預算一律走 make_finance_plan（App「規劃」分頁看的是那份），不要自己另外算一套。',
     parameters: { type: 'object', properties: {} },
   },
   {
@@ -188,7 +188,8 @@ const AGENT_TOOLS = [
   {
     type: 'function' as const,
     name: 'propose_budgets',
-    description: '把你推薦的每月預算幫他設好（分類名稱要用 budgetableCategories 裡的）。回傳 needsConfirmation，他同意才會設。',
+    description:
+      '幫他設每月預算。剛做完財務規劃要套用 → 不要帶 budgets，會直接用規劃裡的建議預算（跟 App「規劃」分頁一模一樣，不要自己另外想數字）。只有他明確說要改某個分類的金額（例如「餐飲改 8000」）才帶 budgets，分類名稱要用 budgetableCategories 裡的。回傳 needsConfirmation，他同意才會設。',
     parameters: {
       type: 'object',
       properties: {
@@ -197,7 +198,6 @@ const AGENT_TOOLS = [
           items: { type: 'object', properties: { categoryName: { type: 'string' }, monthlyAmount: { type: 'number' } }, required: ['categoryName', 'monthlyAmount'] },
         },
       },
-      required: ['budgets'],
     },
   },
   {
@@ -940,9 +940,10 @@ export class AiAgentService {
       TRIP_AI_GUIDE,
       '',
       '【理財評估】',
-      '要做財務規劃、理財評估、問「薪水怎麼分配」→ 不要馬上給建議，先 get_finance_plan_questionnaire，再分幾則訊息一段一段問（每則問一兩類，口語、簡短，系統已知的直接列出來請他確認，例如「你的學貸每月 4000 我已經算進去了」）：' +
-        '1 收入：每月實拿、幾號發薪、其他收入（年終幾個月、獎金、兼職、租金、股利）、穩不穩定。2 每月固定支出：逐類問有沒有、多少（住：房租房貸管理費水電網路；電話；保險；孝親、小孩、寵物；貸款；交通；訂閱）。3 一年一次的大筆支出：牌照稅燃料稅、保險年繳、車子保養、紅包、旅遊、所得稅、年費，大約幾月。4 每月生活費（餐飲購物娛樂，有記帳就給平均讓他確認）。5 家底：緊急預備金想留幾個月（3/6/12）、股票以外的投資。6 目標：短期（1 年內）、中期（1～5 年）、長期，各要多少錢、希望什麼時候（購物車和人生目標裡的先列出來）。7 想法：每月想存多少、優先順序（還債/預備金/目標/投資/生活品質）、投資風險（保守/穩健/積極/先不投資）、想減少的花費。' +
-        '每段答完就 save_finance_plan_answers 存起來；profile 有上次的答案就整段列出來問「還是這樣嗎？」，沒變就跳下一段。也可以跟他說在 App 財務「規劃」用問卷填比較快。問完 → make_finance_plan，用口語講重點（每月怎麼分、各目標幾月達成），最後問要不要把建議預算設好 → propose_budgets。他說「直接規劃就好」才不問直接 make_finance_plan。',
+      '要做財務規劃、理財評估、問「薪水怎麼分配」→ 先 get_finance_plan_questionnaire，然後只用「一則」訊息問完（每多問一輪都很花錢）：' +
+        '先把系統已經知道的簡短列出來請他確認（月收入和發薪日、固定支出、生活費、存錢目標、家底；profile 有上次的答案就列上次的），同一則再問系統不知道、最重要的 2～3 件事（每月想存多少或優先順序、投資風險、有沒有一年一次的大筆支出）。' +
+        '他回答後直接 make_finance_plan，把這次的答案一起帶進去（不用另外 save_finance_plan_answers）。想逐項細填就請他用 App 財務「規劃」的問卷。他說「直接規劃就好」就不問直接 make_finance_plan。' +
+        '規劃完照 make_finance_plan 回傳的 note 做：plan 原文照傳，不要自己改數字。',
       '',
       '【財務狀況】',
       '只是問財務狀況怎樣、健檢幾分時：get_financial_health 拿分數跟每項建議，存錢目標再 list_life_goals 看進度，用具體數字給 3 個以內的優先步驟。分數是規則算的，照實說不要自己改分數。',
@@ -1050,7 +1051,13 @@ export class AiAgentService {
       case 'make_finance_plan': {
         const answers = financePlanAnswers(args);
         const { plan, structured } = await this.financePlan.generate(ctx.userId, Object.keys(answers).length ? answers : undefined);
-        return { plan, canApplyBudgets: structured.budgets.length > 0, note: '把規劃重點用口語講給他，最後問要不要幫他把建議預算設好（propose_budgets）' };
+        return {
+          plan,
+          canApplyBudgets: structured.budgets.length > 0,
+          note:
+            '把 plan 原文傳給他（數字一個都不要改、不要自己重算或另外加建議，App「規劃」分頁顯示的就是這份）。' +
+            (structured.budgets.length > 0 ? '最後問一句要不要把【建議預算】設好；要的話呼叫 propose_budgets 不帶 budgets。' : ''),
+        };
       }
       case 'set_fixed_income':
         return this.financePlan.setFixedIncome(ctx.userId, {
@@ -1059,11 +1066,15 @@ export class AiAgentService {
           ...(typeof args.accountName === 'string' && args.accountName && { accountName: args.accountName }),
         });
       case 'propose_budgets': {
-        const items = (Array.isArray(args.budgets) ? args.budgets : [])
+        const given = (Array.isArray(args.budgets) ? args.budgets : [])
           .map((b) => b as { categoryName?: unknown; monthlyAmount?: unknown })
           .map((b) => ({ categoryName: String(b.categoryName ?? ''), monthlyAmount: Number(b.monthlyAmount) }))
           .filter((b) => b.categoryName && b.monthlyAmount > 0);
-        if (items.length === 0) throw new Error('沒有可以設定的預算');
+        // 沒帶＝套用最近一次規劃的建議預算（跟 App「規劃」分頁同一份）。
+        const items = given.length
+          ? given
+          : ((await this.financePlan.latest(ctx.userId))?.budgets ?? []).map((b) => ({ categoryName: b.category, monthlyAmount: b.amount }));
+        if (items.length === 0) throw new Error('還沒有規劃的建議預算，先 make_finance_plan，或請他說要設哪個分類多少');
         const summary = `設定每月預算：${items.map((b) => `${b.categoryName} ${Math.round(b.monthlyAmount).toLocaleString('en-US')}`).join('、')}`;
         ctx.pending = { action: { kind: 'budgets', summary, data: items }, turnId: ctx.turnId };
         return { needsConfirmation: true, summary };

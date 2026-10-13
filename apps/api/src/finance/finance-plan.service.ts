@@ -334,12 +334,42 @@ export class FinancePlanService {
     const spaceId = await this.spaceIdOf(userId);
     const categories = await this.prisma.financeCategory.findMany({ where: { spaceId, kind: FinanceCategoryKind.EXPENSE } });
     const results: string[] = [];
+    const applied: Array<{ category: string; amount: number }> = [];
     for (const item of items) {
       const category = categories.find((c) => c.name === item.categoryName) ?? categories.find((c) => c.name.includes(item.categoryName));
       if (!category || !(item.monthlyAmount > 0)) continue;
-      await this.budgets.upsert(userId, spaceId, { categoryId: category.id, monthlyAmount: Math.round(item.monthlyAmount) });
-      results.push(`${category.name} ${Math.round(item.monthlyAmount).toLocaleString('en-US')}`);
+      const amount = Math.round(item.monthlyAmount);
+      await this.budgets.upsert(userId, spaceId, { categoryId: category.id, monthlyAmount: amount });
+      results.push(`${category.name} ${amount.toLocaleString('en-US')}`);
+      applied.push({ category: category.name, amount });
     }
+    await this.syncPlanBudgets(spaceId, applied);
     return results;
+  }
+
+  /** 2026-10-13 使用者回報 LINE 設的預算跟 App「規劃」分頁對不上：在 LINE 改了某個
+   * 分類的金額，就把最近一次規劃裡的建議預算也改成一樣，兩邊看到的永遠相同。 */
+  private async syncPlanBudgets(spaceId: string, applied: Array<{ category: string; amount: number }>) {
+    if (applied.length === 0) return;
+    const space = await this.prisma.space.findUniqueOrThrow({ where: { id: spaceId }, select: { financePlan: true } });
+    const plan = space.financePlan as unknown as FinancePlanResult | null;
+    if (!plan) return;
+    let changed = false;
+    const budgets = [...plan.budgets];
+    for (const a of applied) {
+      const existing = budgets.findIndex((b) => b.category === a.category);
+      if (existing >= 0) {
+        if (budgets[existing].amount === a.amount) continue;
+        budgets[existing] = { ...budgets[existing], amount: a.amount, reason: '你自己調整的金額' };
+      } else {
+        budgets.push({ category: a.category, amount: a.amount, reason: '你自己加的', currentAverage: null });
+      }
+      changed = true;
+    }
+    if (!changed) return;
+    await this.prisma.space.update({
+      where: { id: spaceId },
+      data: { financePlan: { ...plan, budgets } as unknown as Prisma.InputJsonValue },
+    });
   }
 }
