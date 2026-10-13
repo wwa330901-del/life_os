@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
+import { decryptSecret, encryptSecret } from '../common/secret-box';
 
 export interface GoogleCalendarEventInput {
   title: string;
@@ -65,14 +66,14 @@ export class GoogleCalendarService {
       create: {
         spaceId,
         connectedByUserId,
-        refreshToken: tokens.refresh_token,
-        accessToken: tokens.access_token ?? null,
+        refreshToken: encryptSecret(tokens.refresh_token),
+        accessToken: encryptSecret(tokens.access_token ?? null),
         accessTokenExpiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
       },
       update: {
         connectedByUserId,
-        refreshToken: tokens.refresh_token,
-        accessToken: tokens.access_token ?? null,
+        refreshToken: encryptSecret(tokens.refresh_token),
+        accessToken: encryptSecret(tokens.access_token ?? null),
         accessTokenExpiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
         syncToken: null, // reconnecting invalidates any prior incremental cursor
       },
@@ -90,9 +91,13 @@ export class GoogleCalendarService {
       connection.accessToken &&
       connection.accessTokenExpiresAt &&
       connection.accessTokenExpiresAt.getTime() - EXPIRY_SAFETY_MARGIN_MS > Date.now();
-    if (stillValid) return connection.accessToken!;
+    const cachedToken = stillValid ? decryptSecret(connection.accessToken) : null;
+    if (cachedToken) return cachedToken;
 
-    this.oauthClient.setCredentials({ refresh_token: connection.refreshToken });
+    // 權杖存在資料庫是加密的（common/secret-box）；解不開＝加密金鑰換過，只能重新連結。
+    const refreshToken = decryptSecret(connection.refreshToken);
+    if (!refreshToken) throw new UnauthorizedException('Google 行事曆授權失效，請重新連結行事曆。');
+    this.oauthClient.setCredentials({ refresh_token: refreshToken });
     const { credentials } = await this.oauthClient.refreshAccessToken();
     if (!credentials.access_token) {
       throw new UnauthorizedException('無法刷新 Google 存取權杖，可能需要重新連結行事曆。');
@@ -100,7 +105,7 @@ export class GoogleCalendarService {
     await this.prisma.googleCalendarConnection.update({
       where: { id: connection.id },
       data: {
-        accessToken: credentials.access_token,
+        accessToken: encryptSecret(credentials.access_token),
         accessTokenExpiresAt: credentials.expiry_date ? new Date(credentials.expiry_date) : null,
       },
     });

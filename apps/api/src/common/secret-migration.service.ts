@@ -29,8 +29,28 @@ export class SecretMigrationService implements OnApplicationBootstrap {
       for (const c of connections) {
         await this.prisma.appleCalendarConnection.update({ where: { id: c.id }, data: { appPassword: encryptSecret(c.appPassword) } });
       }
-      if (users.length + connections.length > 0) {
-        this.logger.log(`已加密 ${users.length} 個 Gemini 金鑰、${connections.length} 個 iCloud 密碼`);
+      // 2026-10-13：Google 行事曆授權權杖也加密。
+      const google = await this.prisma.googleCalendarConnection.findMany({
+        where: { NOT: { refreshToken: { startsWith: ENC } } },
+        select: { id: true, refreshToken: true, accessToken: true },
+      });
+      for (const g of google) {
+        await this.prisma.googleCalendarConnection.update({
+          where: { id: g.id },
+          data: { refreshToken: encryptSecret(g.refreshToken), accessToken: encryptSecret(g.accessToken) },
+        });
+      }
+      const claudeUsers = await this.prisma.user.findMany({
+        where: { claudeApiKey: { not: null }, NOT: { claudeApiKey: { startsWith: ENC } } },
+        select: { id: true, claudeApiKey: true },
+      });
+      for (const u of claudeUsers) {
+        await this.prisma.user.update({ where: { id: u.id }, data: { claudeApiKey: encryptSecret(u.claudeApiKey) } });
+      }
+      if (users.length + connections.length + google.length + claudeUsers.length > 0) {
+        this.logger.log(
+          `已加密 ${users.length} 個 Gemini 金鑰、${claudeUsers.length} 個 Claude 金鑰、${connections.length} 個 iCloud 密碼、${google.length} 個 Google 行事曆授權`,
+        );
       }
     } catch (error) {
       this.logger.error('舊資料加密失敗（下次啟動會再試）', error as Error);

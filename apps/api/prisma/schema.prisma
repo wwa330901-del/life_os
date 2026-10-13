@@ -360,10 +360,9 @@ model CalendarEventException {
 
 /// A CALENDAR space's link to one Google Calendar (always the connecting
 /// user's "primary" calendar for now — no per-space calendar picker yet).
-/// `refreshToken` follows this codebase's existing pattern of storing
-/// third-party secrets as plain columns (no field-level encryption anywhere
-/// else in this schema either) — Postgres access itself is the trust
-/// boundary. `syncToken` is Google's incremental-sync cursor; null forces a
+/// `refreshToken`/`accessToken` are stored encrypted (common/secret-box,
+/// since 2026-10-13), like the AI keys and iCloud passwords.
+/// `syncToken` is Google's incremental-sync cursor; null forces a
 /// full resync (e.g. right after connecting, or if Google invalidates it).
 model GoogleCalendarConnection {
   id      String @id @default(uuid())
