@@ -182,6 +182,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
             accountId: result.accountId,
             date: result.date,
             note: result.note,
+            opening: result.opening,
           );
       _invalidate();
     } on ApiException catch (e) {
@@ -210,7 +211,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
             id: advance.id,
             title: result.title,
             amount: result.amount,
-            accountId: result.accountId,
+            accountId: advance.opening ? null : result.accountId,
             date: result.date,
             note: result.note ?? '',
           );
@@ -329,8 +330,11 @@ class _AdvanceCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '代墊 ${formatAmount(advance.amount)}（${accountNameOf[advance.accountId] ?? '?'}）'
-              '${advance.settled ? '' : ' · 還剩 ${formatAmount(advance.outstanding)}'}',
+              advance.opening
+                  ? '開始記錄時還沒收回 ${formatAmount(advance.amount)}（之前就墊的，不動帳戶）'
+                        '${advance.settled ? '' : ' · 還剩 ${formatAmount(advance.outstanding)}'}'
+                  : '代墊 ${formatAmount(advance.amount)}（${accountNameOf[advance.accountId] ?? '?'}）'
+                        '${advance.settled ? '' : ' · 還剩 ${formatAmount(advance.outstanding)}'}',
               style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
             ),
             if (advance.note != null && advance.note!.isNotEmpty)
@@ -387,11 +391,13 @@ class _AdvanceCreateResult {
     required this.accountId,
     required this.date,
     this.note,
+    this.opening = false,
   });
 
+  final bool opening;
   final String title;
   final double amount;
-  final String accountId;
+  final String? accountId;
   final DateTime date;
   final String? note;
 }
@@ -407,7 +413,11 @@ class _AdvanceCreateDialog extends StatefulWidget {
 }
 
 class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
-  late String? _accountId = widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
+  late bool _opening = widget.existing?.opening ?? false;
+  // 期初代墊的 accountId 是空字串（沒有帳戶），不能當下拉選單的值。
+  late String? _accountId = (widget.existing?.opening ?? false)
+      ? widget.accounts.firstOrNull?.id
+      : widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
   late final _titleController = TextEditingController(text: widget.existing?.title ?? '');
   late final _amountController = TextEditingController(
     text: widget.existing == null ? '' : widget.existing!.amount.toStringAsFixed(0),
@@ -437,15 +447,16 @@ class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
     final accountId = _accountId;
     final title = _titleController.text.trim();
     final amount = double.tryParse(_amountController.text.trim());
-    if (accountId == null || title.isEmpty || amount == null || amount <= 0) return;
+    if ((!_opening && accountId == null) || title.isEmpty || amount == null || amount <= 0) return;
 
     Navigator.of(context).pop(
       _AdvanceCreateResult(
         title: title,
         amount: amount,
-        accountId: accountId,
+        accountId: _opening ? null : accountId,
         date: _date,
         note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+        opening: _opening,
       ),
     );
   }
@@ -461,6 +472,14 @@ class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (widget.existing == null)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _opening,
+                  onChanged: (v) => setState(() => _opening = v ?? false),
+                  title: const Text('之前就墊的（期初代墊）'),
+                  subtitle: const Text('開始記帳前就墊出去、還沒收回的；只記還沒收回多少，不會從帳戶扣錢'),
+                ),
               TextField(
                 controller: _titleController,
                 decoration: const InputDecoration(labelText: '說明（例如「材料款」）'),
@@ -469,23 +488,27 @@ class _AdvanceCreateDialogState extends State<_AdvanceCreateDialog> {
               TextField(
                 controller: _amountController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: '金額'),
+                decoration: InputDecoration(
+                  labelText: _opening ? (widget.existing != null ? '開始記錄時還沒收回多少' : '現在還沒收回多少') : '金額',
+                ),
               ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _accountId,
-                decoration: const InputDecoration(labelText: '帳戶'),
-                items: widget.accounts
-                    .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
-                    .toList(),
-                onChanged: (value) => setState(() => _accountId = value),
-              ),
+              if (!_opening) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _accountId,
+                  decoration: const InputDecoration(labelText: '帳戶'),
+                  items: widget.accounts
+                      .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
+                      .toList(),
+                  onChanged: (value) => setState(() => _accountId = value),
+                ),
+              ],
               const SizedBox(height: 12),
               InkWell(
                 onTap: _pickDate,
                 child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: '日期',
+                  decoration: InputDecoration(
+                    labelText: _opening ? '開始記錄的日期' : '日期',
                     suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
                   ),
                   child: Text('${_date.year}/${_date.month}/${_date.day}'),

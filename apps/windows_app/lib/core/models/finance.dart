@@ -511,8 +511,11 @@ class FinanceAdvance {
     required this.settled,
     required this.repayments,
     this.note,
+    this.opening = false,
   });
 
+  /// 期初代墊（開始記帳前就墊出去的）：[amount] 是開始記錄時還沒收回多少，沒有帳戶。
+  final bool opening;
   final String id;
   final String title;
   final double amount;
@@ -537,6 +540,7 @@ class FinanceAdvance {
       repayments: (json['repayments'] as List<dynamic>? ?? const [])
           .map((e) => FinanceSettlementEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
+      opening: json['opening'] as bool? ?? false,
     );
   }
 }

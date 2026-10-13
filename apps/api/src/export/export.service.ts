@@ -164,7 +164,13 @@ export class ExportService {
           { header: '已收回', width: 12 },
           { header: '結清', width: 8 },
         ],
-        rows: advances.map((a) => [day(a.initialTransaction?.date), a.title, a.initialTransaction?.amount ?? null, sum(a.repayments), a.settled ? '是' : '否']),
+        rows: advances.map((a) => [
+          day(a.initialTransaction?.date ?? a.openingDate),
+          a.openingAmount != null && !a.initialTransaction ? `${a.title}（期初代墊）` : a.title,
+          a.initialTransaction?.amount ?? a.openingAmount ?? null,
+          sum(a.repayments),
+          a.settled ? '是' : '否',
+        ]),
       },
       {
         name: '股票交易',

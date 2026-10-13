@@ -35,7 +35,7 @@ export type RecordPending =
       };
     }
   | { kind: 'loan_repayment'; summary: string; data: { loanId: string; amount: number; accountId: string; date: string } }
-  | { kind: 'advance'; summary: string; data: { title: string; amount: number; accountId: string; date: string; note?: string } }
+  | { kind: 'advance'; summary: string; data: { title: string; amount: number; accountId?: string; date: string; note?: string; opening?: boolean } }
   | { kind: 'advance_repayment'; summary: string; data: { advanceId: string; amount: number; accountId: string; date: string } }
   | { kind: 'stock_trade'; summary: string; data: { type: StockTransactionType; stockCode: string; shares: number; pricePerShare: number; accountId: string; tradeDate: string } }
   | { kind: 'delete'; summary: string; data: { entity: 'transaction' | 'todo' | 'calendar_event'; id: string } }
@@ -176,6 +176,21 @@ export const RECORD_TOOLS = [
       type: 'object',
       properties: { title: { type: 'string' }, amount: { type: 'number' }, note: { type: 'string' }, ...optionalAccount, ...optionalDate },
       required: ['title', 'amount'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'propose_existing_advance',
+    description:
+      '登記開始記帳前就墊出去、還沒收回的代墊（期初代墊）：只記「現在還沒收回多少」，不會從任何帳戶扣錢（錢早就付了）。回傳 needsConfirmation，要問使用者確認。',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: '事由，例如「公司材料費」' },
+        outstanding: { type: 'number', description: '現在還沒收回多少' },
+        note: { type: 'string' },
+      },
+      required: ['title', 'outstanding'],
     },
   },
   {
@@ -332,7 +347,7 @@ export class RecordToolsService {
             ...(l.opening && { existingDebt: true }),
             ...(l.installmentAmount && { monthlyInstallment: `每月 ${l.installmentDay} 號還 ${fmt(l.installmentAmount)}` }),
           })),
-          advances: advances.items.map((a) => ({ id: a.id, title: a.title, outstanding: a.outstanding })),
+          advances: advances.items.map((a) => ({ id: a.id, title: a.title, outstanding: a.outstanding, ...(a.opening && { existingAdvance: true }) })),
         };
       }
       case 'propose_loan': {
@@ -406,6 +421,19 @@ export class RecordToolsService {
         const title = String(args.title ?? '').trim() || '代墊';
         const summary = `代墊「${title}」${fmt(amount)}，從「${account.name}」付（${date}）`;
         return { pending: { kind: 'advance', summary, data: { title, amount, accountId: account.id, date, ...(typeof args.note === 'string' && args.note && { note: args.note }) } } };
+      }
+      case 'propose_existing_advance': {
+        const outstanding = Number(args.outstanding);
+        if (!(outstanding > 0)) throw new Error('金額要大於 0');
+        const title = String(args.title ?? '').trim() || '代墊';
+        const summary = `記一筆之前就墊出去的：「${title}」還沒收回 ${fmt(outstanding)}（不動帳戶）`;
+        return {
+          pending: {
+            kind: 'advance',
+            summary,
+            data: { title, amount: outstanding, date: today, opening: true, ...(typeof args.note === 'string' && args.note && { note: args.note }) },
+          },
+        };
       }
       case 'propose_advance_repayment': {
         if (!(amount > 0)) throw new Error('金額要大於 0');

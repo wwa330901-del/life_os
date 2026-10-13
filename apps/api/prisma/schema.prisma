@@ -693,6 +693,12 @@ model FinanceAdvance {
   /// kept up to date by `FinanceAdvancesService`.
   settled Boolean @default(false)
 
+  /// 期初代墊（開始記帳前就墊出去、還沒收回的）：沒有 initialTransaction，
+  /// 不動任何帳戶，金額存在這裡。跟 FinanceLoan.openingAmount 同一套。
+  openingAmount Float?
+  openingDate   DateTime? @db.Date
+  openingNote   String?
+
   initialTransaction FinanceTransaction?       @relation("AdvanceInitialTransaction")
   repayments         FinanceAdvanceRepayment[]
 }

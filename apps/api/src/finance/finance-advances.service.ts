@@ -7,6 +7,17 @@ import { CreateFinanceAdvanceRepaymentDto } from './dto/create-finance-advance-r
 import { UpdateFinanceAdvanceDto } from './dto/update-finance-advance.dto';
 import { UpdateFinanceAdvanceRepaymentDto } from './dto/update-finance-advance-repayment.dto';
 
+type PrincipalShape = {
+  initialTransaction: { amount: number } | null;
+  openingAmount: number | null;
+  repayments: { transaction: { amount: number } | null }[];
+};
+
+/** 一般代墊用 initialTransaction 的金額；期初代墊沒有交易，用 openingAmount。 */
+function advancePrincipal(advance: { initialTransaction: { amount: number } | null; openingAmount: number | null }): number {
+  return advance.initialTransaction?.amount ?? advance.openingAmount ?? 0;
+}
+
 const advanceInclude = {
   initialTransaction: true,
   repayments: { include: { transaction: true }, orderBy: { createdAt: 'asc' as const } },
@@ -42,9 +53,10 @@ export class FinanceAdvancesService {
         spaceId,
         ...(filter.settled !== undefined && { settled: filter.settled }),
         ...((filter.from || filter.to) && {
-          initialTransaction: {
-            date: { ...(filter.from && { gte: filter.from }), ...(filter.to && { lte: filter.to }) },
-          },
+          OR: [
+            { initialTransaction: { date: { ...(filter.from && { gte: filter.from }), ...(filter.to && { lte: filter.to }) } } },
+            { openingDate: { ...(filter.from && { gte: filter.from }), ...(filter.to && { lte: filter.to }) } },
+          ],
         }),
       },
       include: advanceInclude,
@@ -62,6 +74,22 @@ export class FinanceAdvancesService {
 
   async create(userId: string, spaceId: string, dto: CreateFinanceAdvanceDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
+    if (dto.opening) {
+      // 期初代墊（開始記帳前就墊出去的）：只記現在還沒收回多少，不動任何帳戶。
+      const opening = await this.prisma.financeAdvance.create({
+        data: {
+          spaceId,
+          title: dto.title,
+          openingAmount: dto.amount,
+          openingDate: new Date(dto.date),
+          openingNote: dto.note ?? null,
+        },
+        include: advanceInclude,
+      });
+      await this.syncSettled(opening.id, opening);
+      return this.withOutstanding(opening);
+    }
+    if (!dto.accountId) throw new BadRequestException('請選帳戶');
     await this.assertAccount(spaceId, dto.accountId);
 
     const advance = await this.prisma.financeAdvance.create({
@@ -145,15 +173,27 @@ export class FinanceAdvancesService {
           throw new BadRequestException(`金額不能低於已收回的 ${repaid} 元`);
         }
       }
-      await this.prisma.financeTransaction.update({
-        where: { id: advance.initialTransaction!.id },
-        data: {
-          ...(dto.amount !== undefined && { amount: dto.amount }),
-          ...(dto.accountId !== undefined && { accountId: dto.accountId }),
-          ...(dto.date !== undefined && { date: new Date(dto.date) }),
-          ...(dto.note !== undefined && { note: dto.note }),
-        },
-      });
+      if (advance.initialTransaction) {
+        await this.prisma.financeTransaction.update({
+          where: { id: advance.initialTransaction.id },
+          data: {
+            ...(dto.amount !== undefined && { amount: dto.amount }),
+            ...(dto.accountId !== undefined && { accountId: dto.accountId }),
+            ...(dto.date !== undefined && { date: new Date(dto.date) }),
+            ...(dto.note !== undefined && { note: dto.note }),
+          },
+        });
+      } else {
+        // 期初代墊：金額/日期/備註存在代墊本身，沒有帳戶。
+        await this.prisma.financeAdvance.update({
+          where: { id: advanceId },
+          data: {
+            ...(dto.amount !== undefined && { openingAmount: dto.amount }),
+            ...(dto.date !== undefined && { openingDate: new Date(dto.date) }),
+            ...(dto.note !== undefined && { openingNote: dto.note }),
+          },
+        });
+      }
     }
 
     const updatedAmount = await this.getOrThrow(spaceId, advanceId);
@@ -177,7 +217,7 @@ export class FinanceAdvancesService {
     }
 
     if (dto.amount !== undefined) {
-      const principal = advance.initialTransaction?.amount ?? 0;
+      const principal = advancePrincipal(advance);
       const otherRepaid = advance.repayments
         .filter((r) => r.id !== repaymentId)
         .reduce((sum, r) => sum + (r.transaction?.amount ?? 0), 0);
@@ -225,23 +265,25 @@ export class FinanceAdvancesService {
     }
   }
 
-  private outstandingOf(advance: {
-    initialTransaction: { amount: number } | null;
-    repayments: { transaction: { amount: number } | null }[];
-  }): number {
-    const principal = advance.initialTransaction?.amount ?? 0;
+  private outstandingOf(advance: PrincipalShape): number {
+    const principal = advancePrincipal(advance);
     const repaid = advance.repayments.reduce((sum, r) => sum + (r.transaction?.amount ?? 0), 0);
     return Math.max(0, principal - repaid);
   }
 
-  private withOutstanding<
-    T extends {
-      initialTransaction: { amount: number } | null;
-      repayments: { transaction: { amount: number } | null }[];
-    },
-  >(advance: T) {
+  private withOutstanding<T extends PrincipalShape & { openingDate: Date | null; openingNote: string | null }>(advance: T) {
     const outstanding = this.outstandingOf(advance);
-    return { ...advance, outstanding, settled: outstanding <= 0 };
+    return {
+      ...advance,
+      // 期初代墊沒有交易：給一個同形狀的 initialTransaction（accountId 空字串），
+      // App 照常顯示金額/日期；opening=true 時 App 不顯示帳戶。
+      initialTransaction:
+        advance.initialTransaction ??
+        { id: null, amount: advance.openingAmount ?? 0, date: advance.openingDate ?? new Date(0), accountId: '', note: advance.openingNote },
+      opening: advance.initialTransaction == null,
+      outstanding,
+      settled: outstanding <= 0,
+    };
   }
 
   /** Persists the real `settled` column so `list()` can filter on it at the
@@ -249,10 +291,7 @@ export class FinanceAdvancesService {
    * can change an advance's outstanding balance. */
   private async syncSettled(
     advanceId: string,
-    advance: {
-      initialTransaction: { amount: number } | null;
-      repayments: { transaction: { amount: number } | null }[];
-    },
+    advance: PrincipalShape,
   ) {
     await this.prisma.financeAdvance.update({
       where: { id: advanceId },

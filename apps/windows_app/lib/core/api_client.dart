@@ -1063,14 +1063,16 @@ class ApiClient {
     required String spaceId,
     required String title,
     required double amount,
-    required String accountId,
+    required String? accountId,
     required DateTime date,
     String? note,
+    bool opening = false,
   }) async {
     await _post('/spaces/$spaceId/finance/advances', {
       'title': title,
       'amount': amount,
-      'accountId': accountId,
+      if (!opening) 'accountId': accountId,
+      if (opening) 'opening': true,
       'date': _dateOnly(date),
       if (note != null && note.isNotEmpty) 'note': note,
     });
