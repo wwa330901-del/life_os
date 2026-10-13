@@ -152,6 +152,7 @@ model User {
   knowledgeCategories        KnowledgeCategory[]
   knowledgeItems             KnowledgeItem[]
   aiUsageLogs                AiUsageLog[]
+  aiToolCalls                AiToolCall[]
   calendarSharesGiven        CalendarShare[]            @relation("CalendarShareOwner")
   calendarSharesReceived     CalendarShare[]            @relation("CalendarShareViewer")
   financeLoanInvitesSent     FinanceLoanInvite[]        @relation("LoanInviteFrom")
@@ -1248,6 +1249,24 @@ model KnowledgeFieldValue {
 enum AiUsageStatus {
   SUCCESS
   FAILED
+}
+
+/// AI 功能使用次數（2026-10-13）：AI 在對話裡每呼叫一次工具記一筆，用來看哪些
+/// 功能根本沒在用、之後可以拿掉省錢。工具→功能的對照在
+/// src/knowledge/ai-feature-usage.ts。
+model AiToolCall {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tool    String
+  success Boolean
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 /// One AI call's usage/cost — currently only 知識庫's Gemini calls log here,

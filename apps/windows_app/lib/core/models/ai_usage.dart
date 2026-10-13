@@ -92,6 +92,7 @@ class AiUsageHistory {
     required this.thisWeek,
     required this.thisMonth,
     required this.recentEntries,
+    this.featureUsage,
   });
 
   final AiUsagePeriodSummary today;
@@ -99,12 +100,60 @@ class AiUsageHistory {
   final AiUsagePeriodSummary thisMonth;
   final List<AiUsageLogEntry> recentEntries;
 
+  /// 各 AI 功能用了幾次（2026-10-13）。舊版伺服器沒有就是 null。
+  final AiFeatureUsage? featureUsage;
+
   factory AiUsageHistory.fromJson(Map<String, dynamic> json) => AiUsageHistory(
     today: AiUsagePeriodSummary.fromJson(json['today'] as Map<String, dynamic>),
     thisWeek: AiUsagePeriodSummary.fromJson(json['thisWeek'] as Map<String, dynamic>),
     thisMonth: AiUsagePeriodSummary.fromJson(json['thisMonth'] as Map<String, dynamic>),
     recentEntries: (json['recentEntries'] as List<dynamic>)
         .map((e) => AiUsageLogEntry.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    featureUsage: json['featureUsage'] == null
+        ? null
+        : AiFeatureUsage.fromJson(json['featureUsage'] as Map<String, dynamic>),
+  );
+}
+
+/// 近 [days] 天每個 AI 功能用了幾次；[unused]＝沒用過、可以考慮拿掉的功能。
+class AiFeatureUsage {
+  const AiFeatureUsage({required this.days, required this.collecting, required this.features, required this.unused});
+
+  final int days;
+
+  /// 開始記錄還沒滿 [days] 天，「沒用過」可能只是還沒記到。
+  final bool collecting;
+  final List<AiFeatureCount> features;
+  final List<String> unused;
+
+  factory AiFeatureUsage.fromJson(Map<String, dynamic> json) => AiFeatureUsage(
+    days: json['days'] as int,
+    collecting: json['collecting'] as bool? ?? false,
+    features: (json['features'] as List<dynamic>)
+        .map((e) => AiFeatureCount.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    unused: (json['unused'] as List<dynamic>).cast<String>(),
+  );
+}
+
+class AiFeatureCount {
+  const AiFeatureCount({required this.feature, required this.count, this.lastUsedAt, required this.tools});
+
+  final String feature;
+  final int count;
+  final DateTime? lastUsedAt;
+
+  /// 這個功能底下每個小動作（記一筆收支、查帳戶餘額…）各用了幾次。
+  final List<({String label, int count})> tools;
+
+  factory AiFeatureCount.fromJson(Map<String, dynamic> json) => AiFeatureCount(
+    feature: json['feature'] as String,
+    count: json['count'] as int,
+    lastUsedAt: json['lastUsedAt'] == null ? null : DateTime.parse(json['lastUsedAt'] as String).toLocal(),
+    tools: (json['tools'] as List<dynamic>)
+        .map((e) => e as Map<String, dynamic>)
+        .map((e) => (label: e['label'] as String, count: e['count'] as int))
         .toList(),
   );
 }

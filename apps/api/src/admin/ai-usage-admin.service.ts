@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
-import { AI_PROVIDERS, aiProvider, featureLabel, taipeiUsageWindows } from '../knowledge/ai-usage.service';
+import { AI_PROVIDERS, aiProvider, featureLabel, featureUsageLines, queryFeatureUsage, taipeiUsageWindows } from '../knowledge/ai-usage.service';
 import { AiUsageStatus } from '../../generated/prisma/client.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -50,7 +50,7 @@ export class AiUsageAdminService {
     const { todayStart, weekStart, monthStart } = taipeiUsageWindows();
     const trendStart = new Date(todayStart.getTime() - (TREND_DAYS - 1) * DAY_MS);
     const since = trendStart < monthStart ? trendStart : monthStart;
-    const [rows, users, recentFailures] = await Promise.all([
+    const [rows, users, recentFailures, featureUsage] = await Promise.all([
       this.prisma.aiUsageLog.findMany({
         where: { createdAt: { gte: since } },
         select: { userId: true, feature: true, model: true, costUsd: true, status: true, createdAt: true },
@@ -62,6 +62,7 @@ export class AiUsageAdminService {
         take: 20,
         select: { createdAt: true, userId: true, feature: true, errorMessage: true },
       }),
+      queryFeatureUsage(this.prisma, null),
     ]);
     const nameOf = new Map(users.map((u) => [u.id, u.name || u.email]));
     const month = rows.filter((r) => r.createdAt >= monthStart);
@@ -97,6 +98,8 @@ export class AiUsageAdminService {
         .map(([feature, list]) => ({ feature, label: featureLabel(feature), ...sum(list) }))
         .sort((a, b) => b.costUsd - a.costUsd),
       daily,
+      /** 近 90 天所有使用者各 AI 功能用了幾次（哪些功能沒人用、可以拿掉）。 */
+      featureUsage,
       recentFailures: recentFailures.map((f) => ({
         at: f.createdAt,
         user: nameOf.get(f.userId) ?? '（已刪除）',
@@ -121,6 +124,7 @@ export class AiUsageAdminService {
       ...o.providers.map((p) => `・${p.provider} ${p.count} 次 ${usd(p.costUsd)}${p.failures ? `（失敗 ${p.failures}）` : ''}`),
       ...(o.features.length ? ['', '本月各功能：', ...o.features.slice(0, 6).map((f) => `・${f.label} ${f.count} 次 ${usd(f.costUsd)}`)] : []),
       ...(o.users.length > 1 ? ['', '本月各使用者：', ...o.users.slice(0, 6).map((u) => `・${u.name} ${u.count} 次 ${usd(u.costUsd)}`)] : []),
+      ...featureUsageLines(o.featureUsage),
       '',
       '詳細在 App「管理」→「AI 用量」。（金額是依 token 估的，實際以 Anthropic／Google 帳單為準）',
     ].join('\n');

@@ -6,7 +6,7 @@ import { ReceiptReaderService, receiptToAgentText } from './receipt-reader.servi
 import { SYSTEM_TROUBLE_MESSAGE } from '../error-report/system-trouble';
 import { aiUnavailableMessage, AiUnavailableError } from '../ai/ai-errors';
 import { needClaudeKey } from '../ai/claude';
-import { AiUsageService } from '../knowledge/ai-usage.service';
+import { AiUsageService, featureUsageLines } from '../knowledge/ai-usage.service';
 import { AiUsageAdminService } from '../admin/ai-usage-admin.service';
 import { SubscriptionService } from '../finance/subscription.service';
 import { subscriptionsText } from '../finance/subscriptions';
@@ -2118,6 +2118,7 @@ export class LineService {
       ...line('近 7 天', h.thisWeek),
       ...line('本月', h.thisMonth),
       '（金額是估的，實際以 Anthropic／Google 帳單為準）',
+      ...featureUsageLines(h.featureUsage),
     ].join('\n');
   }
 

@@ -683,8 +683,10 @@ export class AiAgentService {
                 ? await getWeather(String(args.placeName ?? ''), Number(args.latitude), Number(args.longitude))
                 : await this.stockTools.execute(userId, call.name, args);
             results.push({ type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(output) ?? 'null' });
+            await this.aiUsage.recordToolCall(userId, call.name, true);
           } catch (error) {
             results.push({ type: 'tool_result', tool_use_id: call.id, is_error: true, content: error instanceof Error ? error.message : String(error) });
+            await this.aiUsage.recordToolCall(userId, call.name, false);
           }
         }
         messages.push({ role: 'assistant', content: response.content }, { role: 'user', content: results });
@@ -773,8 +775,10 @@ export class AiAgentService {
           try {
             const output = await this.execute(ctx, call.name, (call.input ?? {}) as ToolArgs);
             results.push({ type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(output) ?? 'null' });
+            await this.aiUsage.recordToolCall(ctx.userId, call.name, true);
           } catch (error) {
             results.push({ type: 'tool_result', tool_use_id: call.id, is_error: true, content: error instanceof Error ? error.message : String(error) });
+            await this.aiUsage.recordToolCall(ctx.userId, call.name, false);
           }
         }
         messages.push({ role: 'user', content: results });
