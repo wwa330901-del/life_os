@@ -7,6 +7,15 @@ import { AppleCalendarService } from './apple-calendar.service';
 import { CalendarPushService } from './calendar-push.service';
 import { CalendarRecurrenceFrequency, CalendarSyncTarget } from '../../generated/prisma/client.js';
 
+/** iCalendar 全天事件的 DTEND 是「不包含」的（比最後一天多一天），我們的
+ * endAt 是「包含」語意——要 -1 天換算回來，不然一天的全天行程會顯示成兩天
+ * （2026-10-14 使用者回報）。跟 CalendarSyncService 的 Google 匯入同一個規則。 */
+export function inclusiveEnd(start: Date, end: Date | null, allDay: boolean): Date | null {
+  if (!end || !allDay) return end;
+  const lastDay = new Date(end.getTime() - 86400000);
+  return lastDay.getTime() < start.getTime() ? start : lastDay;
+}
+
 const LOOKBACK_DAYS = 7;
 const LOOKAHEAD_DAYS = 90;
 
@@ -168,7 +177,7 @@ export class AppleCalendarSyncService {
             uid: `${vevent.uid}::${occurrence.start.toISOString()}`,
             title: this.plainText(occurrence.summary) || '（無標題）',
             startAt: occurrence.start,
-            endAt: occurrence.end,
+            endAt: inclusiveEnd(occurrence.start, occurrence.end, occurrence.isFullDay),
             allDay: occurrence.isFullDay,
             href: null,
             etag: null,
@@ -179,7 +188,7 @@ export class AppleCalendarSyncService {
           uid: vevent.uid,
           title: this.plainText(vevent.summary) || '（無標題）',
           startAt: vevent.start,
-          endAt: vevent.end ?? null,
+          endAt: inclusiveEnd(vevent.start, vevent.end ?? null, vevent.datetype === 'date'),
           allDay: vevent.datetype === 'date',
           href,
           etag,
