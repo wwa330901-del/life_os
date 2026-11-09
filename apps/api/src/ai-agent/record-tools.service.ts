@@ -37,7 +37,7 @@ export type RecordPending =
   | { kind: 'loan_repayment'; summary: string; data: { loanId: string; amount: number; accountId: string; date: string } }
   | { kind: 'advance'; summary: string; data: { title: string; amount: number; accountId?: string; date: string; note?: string; opening?: boolean } }
   | { kind: 'advance_repayment'; summary: string; data: { advanceId: string; amount: number; accountId: string; date: string } }
-  | { kind: 'stock_trade'; summary: string; data: { type: StockTransactionType; stockCode: string; shares: number; pricePerShare: number; accountId: string; tradeDate: string } }
+  | { kind: 'stock_trade'; summary: string; data: { type: StockTransactionType; stockCode: string; shares: number; pricePerShare: number; accountId: string; tradeDate: string; backfill?: boolean } }
   | { kind: 'delete'; summary: string; data: { entity: 'transaction' | 'todo' | 'calendar_event'; id: string } }
   | { kind: 'card_payment'; summary: string; data: { cardId: string; fromAccountId: string; amount: number; date: string } };
 
@@ -207,7 +207,7 @@ export const RECORD_TOOLS = [
     type: 'function' as const,
     name: 'propose_stock_trade',
     description:
-      '記一筆股票買賣（例如「買了 3 張 0050 成交 152」→ shares=3000）。一張＝1000 股，零股就照股數。股票代碼不確定就先問。回傳 needsConfirmation。',
+      '記一筆股票買賣（例如「買了 3 張 0050 成交 152」→ shares=3000）。一張＝1000 股，零股就照股數。股票代碼不確定就先問。他說「補登記」或這筆早就交割過了，backfill=true（登記當下就扣款／入帳，不等 T+2）。回傳 needsConfirmation。',
     parameters: {
       type: 'object',
       properties: {
@@ -215,6 +215,7 @@ export const RECORD_TOOLS = [
         stockCode: { type: 'string' },
         shares: { type: 'number' },
         pricePerShare: { type: 'number' },
+        backfill: { type: 'boolean', description: '補登記：已經交割過，登記當下就扣款／入帳' },
         ...optionalAccount,
         ...optionalDate,
       },
@@ -451,8 +452,9 @@ export class RecordToolsService {
         if (!(shares > 0) || !(price > 0)) throw new Error('股數和成交價都要大於 0');
         const account = await this.resolveAccount(spaceId, args.accountName, 'stock');
         const type = args.type === 'SELL' ? StockTransactionType.SELL : StockTransactionType.BUY;
-        const summary = `${type === StockTransactionType.BUY ? '買進' : '賣出'} ${stockCode} ${fmt(shares)} 股，成交價 ${price}，金額 ${fmt(shares * price)}，交割帳戶「${account.name}」（${date}）`;
-        return { pending: { kind: 'stock_trade', summary, data: { type, stockCode, shares, pricePerShare: price, accountId: account.id, tradeDate: date } } };
+        const backfill = args.backfill === true;
+        const summary = `${backfill ? '補登記：' : ''}${type === StockTransactionType.BUY ? '買進' : '賣出'} ${stockCode} ${fmt(shares)} 股，成交價 ${price}，金額 ${fmt(shares * price)}，交割帳戶「${account.name}」（${date}）${backfill ? `，登記後直接${type === StockTransactionType.BUY ? '扣款' : '入帳'}` : ''}`;
+        return { pending: { kind: 'stock_trade', summary, data: { type, stockCode, shares, pricePerShare: price, accountId: account.id, tradeDate: date, backfill } } };
       }
       case 'update_transaction':
         return this.updateTransaction(userId, spaceId, args);

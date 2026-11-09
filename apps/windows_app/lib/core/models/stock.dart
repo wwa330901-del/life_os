@@ -36,6 +36,7 @@ class StockTransaction {
     required this.note,
     required this.pending,
     required this.recurringInvestmentId,
+    required this.backfilled,
   });
 
   final String id;
@@ -52,7 +53,11 @@ class StockTransaction {
   final bool pending;
   final String? recurringInvestmentId;
 
+  /// 補登記的舊交易：登記當下就交割，打錯可以連收支一起刪。
+  final bool backfilled;
+
   factory StockTransaction.fromJson(Map<String, dynamic> json) => StockTransaction(
+    backfilled: json['backfillFinanceTransactionId'] != null,
     id: json['id'] as String,
     stockCode: json['stockCode'] as String,
     type: StockTransactionTypeJson.fromJson(json['type'] as String),

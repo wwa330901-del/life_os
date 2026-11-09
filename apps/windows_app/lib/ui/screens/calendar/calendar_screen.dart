@@ -497,6 +497,7 @@ class _CalendarBody extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 12, 20),
             child: TableCalendar<CalendarEvent>(
+              locale: 'zh_TW',
               firstDay: DateTime(2000),
               lastDay: DateTime(2100),
               focusedDay: focusedDay,

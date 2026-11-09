@@ -1185,6 +1185,7 @@ class ApiClient {
     required DateTime tradeDate,
     required String accountId,
     String? note,
+    bool backfill = false,
   }) async {
     await _post('/spaces/$spaceId/stocks/transactions', {
       'stockCode': stockCode,
@@ -1194,6 +1195,7 @@ class ApiClient {
       'tradeDate': _dateOnlyIso(tradeDate),
       'accountId': accountId,
       if (note != null && note.isNotEmpty) 'note': note,
+      if (backfill) 'backfill': true,
     });
   }
 

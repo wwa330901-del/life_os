@@ -1,10 +1,14 @@
+import { randomUUID } from 'crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Prisma, StockTransactionType } from '../../generated/prisma/client.js';
 import { StocksAccessService } from './stocks-access.service';
 import { StocksHoldingsService } from './stocks-holdings.service';
 import { CreateStockTransactionDto } from './dto/create-stock-transaction.dto';
 import { UpdateStockTransactionDto } from './dto/update-stock-transaction.dto';
 import { computeSettlementDate } from './stock-settlement-schedule';
+import { StocksSettlementService } from './stocks-settlement.service';
+import { taipeiDateKey, taipeiDateKeyToUtcMidnight } from '../common/taipei-date';
 
 @Injectable()
 export class StocksTransactionsService {
@@ -12,6 +16,7 @@ export class StocksTransactionsService {
     private readonly prisma: PrismaService,
     private readonly access: StocksAccessService,
     private readonly holdings: StocksHoldingsService,
+    private readonly settlement: StocksSettlementService,
   ) {}
 
   /** Cursor-paginated (30/page) — used to fetch this space's entire trade
@@ -46,21 +51,48 @@ export class StocksTransactionsService {
     await this.assertAccount(spaceId, dto.accountId);
 
     const tradeDate = new Date(dto.tradeDate);
-    const transaction = await this.prisma.stockTransaction.create({
-      data: {
-        spaceId,
-        stockCode: dto.stockCode,
-        type: dto.type,
-        pricePerShare: dto.pricePerShare,
-        totalCost: dto.pricePerShare * dto.shares,
-        shares: dto.shares,
-        tradeDate,
-        settlementDate: computeSettlementDate(tradeDate),
-        accountId: dto.accountId,
-        note: dto.note,
-      },
-    });
+    const row = {
+      spaceId,
+      stockCode: dto.stockCode,
+      type: dto.type,
+      pricePerShare: dto.pricePerShare,
+      totalCost: dto.pricePerShare * dto.shares,
+      shares: dto.shares,
+      tradeDate,
+      accountId: dto.accountId,
+      note: dto.note,
+    };
+    const settlementDate = computeSettlementDate(tradeDate);
+    const transaction = dto.backfill
+      ? await this.createBackfilled(row, settlementDate)
+      : await this.prisma.stockTransaction.create({ data: { ...row, settlementDate } });
     await this.holdings.recompute(spaceId, dto.stockCode);
+    return transaction;
+  }
+
+  /// 補登記：錢其實已經動過了，當下就記收支、標成已交割。收支日期用實際的
+  /// T+2（才會落在正確的月份）；T+2 還沒到的話就算今天。
+  private async createBackfilled(
+    row: Omit<Prisma.StockTransactionUncheckedCreateInput, 'settlementDate'> & {
+      type: StockTransactionType;
+      totalCost: number;
+      tradeDate: Date;
+    },
+    t2Date: Date,
+  ) {
+    const today = taipeiDateKeyToUtcMidnight(taipeiDateKey(new Date()));
+    if (row.tradeDate > today) {
+      throw new BadRequestException('補登記的成交日不能是未來的日期');
+    }
+    const settlementDate = t2Date < today ? t2Date : today;
+    const data = await this.settlement.financeEntry(row, settlementDate, '補登記交割入帳');
+    const financeTransactionId = randomUUID();
+    const [transaction] = await this.prisma.$transaction([
+      this.prisma.stockTransaction.create({
+        data: { ...row, settlementDate, settled: true, backfillFinanceTransactionId: financeTransactionId },
+      }),
+      this.prisma.financeTransaction.create({ data: { ...data, id: financeTransactionId } }),
+    ]);
     return transaction;
   }
 
@@ -118,10 +150,16 @@ export class StocksTransactionsService {
   async remove(userId: string, spaceId: string, id: string) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const existing = await this.getOrThrow(spaceId, id);
-    if (existing.settled) {
+    if (existing.settled && !existing.backfillFinanceTransactionId) {
       throw new BadRequestException('已交割的股票交易不能刪除');
     }
-    await this.prisma.stockTransaction.delete({ where: { id } });
+    // 補登記打錯可以刪，當初一起記的收支也要一起收掉。
+    await this.prisma.$transaction([
+      ...(existing.backfillFinanceTransactionId
+        ? [this.prisma.financeTransaction.deleteMany({ where: { id: existing.backfillFinanceTransactionId, spaceId } })]
+        : []),
+      this.prisma.stockTransaction.delete({ where: { id } }),
+    ]);
     if (existing.pending && existing.recurringInvestmentId) {
       await this.prisma.stockRecurringInvestment.update({
         where: { id: existing.recurringInvestmentId },

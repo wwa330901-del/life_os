@@ -1,15 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-/** 訊息下方的快速按鈕：按了會回傳 data（postback），聊天室顯示 label。 */
-export interface LineQuickReplyButton {
+/** 訊息裡的按鈕：按了會回傳 data（postback），聊天室顯示 label。 */
+export interface LineMessageButton {
   label: string;
   data: string;
 }
 
-export function toQuickReply(buttons: LineQuickReplyButton[]) {
+/** 按鈕做在訊息本身（Flex）而不是 quick reply：quick reply 只掛在最新一則，
+ * 下一則訊息一來就消失，連續兩個提醒時第一個就沒辦法按了。 */
+export function buttonMessage(text: string, buttons: LineMessageButton[]) {
   return {
-    items: buttons.map((b) => ({ type: 'action', action: { type: 'postback', label: b.label, data: b.data, displayText: b.label } })),
+    type: 'flex',
+    altText: text.slice(0, 400),
+    contents: {
+      type: 'bubble',
+      body: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text, wrap: true }] },
+      footer: {
+        type: 'box',
+        layout: 'horizontal',
+        spacing: 'sm',
+        contents: buttons.map((b, index) => ({
+          type: 'button',
+          style: index === 0 ? 'primary' : 'secondary',
+          height: 'sm',
+          action: { type: 'postback', label: b.label, data: b.data, displayText: b.label },
+        })),
+      },
+    },
   };
 }
 
@@ -37,26 +55,27 @@ export class LineNotifierService {
   }
 
   /** No-op if this user never linked a LINE account. */
-  async notifyByUser(userId: string, text: string, quickReply?: LineQuickReplyButton[]): Promise<void> {
+  async notifyByUser(userId: string, text: string, buttons?: LineMessageButton[]): Promise<void> {
     const link = await this.prisma.lineAccountLink.findUnique({ where: { userId } });
     if (!link?.lineUserId) return;
-    await this.push(link.lineUserId, text, quickReply);
+    await this.push(link.lineUserId, buttons?.length ? buttonMessage(text, buttons) : { type: 'text', text });
   }
 
-  private async push(lineUserId: string, text: string, quickReply?: LineQuickReplyButton[]): Promise<void> {
+  private async push(lineUserId: string, message: Record<string, unknown>): Promise<void> {
     if (!this.channelAccessToken) {
       this.logger.warn('LINE_CHANNEL_ACCESS_TOKEN not set, skipping push');
       return;
     }
     try {
-      await fetch('https://api.line.me/v2/bot/message/push', {
+      const response = await fetch('https://api.line.me/v2/bot/message/push', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.channelAccessToken}`,
         },
-        body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text, ...(quickReply?.length && { quickReply: toQuickReply(quickReply) }) }] }),
+        body: JSON.stringify({ to: lineUserId, messages: [message] }),
       });
+      if (!response.ok) this.logger.error(`LINE push 失敗（${response.status}）：${await response.text()}`);
     } catch (error) {
       this.logger.error('Failed to send LINE push', error);
     }

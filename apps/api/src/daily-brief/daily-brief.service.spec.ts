@@ -59,7 +59,7 @@ describe('LINE 代辦提醒', () => {
     const createdAt = new Date('2026-10-06T07:20:00Z');
     expect(todoReminderText({ title: '倒垃圾', remindCount: 0, createdAt })).toContain('⏰ 時間到了：倒垃圾');
     expect(todoReminderText({ title: '倒垃圾', remindCount: 1, createdAt })).toContain('第 2 次提醒');
-    expect(todoReminderButtons('t1').map((b) => b.data)).toEqual(['todo:done:t1', 'todo:snooze:t1:10', 'todo:snooze:t1:60']);
+    expect(todoReminderButtons('t1').map((b) => b.data)).toEqual(['todo:done:t1', 'todo:snooze:t1']);
   });
 
   it('時間到推播並排下一次；被別人搶先處理就不重傳', async () => {
@@ -77,6 +77,6 @@ describe('LINE 代辦提醒', () => {
       data: { remindAt: new Date('2026-10-07T07:30:00Z'), remindCount: { increment: 1 } },
     });
     expect(notifier.notifyByUser).toHaveBeenCalledTimes(1);
-    expect(notifier.notifyByUser.mock.calls[0][2]).toHaveLength(3);
+    expect(notifier.notifyByUser.mock.calls[0][2]).toHaveLength(2);
   });
 });

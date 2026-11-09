@@ -45,30 +45,9 @@ export class StocksSettlementService {
     for (const t of due) {
       try {
         const label = t.type === StockTransactionType.BUY ? '買入' : '賣出';
-        const category =
-          t.type === StockTransactionType.BUY
-            ? await this.financeCategories.findOrCreateSystemCategory(
-                t.spaceId,
-                STOCK_BUY_CATEGORY_NAME,
-                FinanceCategoryKind.EXPENSE,
-              )
-            : await this.financeCategories.findOrCreateSystemCategory(
-                t.spaceId,
-                STOCK_SELL_CATEGORY_NAME,
-                FinanceCategoryKind.INCOME,
-              );
+        const data = await this.financeEntry(t, today, '交割入帳');
         await this.prisma.$transaction([
-          this.prisma.financeTransaction.create({
-            data: {
-              spaceId: t.spaceId,
-              type: t.type === StockTransactionType.BUY ? FinanceTransactionType.EXPENSE : FinanceTransactionType.INCOME,
-              amount: t.totalCost,
-              accountId: t.accountId,
-              categoryId: category.id,
-              date: today,
-              note: `股票${label} ${t.stockCode}（交割入帳）`,
-            },
-          }),
+          this.prisma.financeTransaction.create({ data }),
           this.prisma.stockTransaction.update({ where: { id: t.id }, data: { settled: true } }),
         ]);
         await this.lineNotifier.notifyBySpace(
@@ -79,6 +58,29 @@ export class StocksSettlementService {
         this.logger.error(`股票交易 ${t.id} 交割失敗`, error);
       }
     }
+  }
+
+  /** 一筆交割要記進帳戶的收支內容；排程交割和補登記共用。 */
+  async financeEntry(
+    t: { spaceId: string; type: StockTransactionType; totalCost: number; accountId: string; stockCode: string },
+    date: Date,
+    noteSuffix: string,
+  ) {
+    const isBuy = t.type === StockTransactionType.BUY;
+    const category = await this.financeCategories.findOrCreateSystemCategory(
+      t.spaceId,
+      isBuy ? STOCK_BUY_CATEGORY_NAME : STOCK_SELL_CATEGORY_NAME,
+      isBuy ? FinanceCategoryKind.EXPENSE : FinanceCategoryKind.INCOME,
+    );
+    return {
+      spaceId: t.spaceId,
+      type: isBuy ? FinanceTransactionType.EXPENSE : FinanceTransactionType.INCOME,
+      amount: t.totalCost,
+      accountId: t.accountId,
+      categoryId: category.id,
+      date,
+      note: `股票${isBuy ? '買入' : '賣出'} ${t.stockCode}（${noteSuffix}）`,
+    };
   }
 
   /** Once a day: for every unsettled BUY whose settlementDate is tomorrow,

@@ -847,6 +847,10 @@ model StockTransaction {
   recurringInvestmentId String?
   recurringInvestment   StockRecurringInvestment? @relation(fields: [recurringInvestmentId], references: [id], onDelete: SetNull)
 
+  /// 補登記（已經交割過的舊交易）當下就記好的那筆收支。有值才能連收支一起刪掉；
+  /// 一般 T+2 交割的列沒有這個關聯，交割後就不能刪。
+  backfillFinanceTransactionId String?
+
   @@index([spaceId, stockCode])
   @@index([settlementDate, settled])
 }
@@ -995,6 +999,10 @@ model LineAccountLink {
   /// their next plain-text reply is parsed as the date/time to schedule,
   /// which then creates the CalendarEvent + ProjectTodo for this item.
   pendingExhibitionScheduleItemId String?
+
+  /// 按了提醒的「延後」、等使用者打要延到什麼時候的那件代辦；pendingSnoozeAt 是按的時間，隔太久就不算在回答。
+  pendingSnoozeTodoId String?
+  pendingSnoozeAt     DateTime?
 
   /// LINE 萬用 AI（2026-09-30）的上一輪 interaction id + 時間——AI 反問
   /// （「存到 Google 還是 iPhone？」「記在哪個帳戶？」）時，下一則訊息接著同

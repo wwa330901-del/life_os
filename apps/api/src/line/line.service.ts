@@ -57,13 +57,16 @@ import {
   taipeiWallClockToUtc,
   formatTaipeiDateTime,
 } from '../common/taipei-date';
+import { dateToPickerValue, parseSnoozeTime, pickerValueToDate } from './snooze-time';
+
+const SNOOZE_REPLY_WINDOW_MS = 30 * 60 * 1000;
 
 interface LineWebhookEvent {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
   message?: { type: string; id?: string; text?: string; latitude?: number; longitude?: number; address?: string; title?: string };
-  postback?: { data?: string };
+  postback?: { data?: string; params?: { datetime?: string } };
 }
 
 /** A handler's one output message, decoupled from *how* it gets to the
@@ -209,10 +212,10 @@ export class LineService {
           where: { lineUserId },
         });
 
-        // LINE 代辦提醒下面的「完成了」「10 分鐘後」按鈕。
+        // LINE 代辦提醒上的「完成了」「延後」按鈕。
         if (event.type === 'postback') {
           const data = event.postback?.data ?? '';
-          if (link && data.startsWith('todo:')) await this.handleTodoPostback(link.userId, data, replyToken);
+          if (link && data.startsWith('todo:')) await this.handleTodoPostback(link, data, replyToken, event.postback?.params?.datetime);
           continue;
         }
 
@@ -269,8 +272,9 @@ export class LineService {
     }
   }
 
-  private async handleTodoPostback(userId: string, data: string, replyToken: string) {
+  private async handleTodoPostback(link: LineAccountLink, data: string, replyToken: string, pickedDatetime?: string) {
     const [, action, todoId, minutesRaw] = data.split(':');
+    const userId = link.userId;
     const todo = await this.prisma.projectTodo.findUnique({ where: { id: todoId } });
     if (!todo || todo.personalOwnerUserId !== userId) {
       await this.reply(replyToken, '這件代辦已經刪掉了。');
@@ -285,12 +289,84 @@ export class LineService {
       await this.reply(replyToken, `👍 「${todo.title}」完成，已打勾。`);
       return;
     }
-    if (action === 'snooze') {
-      const minutes = Math.min(24 * 60, Math.max(1, Number(minutesRaw) || 10));
-      const at = new Date(Date.now() + minutes * 60 * 1000);
-      await this.prisma.projectTodo.update({ where: { id: todo.id }, data: { remindAt: at } });
-      await this.reply(replyToken, `好，${formatTaipeiDateTime(at, false).split(' ').pop()} 再提醒你「${todo.title}」。`);
+    if (action === 'snooze-at') {
+      const at = pickedDatetime ? pickerValueToDate(pickedDatetime) : null;
+      if (!at || at <= new Date()) {
+        await this.reply(replyToken, '那個時間已經過了，再選一次或直接打時間。');
+        return;
+      }
+      await this.snoozeTodo(link.id, todo, at, replyToken);
+      return;
     }
+    if (action === 'snooze') {
+      // 新版提醒沒帶分鐘，先問要延到什麼時候；舊訊息上的「10 分鐘後」「1 小時後」照舊。
+      if (minutesRaw) {
+        const minutes = Math.min(24 * 60, Math.max(1, Number(minutesRaw) || 10));
+        await this.snoozeTodo(link.id, todo, new Date(Date.now() + minutes * 60 * 1000), replyToken);
+        return;
+      }
+      await this.prisma.lineAccountLink.update({
+        where: { id: link.id },
+        data: { pendingSnoozeTodoId: todo.id, pendingSnoozeAt: new Date() },
+      });
+      const now = Date.now();
+      await this.callReplyApi({
+        replyToken,
+        messages: [
+          {
+            type: 'text',
+            text: `「${todo.title}」要延到什麼時候？\n直接打就好，例如：30分、2小時、15:30、下午3點、明天9點`,
+            quickReply: {
+              items: [
+                {
+                  type: 'action',
+                  action: {
+                    type: 'datetimepicker',
+                    label: '📅 選時間',
+                    data: `todo:snooze-at:${todo.id}`,
+                    mode: 'datetime',
+                    initial: dateToPickerValue(new Date(now + 60 * 60 * 1000)),
+                    min: dateToPickerValue(new Date(now)),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    }
+  }
+
+  private async snoozeTodo(linkId: string, todo: { id: string; title: string }, at: Date, replyToken: string) {
+    await this.prisma.projectTodo.update({ where: { id: todo.id }, data: { remindAt: at } });
+    await this.prisma.lineAccountLink.update({
+      where: { id: linkId },
+      data: { pendingSnoozeTodoId: null, pendingSnoozeAt: null },
+    });
+    await this.reply(replyToken, `好，${formatTaipeiDateTime(at, false)} 再提醒你「${todo.title}」。`);
+  }
+
+  /** 按了「延後」之後打的時間。打的不是時間、或隔太久才打，就回 false，
+   * 那句話照一般訊息處理，不會卡住。 */
+  private async tryResolveSnooze(link: LineAccountLink, text: string, replyToken: string): Promise<boolean> {
+    const fresh = !!link.pendingSnoozeAt && Date.now() - link.pendingSnoozeAt.getTime() < SNOOZE_REPLY_WINDOW_MS;
+    const cancelled = fresh && text === '取消';
+    const at = fresh && !cancelled ? parseSnoozeTime(text, new Date()) : null;
+    const todo = at
+      ? await this.prisma.projectTodo.findFirst({
+          where: { id: link.pendingSnoozeTodoId!, personalOwnerUserId: link.userId, done: false },
+        })
+      : null;
+    if (at && todo) {
+      await this.snoozeTodo(link.id, todo, at, replyToken);
+      return true;
+    }
+    await this.prisma.lineAccountLink.update({
+      where: { id: link.id },
+      data: { pendingSnoozeTodoId: null, pendingSnoozeAt: null },
+    });
+    if (cancelled) await this.reply(replyToken, '好，不延後。沒按完成的話，明天同一時間會再提醒你。');
+    return cancelled;
   }
 
   private async tryCompleteLinking(
@@ -329,7 +405,7 @@ export class LineService {
    * while no AI conversation is active — routed to it before the
    * batch/command parsers so e.g. a multi-line book reflection isn't split
    * into per-line 記帳 commands. */
-  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|分鐘後|小時後|叫我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我|天氣|下雨|帶傘|氣溫|想買|想要買|購物車|買得起|撥.*買東西|旅行|旅遊|出國|去玩|行李|退休|轉帳|轉到|轉進|轉入|轉出|匯款|匯到|匯給|提款|領錢|領現金|存進|貸款|學貸|房貸|車貸|信貸|分期|餘額|還剩多少|還有多少錢|剩多少錢|存款|之前.{0,8}墊|期初代墊|墊.{0,6}還沒收|還沒收回/;
+  private static readonly AI_FIRST_HINT = /目標|打卡|讀完|看完|讀了一本|最喜歡的一句|幫我|安排|排時間|提醒我|分鐘後|小時後|叫我|算命|想算|占卜|卜卦|運勢|理財|財務規劃|卡費|信用卡|結帳日|繳款日|記住|記得|忘掉|生日|紀念日|週年|約好|還款日|借|還我|天氣|下雨|帶傘|氣溫|想買|想要買|購物車|買得起|撥.*買東西|旅行|旅遊|出國|去玩|行李|退休|轉帳|轉到|轉進|轉入|轉出|匯款|匯到|匯給|提款|領錢|領現金|存進|貸款|學貸|房貸|車貸|信貸|分期|餘額|還剩多少|還有多少錢|剩多少錢|存款|補登|之前.{0,8}墊|期初代墊|墊.{0,6}還沒收|還沒收回/;
 
   private static readonly OVERVIEW_KEYWORDS = ['財務總覽', '總覽', '總覽財務', '餘額', '帳戶餘額'];
   // 圖文選單（2026-10-01 改成 6 格）的「我能做什麼」——選單只留主要功能，
@@ -477,6 +553,8 @@ export class LineService {
   ) {
     const linkId = link.id;
     const userId = link.userId;
+
+    if (link.pendingSnoozeTodoId && (await this.tryResolveSnooze(link, text, replyToken))) return;
 
     // --- 知識庫：任何等待中的狀態一律優先處理，因為此時使用者打的任何文字
     // （包含剛好也是選單指令字面的內容）都是在回答那個等待中的問題，不是在

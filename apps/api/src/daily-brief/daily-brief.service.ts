@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
 import { FinanceBudgetsService } from '../finance/finance-budgets.service';
-import { LineNotifierService, LineQuickReplyButton } from '../line-notifier/line-notifier.service';
+import { LineNotifierService, LineMessageButton } from '../line-notifier/line-notifier.service';
 import { formatTaipeiDateTime, taipeiCurrentMonth, taipeiDateKey, taipeiDateKeyToUtcMidnight, taipeiTodayRange } from '../common/taipei-date';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -15,12 +15,11 @@ const DUE_REMINDER_LEAD_MS = 60 * 60 * 1000;
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
-/** LINE 提醒的快速按鈕；LineService.handleTodoPostback 接。 */
-export function todoReminderButtons(todoId: string): LineQuickReplyButton[] {
+/** LINE 提醒訊息上的按鈕；LineService.handleTodoPostback 接。「延後」按了再問要延到什麼時候。 */
+export function todoReminderButtons(todoId: string): LineMessageButton[] {
   return [
     { label: '✅ 完成了', data: `todo:done:${todoId}` },
-    { label: '⏰ 10 分鐘後', data: `todo:snooze:${todoId}:10` },
-    { label: '⏰ 1 小時後', data: `todo:snooze:${todoId}:60` },
+    { label: '⏰ 延後', data: `todo:snooze:${todoId}` },
   ];
 }
 

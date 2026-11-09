@@ -123,10 +123,15 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
                           '成交價 ${formatAmount(t.pricePerShare)} · 金額 ${formatAmount(t.totalCost)} · '
                           '${accountNameOf[t.accountId] ?? ''}\n'
                           '成交 ${t.tradeDate.month}/${t.tradeDate.day} → 交割 ${t.settlementDate.month}/${t.settlementDate.day}'
-                          '${t.settled ? '（已交割）' : '（未交割）'}',
+                          '${t.backfilled ? '（補登記・已交割）' : t.settled ? '（已交割）' : '（未交割）'}',
                         ),
                         isThreeLine: true,
-                        trailing: t.settled
+                        trailing: t.backfilled
+                            ? IconButton(
+                                icon: const Icon(Icons.delete_outline, size: 18),
+                                onPressed: () => _delete(context, ref, t),
+                              )
+                            : t.settled
                             ? null
                             : Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -162,7 +167,11 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('刪除股票交易'),
-        content: const Text('確定要刪除這筆股票交易嗎？這個動作無法復原。'),
+        content: Text(
+          t.backfilled
+              ? '確定要刪除這筆補登記嗎？帳戶裡當時記的${t.type == StockTransactionType.buy ? '扣款' : '入帳'}也會一起取消，這個動作無法復原。'
+              : '確定要刪除這筆股票交易嗎？這個動作無法復原。',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
           FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('刪除')),
@@ -254,6 +263,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
           shares: result.shares,
           tradeDate: result.tradeDate,
           accountId: result.accountId,
+          backfill: result.backfill,
         );
       } else {
         await api.updateStockTransaction(
@@ -283,6 +293,7 @@ class _StockTransactionEditorResult {
     required this.shares,
     required this.tradeDate,
     required this.accountId,
+    required this.backfill,
   });
 
   final String stockCode;
@@ -291,6 +302,7 @@ class _StockTransactionEditorResult {
   final double shares;
   final DateTime tradeDate;
   final String accountId;
+  final bool backfill;
 }
 
 class _StockTransactionEditorDialog extends StatefulWidget {
@@ -318,6 +330,7 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
       widget.accounts.where((a) => a.id == widget.defaultAccountId).firstOrNull?.id ??
       widget.accounts.firstOrNull?.id;
   late DateTime _tradeDate = widget.existing?.tradeDate ?? DateTime.now();
+  bool _backfill = false;
   late final _stockCodeController = TextEditingController(text: widget.existing?.stockCode ?? '');
   late final _priceController = TextEditingController(
     text: widget.existing == null ? '' : widget.existing!.pricePerShare.toString(),
@@ -369,6 +382,7 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
         shares: shares,
         tradeDate: _tradeDate,
         accountId: accountId,
+        backfill: _backfill,
       ),
     );
   }
@@ -429,10 +443,22 @@ class _StockTransactionEditorDialogState extends State<_StockTransactionEditorDi
               InkWell(
                 onTap: _pickDate,
                 child: InputDecorator(
-                  decoration: const InputDecoration(labelText: '成交日', helperText: 'T+2 交割日會自動算出'),
+                  decoration: InputDecoration(
+                    labelText: '成交日',
+                    helperText: _backfill ? '儲存後直接交割，不用等 T+2' : 'T+2 交割日會自動算出',
+                  ),
                   child: Text('${_tradeDate.year}/${_tradeDate.month}/${_tradeDate.day}'),
                 ),
               ),
+              if (!isEditing)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _backfill,
+                  title: const Text('補登記'),
+                  subtitle: Text('這筆已經交割過了，儲存後直接${_type == StockTransactionType.buy ? '扣款' : '入帳'}'),
+                  onChanged: (value) => setState(() => _backfill = value ?? false),
+                ),
             ],
           ),
         ),

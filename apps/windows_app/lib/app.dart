@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_accents.dart';
@@ -27,6 +28,14 @@ import 'ui/shell/space_shell.dart';
 import 'ui/shell/todo_shell.dart';
 import 'ui/widgets/update_dialog.dart';
 
+/// 日期／時間選擇器、複製貼上選單這些 Flutter 內建介面用繁體中文。
+const appLocale = Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant', countryCode: 'TW');
+const appLocalizationsDelegates = [
+  GlobalMaterialLocalizations.delegate,
+  GlobalWidgetsLocalizations.delegate,
+  GlobalCupertinoLocalizations.delegate,
+];
+
 class LifeOsApp extends ConsumerWidget {
   const LifeOsApp({super.key});
 
@@ -41,6 +50,9 @@ class LifeOsApp extends ConsumerWidget {
     return MaterialApp(
       title: '元序',
       theme: AppTheme.fromSpec(spec),
+      locale: appLocale,
+      supportedLocales: const [appLocale],
+      localizationsDelegates: appLocalizationsDelegates,
       home: const _AppShell(),
     );
   }

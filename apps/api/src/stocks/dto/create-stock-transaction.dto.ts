@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { StockTransactionType } from '../../../generated/prisma/client.js';
 
 export class CreateStockTransactionDto {
@@ -27,4 +27,9 @@ export class CreateStockTransactionDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  /// 補登記：已經交割過的舊交易，登記當下就扣款／入帳，不等 T+2 排程。
+  @IsOptional()
+  @IsBoolean()
+  backfill?: boolean;
 }
