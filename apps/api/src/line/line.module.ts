@@ -12,6 +12,7 @@ import { LineWebhookController } from './line-webhook.controller';
 import { LineLinkController } from './line-link.controller';
 import { LineSettingsController } from './line-settings.controller';
 import { LineService } from './line.service';
+import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { VoiceTranscriberService } from './voice-transcriber.service';
 import { ReceiptReaderService } from './receipt-reader.service';
 import { AiAgentModule } from '../ai-agent/ai-agent.module';
@@ -36,6 +37,7 @@ import { AdminModule } from '../admin/admin.module';
     DailyBriefModule,
     AdminModule,
     TripsModule,
+    LineNotifierModule,
   ],
   controllers: [LineWebhookController, LineLinkController, LineSettingsController],
   providers: [LineService, VoiceTranscriberService, ReceiptReaderService],

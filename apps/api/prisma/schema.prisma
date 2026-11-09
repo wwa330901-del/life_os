@@ -131,6 +131,7 @@ model User {
   personalSpace              Space?                     @relation("PersonalSpaceOwner")
   calendarSpace              Space?                     @relation("CalendarSpaceOwner")
   lineAccountLink            LineAccountLink?
+  lineMessages               LineMessage[]
   appAiSession               AppAiSession?
   journalEntries             JournalEntry[]
   divinations                DivinationRecord[]
@@ -961,6 +962,20 @@ model StockPriceCache {
 /// against. Two states in one row rather than two tables: `linkCode` set +
 /// `lineUserId` null means "waiting for the user to send this code from
 /// LINE"; `lineUserId` set means linking is complete (`linkCode` cleared).
+/// LINE 來回訊息的內容（id 是 LINE 的訊息 id）。使用者回覆某一則訊息時 LINE 只給
+/// 那則的 id，要靠這裡查原文。todoId：這則是某件代辦的提醒。留 90 天。
+model LineMessage {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromUser  Boolean
+  text      String
+  todoId    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model LineAccountLink {
   id     String @id @default(uuid())
   userId String @unique

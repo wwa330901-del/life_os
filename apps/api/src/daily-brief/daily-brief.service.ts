@@ -153,7 +153,7 @@ export class DailyBriefService {
       try {
         const minutes = Math.max(1, Math.round((todo.dueDate!.getTime() - now.getTime()) / 60000));
         const when = formatTaipeiDateTime(todo.dueDate!, false).split(' ').pop();
-        await this.lineNotifier.notifyByUser(todo.personalOwnerUserId!, `⏰ ${minutes} 分鐘後（${when}）：${todo.title}\n做完跟我說「${todo.title}做完了」就會打勾`);
+        await this.lineNotifier.notifyByUser(todo.personalOwnerUserId!, `⏰ ${minutes} 分鐘後（${when}）：${todo.title}\n做完跟我說「${todo.title}做完了」就會打勾`, undefined, todo.id);
         await this.prisma.projectTodo.update({ where: { id: todo.id }, data: { dueReminderSentAt: now } });
       } catch (error) {
         this.logger.error(`代辦到期提醒失敗（todoId=${todo.id}）`, error as Error);
@@ -177,7 +177,7 @@ export class DailyBriefService {
           data: { remindAt: nextDailyRemind(todo.remindAt!, now), remindCount: { increment: 1 } },
         });
         if (claimed.count === 0) continue;
-        await this.lineNotifier.notifyByUser(todo.personalOwnerUserId!, todoReminderText(todo), todoReminderButtons(todo.id));
+        await this.lineNotifier.notifyByUser(todo.personalOwnerUserId!, todoReminderText(todo), todoReminderButtons(todo.id), todo.id);
       } catch (error) {
         this.logger.error(`LINE 代辦提醒失敗（todoId=${todo.id}）`, error as Error);
       }

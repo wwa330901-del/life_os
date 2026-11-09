@@ -57,6 +57,7 @@ import {
   taipeiWallClockToUtc,
   formatTaipeiDateTime,
 } from '../common/taipei-date';
+import { LineMessageLogService, QuotedMessage, withQuoteContext } from '../line-notifier/line-message-log.service';
 import { dateToPickerValue, parseSnoozeTime, pickerValueToDate } from './snooze-time';
 
 const SNOOZE_REPLY_WINDOW_MS = 30 * 60 * 1000;
@@ -65,7 +66,7 @@ interface LineWebhookEvent {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
-  message?: { type: string; id?: string; text?: string; latitude?: number; longitude?: number; address?: string; title?: string };
+  message?: { type: string; id?: string; text?: string; latitude?: number; longitude?: number; address?: string; title?: string; quotedMessageId?: string };
   postback?: { data?: string; params?: { datetime?: string } };
 }
 
@@ -137,6 +138,7 @@ export class LineService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly messageLog: LineMessageLogService,
     private readonly financeAccountsService: FinanceAccountsService,
     private readonly financeTransactionsService: FinanceTransactionsService,
     private readonly financeBudgetsService: FinanceBudgetsService,
@@ -173,7 +175,7 @@ export class LineService {
   private readonly replyPrefix = new AsyncLocalStorage<string>();
 
   /** Per webhook event: whether the 萬用 AI threw while handling it. */
-  private readonly eventState = new AsyncLocalStorage<{ aiFailed: boolean }>();
+  private readonly eventState = new AsyncLocalStorage<{ aiFailed: boolean; userId?: string }>();
 
   verifySignature(rawBody: Buffer, signature: string | undefined): boolean {
     if (!signature || !this.channelSecret) return false;
@@ -211,6 +213,9 @@ export class LineService {
         const link = await this.prisma.lineAccountLink.findUnique({
           where: { lineUserId },
         });
+        const state = this.eventState.getStore();
+        if (state && link) state.userId = link.userId;
+        if (link && event.type === 'message' && event.message) await this.messageLog.recordReceived(link.userId, event.message);
 
         // LINE 代辦提醒上的「完成了」「延後」按鈕。
         if (event.type === 'postback') {
@@ -259,7 +264,10 @@ export class LineService {
         if (!text) continue;
 
         if (link) {
-          await this.handleTextForLinkedUser(link, text, replyToken);
+          // 長按訊息按「回覆」：undefined＝沒有引用，null＝有引用但原文沒記到。
+          const quotedId = event.message.quotedMessageId;
+          const quoted = quotedId ? await this.messageLog.findQuoted(link.userId, quotedId) : undefined;
+          await this.handleTextForLinkedUser(link, text, replyToken, quoted);
         } else {
           await this.tryCompleteLinking(lineUserId, text, replyToken);
         }
@@ -344,6 +352,25 @@ export class LineService {
       data: { pendingSnoozeTodoId: null, pendingSnoozeAt: null },
     });
     await this.reply(replyToken, `好，${formatTaipeiDateTime(at, false)} 再提醒你「${todo.title}」。`);
+  }
+
+  /** 直接回覆某則提醒：「做完了」打勾、「下午3點」延後，不用花 AI。其他的話
+   * 回 false，交給 AI（它會看到引用的提醒內容）。 */
+  private async tryHandleQuotedReminder(link: LineAccountLink, todoId: string, text: string, replyToken: string): Promise<boolean> {
+    if (/^(已?完成|做完|弄好|處理好|搞定|好了)了?[囉啦喔！!。~～]*$/i.test(text)) {
+      await this.handleTodoPostback(link, `todo:done:${todoId}`, replyToken);
+      return true;
+    }
+    if (text === '延後' || text === '晚點') {
+      await this.handleTodoPostback(link, `todo:snooze:${todoId}`, replyToken);
+      return true;
+    }
+    const at = parseSnoozeTime(text, new Date());
+    if (!at) return false;
+    const todo = await this.prisma.projectTodo.findFirst({ where: { id: todoId, personalOwnerUserId: link.userId, done: false } });
+    if (!todo) return false;
+    await this.snoozeTodo(link.id, todo, at, replyToken);
+    return true;
   }
 
   /** 按了「延後」之後打的時間。打的不是時間、或隔太久才打，就回 false，
@@ -477,6 +504,7 @@ export class LineService {
           '✅ 代辦',
           '「提醒我週五交報告」「報告做完了」',
           '「10 分鐘後提醒我關火」「3 點提醒我打電話」時間到 LINE 叫你，沒按完成每天再提醒',
+          '長按我傳的訊息按「回覆」再打字，我就知道你在講哪一則',
           '「我還有什麼沒做？」',
           '',
           '📅 行程',
@@ -550,10 +578,12 @@ export class LineService {
     link: LineAccountLink,
     text: string,
     replyToken: string,
+    quoted?: QuotedMessage | null,
   ) {
     const linkId = link.id;
     const userId = link.userId;
 
+    if (quoted?.todoId && (await this.tryHandleQuotedReminder(link, quoted.todoId, text, replyToken))) return;
     if (link.pendingSnoozeTodoId && (await this.tryResolveSnooze(link, text, replyToken))) return;
 
     // --- 知識庫：任何等待中的狀態一律優先處理，因為此時使用者打的任何文字
@@ -622,14 +652,16 @@ export class LineService {
     const aiFirst =
       claudeApiKey != null &&
       !LineService.MENU_COMMANDS.has(text) &&
-      (AiAgentService.isConversationActive(link) ||
+      (quoted !== undefined ||
+        AiAgentService.isConversationActive(link) ||
         AiAgentService.isJournalPromptActive(link) ||
         AiAgentService.divinationFeedbackPending(link) != null ||
         LineService.AI_FIRST_HINT.test(text));
     // 關鍵字明顯要做事 → 直接 Agent；只是對話進行中 → 讓分流判斷。
     // （天氣字眼只讓 AI 先接，不強制 Agent——輕量 AI 自己會查天氣。）
     const forceAgent = LineService.AI_FIRST_HINT.test(text.replace(/天氣|下雨|帶傘|氣溫/g, ''));
-    if (aiFirst && (await this.tryAiAgent(link, text, replyToken, claudeApiKey, forceAgent))) return;
+    const aiText = quoted === undefined ? text : withQuoteContext(text, quoted);
+    if (aiFirst && (await this.tryAiAgent(link, aiText, replyToken, claudeApiKey, forceAgent))) return;
 
     // --- 條列式一次登陸多筆（2026-08-04）：貼多行文字，每行各自當一筆獨立
     // 的記帳／代辦／股票交易／行事曆指令處理，不用一則訊息只能記一筆。編
@@ -2810,6 +2842,7 @@ export class LineService {
   /** Returns false (without replying) when the AI says the message isn't
    * something it can act on, or fails — the caller falls through. */
   private async tryAiAgent(link: LineAccountLink, text: string, replyToken: string, apiKey: string, forceAgent = false): Promise<boolean> {
+    if (link.lineUserId) void this.showTyping(link.lineUserId);
     try {
       const result = await this.aiAgent.handleLine({ link, apiKey, text, forceAgent });
       if (!result.handled) return false;
@@ -2962,13 +2995,30 @@ export class LineService {
     await this.callReplyApi({ replyToken, messages: [{ type: 'text', text }] });
   }
 
+  /** 聊天室顯示「正在輸入」的動畫，訊息送出時自動消失。失敗無所謂。 */
+  private async showTyping(lineUserId: string): Promise<void> {
+    if (!this.channelAccessToken) return;
+    try {
+      await fetch('https://api.line.me/v2/bot/chat/loading/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.channelAccessToken}`,
+        },
+        body: JSON.stringify({ chatId: lineUserId, loadingSeconds: 30 }),
+      });
+    } catch (error) {
+      this.logger.warn(`LINE 輸入中動畫失敗：${String(error)}`);
+    }
+  }
+
   private async callReplyApi(body: Record<string, unknown>): Promise<void> {
     if (!this.channelAccessToken) {
       this.logger.warn('LINE_CHANNEL_ACCESS_TOKEN not set, skipping reply');
       return;
     }
     try {
-      await fetch('https://api.line.me/v2/bot/message/reply', {
+      const response = await fetch('https://api.line.me/v2/bot/message/reply', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2976,6 +3026,8 @@ export class LineService {
         },
         body: JSON.stringify(body),
       });
+      const userId = this.eventState.getStore()?.userId;
+      if (userId) await this.messageLog.recordSent(userId, body.messages as { text?: string; altText?: string }[], response);
     } catch (error) {
       this.logger.error('Failed to send LINE reply', error);
     }

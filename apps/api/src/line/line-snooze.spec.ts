@@ -13,9 +13,10 @@ function setup(link: Record<string, unknown>, todo: Record<string, unknown> | nu
   const service = Object.create(LineService.prototype) as Record<string, unknown>;
   const reply = jest.fn().mockResolvedValue(undefined);
   const callReplyApi = jest.fn().mockResolvedValue(undefined);
-  Object.assign(service, { prisma, reply, callReplyApi });
+  const todosService = { update: jest.fn().mockResolvedValue(undefined) };
+  Object.assign(service, { prisma, reply, callReplyApi, todosService });
   const call = (name: string, ...args: unknown[]) => (service[name] as (...a: unknown[]) => Promise<unknown>).apply(service, args);
-  return { prisma, reply, callReplyApi, call, link: { id: 'l1', userId: 'u1', ...link } };
+  return { prisma, reply, callReplyApi, todosService, call, link: { id: 'l1', userId: 'u1', ...link } };
 }
 
 describe('提醒的延後', () => {
@@ -77,6 +78,40 @@ describe('提醒的延後', () => {
     await call('handleTodoPostback', link, 'todo:snooze:t1:10', 'r');
     const at = prisma.projectTodo.update.mock.calls[0][0].data.remindAt as Date;
     expect(at.getTime() - before).toBeGreaterThanOrEqual(10 * 60 * 1000);
+  });
+});
+
+describe('回覆某一則訊息', () => {
+
+  it('回覆提醒說做完了：直接打勾，不用 AI', async () => {
+    const { call, link, todosService } = setup({});
+    await expect(call('tryHandleQuotedReminder', link, 't1', '做完了', 'r')).resolves.toBe(true);
+    expect(todosService.update).toHaveBeenCalledWith('u1', 't1', { done: true });
+  });
+
+  it('回覆提醒打時間：延後那一件', async () => {
+    const { call, link, prisma, reply } = setup({});
+    await expect(call('tryHandleQuotedReminder', link, 't1', '30分', 'r')).resolves.toBe(true);
+    expect(prisma.projectTodo.update.mock.calls[0][0].where).toEqual({ id: 't1' });
+    expect(reply.mock.calls[0][1]).toContain('關火');
+  });
+
+  it('回覆提醒說延後：先問時間', async () => {
+    const { call, link, callReplyApi } = setup({});
+    await expect(call('tryHandleQuotedReminder', link, 't1', '延後', 'r')).resolves.toBe(true);
+    expect(callReplyApi.mock.calls[0][0].messages[0].text).toContain('要延到什麼時候');
+  });
+
+  it('回覆提醒講別的：交給 AI', async () => {
+    const { call, link, prisma } = setup({});
+    await expect(call('tryHandleQuotedReminder', link, 't1', '這個可以改成每週嗎', 'r')).resolves.toBe(false);
+    expect(prisma.projectTodo.update).not.toHaveBeenCalled();
+  });
+
+  it('那件代辦已經做完或刪了：交給 AI', async () => {
+    const { call, link, prisma } = setup({});
+    prisma.projectTodo.findFirst.mockResolvedValue(null);
+    await expect(call('tryHandleQuotedReminder', link, 't1', '30分', 'r')).resolves.toBe(false);
   });
 });
 

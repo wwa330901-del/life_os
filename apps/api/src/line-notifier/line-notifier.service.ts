@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { LineMessageLogService } from './line-message-log.service';
 
 /** 訊息裡的按鈕：按了會回傳 data（postback），聊天室顯示 label。 */
 export interface LineMessageButton {
@@ -43,7 +44,10 @@ export class LineNotifierService {
   private readonly logger = new Logger(LineNotifierService.name);
   private readonly channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? '';
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly messageLog: LineMessageLogService,
+  ) {}
 
   /** No-op if this space isn't a personal space or its owner never linked
    * a LINE account — there's no other channel to reach them through, so a
@@ -55,13 +59,13 @@ export class LineNotifierService {
   }
 
   /** No-op if this user never linked a LINE account. */
-  async notifyByUser(userId: string, text: string, buttons?: LineMessageButton[]): Promise<void> {
+  async notifyByUser(userId: string, text: string, buttons?: LineMessageButton[], todoId?: string): Promise<void> {
     const link = await this.prisma.lineAccountLink.findUnique({ where: { userId } });
     if (!link?.lineUserId) return;
-    await this.push(link.lineUserId, buttons?.length ? buttonMessage(text, buttons) : { type: 'text', text });
+    await this.push(userId, link.lineUserId, buttons?.length ? buttonMessage(text, buttons) : { type: 'text', text }, todoId);
   }
 
-  private async push(lineUserId: string, message: Record<string, unknown>): Promise<void> {
+  private async push(userId: string, lineUserId: string, message: { type: string; text?: string; altText?: string }, todoId?: string): Promise<void> {
     if (!this.channelAccessToken) {
       this.logger.warn('LINE_CHANNEL_ACCESS_TOKEN not set, skipping push');
       return;
@@ -75,7 +79,11 @@ export class LineNotifierService {
         },
         body: JSON.stringify({ to: lineUserId, messages: [message] }),
       });
-      if (!response.ok) this.logger.error(`LINE push 失敗（${response.status}）：${await response.text()}`);
+      if (!response.ok) {
+        this.logger.error(`LINE push 失敗（${response.status}）：${await response.text()}`);
+        return;
+      }
+      await this.messageLog.recordSent(userId, [message], response, todoId);
     } catch (error) {
       this.logger.error('Failed to send LINE push', error);
     }
