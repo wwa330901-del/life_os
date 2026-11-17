@@ -2,12 +2,13 @@ import { Global, Module } from '@nestjs/common';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { ErrorReportService } from './error-report.service';
 import { ClientErrorController } from './client-error.controller';
+import { BackupMonitorService } from './backup-monitor.service';
 
 @Global()
 @Module({
   imports: [LineNotifierModule],
   controllers: [ClientErrorController],
-  providers: [ErrorReportService],
+  providers: [ErrorReportService, BackupMonitorService],
   exports: [ErrorReportService],
 })
 export class ErrorReportModule {}

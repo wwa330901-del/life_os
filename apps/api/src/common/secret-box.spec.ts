@@ -1,4 +1,4 @@
-import { decryptSecret, encryptSecret, isEncrypted } from './secret-box';
+import { currentSecretPrefix, decryptSecret, encryptSecret, isEncrypted, reencryptSecret } from './secret-box';
 
 describe('secret-box', () => {
   const OLD = process.env.JWT_SECRET;
@@ -25,9 +25,38 @@ describe('secret-box', () => {
 
   it('reads as not set when the encryption key changed or the value was tampered with', () => {
     const enc = encryptSecret('abc');
-    process.env.DATA_ENCRYPTION_KEY = 'a-different-key';
+    process.env.JWT_SECRET = 'a-different-jwt';
     expect(decryptSecret(enc)).toBeNull();
-    delete process.env.DATA_ENCRYPTION_KEY;
+    process.env.JWT_SECRET = OLD;
     expect(decryptSecret(enc.slice(0, -4) + 'AAAA')).toBeNull();
+  });
+
+  it('uses v2 once DATA_ENCRYPTION_KEY is set and still reads v1', () => {
+    const v1 = encryptSecret('old-key');
+    expect(v1.startsWith('enc:v1:')).toBe(true);
+    process.env.DATA_ENCRYPTION_KEY = 'independent-key';
+    expect(currentSecretPrefix()).toBe('enc:v2:');
+    expect(decryptSecret(v1)).toBe('old-key');
+    const v2 = encryptSecret('new-key');
+    expect(v2.startsWith('enc:v2:')).toBe(true);
+    expect(decryptSecret(v2)).toBe('new-key');
+    // v2 不再跟 JWT_SECRET 有關
+    process.env.JWT_SECRET = 'rotated-jwt';
+    expect(decryptSecret(v2)).toBe('new-key');
+  });
+
+  it('re-encrypts plain/v1 to the current version and leaves unreadable values alone', () => {
+    const v1 = encryptSecret('old-key');
+    process.env.DATA_ENCRYPTION_KEY = 'independent-key';
+    const moved = reencryptSecret(v1);
+    expect(moved.startsWith('enc:v2:')).toBe(true);
+    expect(decryptSecret(moved)).toBe('old-key');
+    expect(reencryptSecret(moved)).toBe(moved);
+    expect(decryptSecret(reencryptSecret('plain'))).toBe('plain');
+    expect(reencryptSecret(null)).toBeNull();
+
+    process.env.JWT_SECRET = 'other-jwt';
+    const broken = encryptSecret('x').replace('enc:v2:', 'enc:v1:');
+    expect(reencryptSecret(broken)).toBe(broken);
   });
 });

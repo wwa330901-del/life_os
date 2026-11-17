@@ -1,0 +1,87 @@
+name: Database backup
+
+# 每天把正式資料庫備份下來：先實際還原到一個空資料庫確認備份是好的，再加密保存 30 天。
+# 這個 repo 是公開的，產物大家都下載得到，所以上傳的一定要是加密過的檔案，
+# log 也不能印出資料內容。還原方法見 docs/資料還原說明.md。
+# 後端 BackupMonitorService 每天檢查這支有沒有成功，失敗或被停用都會傳 LINE。
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # 台北時間 02:30
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      restore-check:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: restore_check
+          POSTGRES_DB: restore_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check secrets are set
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$BACKUP_PASSWORD" ]; then
+            echo "::error::還沒設定 SUPABASE_DB_URL 或 BACKUP_PASSWORD"
+            exit 1
+          fi
+
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Dump database
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: pg_dump "$DB_URL" --format=custom --schema=public --no-owner --no-privileges --file=life_os.dump
+
+      - name: Restore into an empty database and check it
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: restore_check
+          PGDATABASE: restore_check
+        run: |
+          pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error --dbname=restore_check life_os.dump
+          tables=$(psql -tAc "select count(*) from information_schema.tables where table_schema='public'")
+          users=$(psql -tAc 'select count(*) from "User"')
+          echo "還原成功：$tables 張資料表"
+          if [ "$tables" -lt 40 ] || [ "$users" -lt 1 ]; then
+            echo "::error::還原後的資料不完整"
+            exit 1
+          fi
+
+      - name: Encrypt
+        env:
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --s2k-digest-algo SHA512 --s2k-count 65011712 --output life_os.dump.gpg life_os.dump 3<<<"$BACKUP_PASSWORD"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --decrypt --output /dev/null life_os.dump.gpg 3<<<"$BACKUP_PASSWORD"
+          shred -u life_os.dump
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: life_os-backup-${{ github.run_number }}
+          path: life_os.dump.gpg
+          if-no-files-found: error
+          retention-days: 30

@@ -1,12 +1,11 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { encryptSecret } from './secret-box';
+import { currentSecretPrefix, reencryptSecret } from './secret-box';
 
-const ENC = 'enc:v1:';
-
-/** One-time catch-up (2026-10-01): encrypts Gemini keys / iCloud passwords saved as plain
- * text before secret-box existed. Runs on every start but only touches plaintext rows,
- * so after the first run it's a no-op. */
+/** Catch-up on every start: encrypts secrets still saved as plain text, and (2026-11-17)
+ * moves `enc:v1:` (JWT_SECRET-derived) values to `enc:v2:` once DATA_ENCRYPTION_KEY is set.
+ * Only touches rows not already on the current prefix, so after the first run it's a no-op.
+ * Values that can't be decrypted are left untouched (reencryptSecret returns them as-is). */
 @Injectable()
 export class SecretMigrationService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SecretMigrationService.name);
@@ -14,42 +13,62 @@ export class SecretMigrationService implements OnApplicationBootstrap {
   constructor(private readonly prisma: PrismaService) {}
 
   async onApplicationBootstrap() {
+    const prefix = currentSecretPrefix();
+    const changed = (before: string | null, after: string | null) => before !== after;
     try {
+      let gemini = 0;
+      let claude = 0;
       const users = await this.prisma.user.findMany({
-        where: { geminiApiKey: { not: null }, NOT: { geminiApiKey: { startsWith: ENC } } },
-        select: { id: true, geminiApiKey: true },
+        where: {
+          OR: [
+            { geminiApiKey: { not: null }, NOT: { geminiApiKey: { startsWith: prefix } } },
+            { claudeApiKey: { not: null }, NOT: { claudeApiKey: { startsWith: prefix } } },
+          ],
+        },
+        select: { id: true, geminiApiKey: true, claudeApiKey: true },
       });
       for (const u of users) {
-        await this.prisma.user.update({ where: { id: u.id }, data: { geminiApiKey: encryptSecret(u.geminiApiKey) } });
+        const geminiApiKey = reencryptSecret(u.geminiApiKey);
+        const claudeApiKey = reencryptSecret(u.claudeApiKey);
+        if (!changed(u.geminiApiKey, geminiApiKey) && !changed(u.claudeApiKey, claudeApiKey)) continue;
+        if (changed(u.geminiApiKey, geminiApiKey)) gemini++;
+        if (changed(u.claudeApiKey, claudeApiKey)) claude++;
+        await this.prisma.user.update({ where: { id: u.id }, data: { geminiApiKey, claudeApiKey } });
       }
+
+      let apple = 0;
       const connections = await this.prisma.appleCalendarConnection.findMany({
-        where: { NOT: { appPassword: { startsWith: ENC } } },
+        where: { NOT: { appPassword: { startsWith: prefix } } },
         select: { id: true, appPassword: true },
       });
       for (const c of connections) {
-        await this.prisma.appleCalendarConnection.update({ where: { id: c.id }, data: { appPassword: encryptSecret(c.appPassword) } });
+        const appPassword = reencryptSecret(c.appPassword);
+        if (!changed(c.appPassword, appPassword)) continue;
+        apple++;
+        await this.prisma.appleCalendarConnection.update({ where: { id: c.id }, data: { appPassword } });
       }
-      // 2026-10-13：Google 行事曆授權權杖也加密。
-      const google = await this.prisma.googleCalendarConnection.findMany({
-        where: { NOT: { refreshToken: { startsWith: ENC } } },
+
+      let google = 0;
+      const googleRows = await this.prisma.googleCalendarConnection.findMany({
+        where: {
+          OR: [
+            { NOT: { refreshToken: { startsWith: prefix } } },
+            { accessToken: { not: null }, NOT: { accessToken: { startsWith: prefix } } },
+          ],
+        },
         select: { id: true, refreshToken: true, accessToken: true },
       });
-      for (const g of google) {
-        await this.prisma.googleCalendarConnection.update({
-          where: { id: g.id },
-          data: { refreshToken: encryptSecret(g.refreshToken), accessToken: encryptSecret(g.accessToken) },
-        });
+      for (const g of googleRows) {
+        const refreshToken = reencryptSecret(g.refreshToken);
+        const accessToken = reencryptSecret(g.accessToken);
+        if (!changed(g.refreshToken, refreshToken) && !changed(g.accessToken, accessToken)) continue;
+        google++;
+        await this.prisma.googleCalendarConnection.update({ where: { id: g.id }, data: { refreshToken, accessToken } });
       }
-      const claudeUsers = await this.prisma.user.findMany({
-        where: { claudeApiKey: { not: null }, NOT: { claudeApiKey: { startsWith: ENC } } },
-        select: { id: true, claudeApiKey: true },
-      });
-      for (const u of claudeUsers) {
-        await this.prisma.user.update({ where: { id: u.id }, data: { claudeApiKey: encryptSecret(u.claudeApiKey) } });
-      }
-      if (users.length + connections.length + google.length + claudeUsers.length > 0) {
+
+      if (gemini + claude + apple + google > 0) {
         this.logger.log(
-          `已加密 ${users.length} 個 Gemini 金鑰、${claudeUsers.length} 個 Claude 金鑰、${connections.length} 個 iCloud 密碼、${google.length} 個 Google 行事曆授權`,
+          `已加密（${prefix}）${gemini} 個 Gemini 金鑰、${claude} 個 Claude 金鑰、${apple} 個 iCloud 密碼、${google} 個 Google 行事曆授權`,
         );
       }
     } catch (error) {
