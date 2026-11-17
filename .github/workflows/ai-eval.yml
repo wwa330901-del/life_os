@@ -1,0 +1,64 @@
+name: AI eval
+
+# 真 AI 測試：用真的 Claude 跑約 30 句常用的話（假資料、全新的資料庫），確認萬用 AI
+# 做對事、沒確認不會動錢或刪東西。一次約 1～2 美金，所以只手動跑（大改 AI 之後）。
+# 內容見 apps/api/src/scripts/eval-agent.ts。
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 只跑名稱含這段字的項目（空白＝全部）
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: life_os_eval
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:ci@localhost:5432/life_os_eval
+      JWT_SECRET: ai-eval-only
+      TZ: Asia/Taipei
+    steps:
+      - name: Check secret is set
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::還沒設定 ANTHROPIC_API_KEY"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm run build
+      - name: Run eval
+        env:
+          CLAUDE_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_ONLY: ${{ inputs.only }}
+        run: node dist/src/scripts/eval-agent.js
