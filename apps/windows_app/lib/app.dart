@@ -6,26 +6,11 @@ import 'core/theme/app_accents.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_themes.dart';
 import 'state/app_theme_provider.dart';
-import 'state/ai_assistant_provider.dart';
 import 'state/auth_provider.dart';
-import 'state/divination_provider.dart';
-import 'state/journal_provider.dart';
-import 'state/knowledge_provider.dart';
-import 'state/life_goal_provider.dart';
-import 'state/space_provider.dart';
-import 'state/todo_provider.dart';
 import 'state/update_provider.dart';
+import 'state/app_layout_provider.dart';
 import 'ui/screens/login_screen.dart';
-import 'ui/screens/space_picker_screen.dart';
-import 'ui/shell/ai_assistant_shell.dart';
-import 'ui/shell/divination_shell.dart';
-import 'ui/shell/journal_shell.dart';
-import 'ui/shell/trips_shell.dart';
-import 'state/trip_provider.dart';
-import 'ui/shell/knowledge_shell.dart';
-import 'ui/shell/life_goals_shell.dart';
-import 'ui/shell/space_shell.dart';
-import 'ui/shell/todo_shell.dart';
+import 'ui/shell/main_shell.dart';
 import 'ui/widgets/update_dialog.dart';
 
 /// 日期／時間選擇器、複製貼上選單這些 Flutter 內建介面用繁體中文。
@@ -44,6 +29,7 @@ class LifeOsApp extends ConsumerWidget {
     // 登入（或重新整理使用者資料）後，套用伺服器上記的外觀風格
     ref.listen(authControllerProvider, (_, next) {
       ref.read(appThemeProvider.notifier).applyFromServer(next.value?.user.appTheme);
+      ref.read(appLayoutProvider.notifier).applyFromServer(next.value?.user.appLayout);
     });
     final spec = themeById(ref.watch(appThemeProvider));
     AppAccents.spec = spec;
@@ -103,34 +89,6 @@ class _RootRouter extends ConsumerWidget {
     if (session == null) {
       return const LoginScreen();
     }
-
-    if (ref.watch(showKnowledgeLibraryProvider)) {
-      return const KnowledgeShell();
-    }
-    if (ref.watch(showTodoSpaceProvider)) {
-      return const TodoShell();
-    }
-    if (ref.watch(showLifeGoalsProvider)) {
-      return const LifeGoalsShell();
-    }
-    if (ref.watch(showJournalProvider)) {
-      return const JournalShell();
-    }
-    if (ref.watch(showTripsProvider)) {
-      return const TripsShell();
-    }
-    if (ref.watch(showDivinationProvider)) {
-      return const DivinationShell();
-    }
-    if (ref.watch(showAiAssistantProvider)) {
-      return const AiAssistantShell();
-    }
-
-    final selectedSpace = ref.watch(selectedSpaceProvider);
-    if (selectedSpace == null) {
-      return const SpacePickerScreen();
-    }
-
-    return const SpaceShell();
+    return const MainShell();
   }
 }

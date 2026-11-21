@@ -106,19 +106,3 @@ final knowledgeItemDetailProvider = FutureProvider.autoDispose.family<KnowledgeI
   return ref.read(apiClientProvider).getKnowledgeItem(itemId);
 });
 
-/// 知識庫 is account-level, not a Space — this is a separate top-level
-/// destination from `selectedSpaceProvider`, checked first by `_RootRouter`
-/// (`app.dart`) so it's reachable directly from the space picker without
-/// going through any particular space's shell/sidebar.
-class ShowKnowledgeLibraryNotifier extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void open() => state = true;
-
-  void close() => state = false;
-}
-
-final showKnowledgeLibraryProvider = NotifierProvider<ShowKnowledgeLibraryNotifier, bool>(
-  ShowKnowledgeLibraryNotifier.new,
-);

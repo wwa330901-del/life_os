@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_client.dart';
 import '../../../state/auth_provider.dart';
+import '../../../state/navigation_provider.dart';
 import '../../widgets/ai_memory_dialog.dart';
 import '../../widgets/ai_settings_dialog.dart';
 
@@ -33,6 +34,18 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
   final _scrollController = ScrollController();
   String? _lastInteractionId;
   bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 從首頁（AI 優先版面）打的那句話：進來就直接送出。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final question = ref.read(pendingAiQuestionProvider.notifier).take();
+      if (question == null || !mounted) return;
+      _inputController.text = question;
+      _send();
+    });
+  }
 
   @override
   void dispose() {

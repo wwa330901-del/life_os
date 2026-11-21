@@ -15,7 +15,7 @@ Map<String, dynamic> _category(String id, String name, String kind) => {
 };
 
 void main() {
-  testWidgets('記帳：進「我的空間」→ 交易 → 新增一筆支出 → 送出並出現在清單', (tester) async {
+  testWidgets('記帳：首頁點「記帳」→ 記錄 → 新增一筆支出 → 送出並出現在清單', (tester) async {
     final transactions = <Map<String, dynamic>>[];
     final backend = loggedInBackend()
       ..on('GET $_base/accounts', [
@@ -39,9 +39,9 @@ void main() {
       });
     await pumpApp(tester, backend, token: 't1');
 
-    await tester.tap(find.text('我的空間'));
+    await tester.tap(find.text('記帳'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(Tab, '交易'));
+    await tester.tap(find.text('記錄'));
     await tester.pumpAndSettle();
     expect(find.text('這個月還沒有任何交易'), findsOneWidget);
 

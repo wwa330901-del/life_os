@@ -167,8 +167,8 @@ class ApiClient {
   }
 
   /// 改顯示名稱或外觀風格（沒給的不動）
-  Future<AppUser> updateMe({String? name, String? appTheme}) async {
-    final body = await _patch('/auth/me', {'name': ?name, 'appTheme': ?appTheme});
+  Future<AppUser> updateMe({String? name, String? appTheme, String? appLayout}) async {
+    final body = await _patch('/auth/me', {'name': ?name, 'appTheme': ?appTheme, 'appLayout': ?appLayout});
     return AppUser.fromJson(body);
   }
 

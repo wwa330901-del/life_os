@@ -16,15 +16,3 @@ final tripCalendarTargetsProvider = FutureProvider.autoDispose<List<String>>((re
   return ref.read(apiClientProvider).getTripCalendarTargets();
 });
 
-/// 旅行 is account-level like 日記 — a separate top-level destination
-/// checked by `_RootRouter` (`app.dart`).
-class ShowTripsNotifier extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void open() => state = true;
-
-  void close() => state = false;
-}
-
-final showTripsProvider = NotifierProvider<ShowTripsNotifier, bool>(ShowTripsNotifier.new);

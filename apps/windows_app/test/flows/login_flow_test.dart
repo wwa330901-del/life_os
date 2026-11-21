@@ -15,7 +15,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(backend.sent('POST /auth/login').single, {'username': 'hugo', 'password': 'secret1'});
-    expect(find.text('你好，小明'), findsOneWidget);
+    expect(find.textContaining('，小明'), findsOneWidget);
     expect(find.textContaining('繳房租'), findsWidgets);
     expect(backend.unknown, isEmpty);
   });

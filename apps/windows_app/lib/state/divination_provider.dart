@@ -11,15 +11,3 @@ final divinationHistoryProvider = FutureProvider.autoDispose<List<DivinationReco
   return ref.read(apiClientProvider).listDivinations();
 });
 
-/// 算命 is account-level — a separate top-level destination checked by
-/// `_RootRouter` (`app.dart`), same shape as `showJournalProvider`.
-class ShowDivinationNotifier extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void open() => state = true;
-
-  void close() => state = false;
-}
-
-final showDivinationProvider = NotifierProvider<ShowDivinationNotifier, bool>(ShowDivinationNotifier.new);

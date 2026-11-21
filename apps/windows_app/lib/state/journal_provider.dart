@@ -18,15 +18,3 @@ class JournalKeywordNotifier extends Notifier<String> {
 
 final journalKeywordProvider = NotifierProvider<JournalKeywordNotifier, String>(JournalKeywordNotifier.new);
 
-/// 日記 is account-level like 人生目標 — a separate top-level destination
-/// checked by `_RootRouter` (`app.dart`), same shape as `showLifeGoalsProvider`.
-class ShowJournalNotifier extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void open() => state = true;
-
-  void close() => state = false;
-}
-
-final showJournalProvider = NotifierProvider<ShowJournalNotifier, bool>(ShowJournalNotifier.new);

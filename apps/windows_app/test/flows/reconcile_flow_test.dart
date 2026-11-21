@@ -25,9 +25,9 @@ void main() {
       });
     await pumpApp(tester, backend, token: 't1');
 
-    await tester.tap(find.text('我的空間'));
+    await tester.tap(find.text('記帳'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(Tab, '帳戶'));
+    await tester.tap(find.text('帳戶與預算'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, '平帳'));
     await tester.pumpAndSettle();
