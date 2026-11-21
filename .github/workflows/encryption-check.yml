@@ -1,0 +1,39 @@
+name: Encryption check
+
+# 只數正式資料庫裡加密欄位各用哪一版的鎖（enc:v2＝獨立 DATA_ENCRYPTION_KEY、
+# enc:v1＝JWT_SECRET 衍生、其他＝沒加密），不會印出任何內容。手動跑。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install psql
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: Count lock versions
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -c "
+          with v(field, val) as (
+            select 'User.geminiApiKey', \"geminiApiKey\" from \"User\" where \"geminiApiKey\" is not null
+            union all select 'User.claudeApiKey', \"claudeApiKey\" from \"User\" where \"claudeApiKey\" is not null
+            union all select 'Apple.appPassword', \"appPassword\" from \"AppleCalendarConnection\"
+            union all select 'Google.refreshToken', \"refreshToken\" from \"GoogleCalendarConnection\"
+            union all select 'Google.accessToken', \"accessToken\" from \"GoogleCalendarConnection\" where \"accessToken\" is not null
+          )
+          select field,
+                 count(*) filter (where val like 'enc:v2:%') as v2,
+                 count(*) filter (where val like 'enc:v1:%') as v1,
+                 count(*) filter (where val not like 'enc:%') as plain
+          from v group by field order by field;"
