@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiUsageService } from '../knowledge/ai-usage.service';
 import { AI_QUERY_TOOLS, AiQueryToolsService } from '../ai-assistant/ai-query-tools.service';
+import { ReminderOverviewService } from '../daily-brief/reminder-overview.service';
 import { LIFE_GOAL_TOOLS, LifeGoalAiService } from '../life-goals/life-goal-ai.service';
 import { FinanceTransactionsService } from '../finance/finance-transactions.service';
 import { TodosService } from '../todos/todos.service';
@@ -212,6 +213,12 @@ const AGENT_TOOLS = [
     name: 'get_life_review',
     description: '產生這週或這個月到目前為止的回顧（錢、代辦、目標、股票，含跟上期比較），回傳整理好的文字。使用者說「這週過得怎樣」「月回顧」時用。',
     parameters: { type: 'object', properties: { period: { type: 'string', enum: ['week', 'month'] } }, required: ['period'] },
+  },
+  {
+    type: 'function' as const,
+    name: 'get_reminder_overview',
+    description: '提醒總覽：接下來幾天（預設 14 天）系統會提醒使用者的事——有時間的代辦、生日紀念日、卡費繳款日、每月固定的扣款、借貸到期、旅行出發。使用者問「我有哪些提醒」「最近要提醒我什麼」時用，回傳整理好的文字。',
+    parameters: { type: 'object', properties: { days: { type: 'number' } } },
   },
   {
     type: 'function' as const,
@@ -494,6 +501,7 @@ export class AiAgentService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly reminderOverview: ReminderOverviewService,
     private readonly aiUsage: AiUsageService,
     private readonly queryTools: AiQueryToolsService,
     private readonly goalTools: LifeGoalAiService,
@@ -1111,6 +1119,8 @@ export class AiAgentService {
         return (await this.financeHealth.forUser(ctx.userId)) ?? { error: '找不到個人空間' };
       case 'get_life_review':
         return (await this.lifeReview.build(ctx.userId, args.period === 'month' ? 'month' : 'week')) ?? '這段時間還沒有記錄';
+      case 'get_reminder_overview':
+        return this.reminderOverview.text(ctx.userId, Math.min(Math.max(Number(args.days) || 14, 1), 60));
       case 'set_review_focus':
         return { saved: await this.lifeReview.setFocus(ctx.userId, String(args.focus ?? '')) };
       case 'confirm_pending_action':

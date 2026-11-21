@@ -35,6 +35,7 @@ import { LifeGoalsService } from '../life-goals/life-goals.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { LifeReviewService } from '../life-review/life-review.service';
 import { DailyBriefService } from '../daily-brief/daily-brief.service';
+import { ReminderOverviewService } from '../daily-brief/reminder-overview.service';
 import { FinancePlanService } from '../finance/finance-plan.service';
 import { FinanceHealthService, formatFinanceHealth } from '../finance/finance-health.service';
 import { formatGoalProgress } from '../life-goals/life-goal-reminder.service';
@@ -248,6 +249,7 @@ export class LineService {
     private readonly lifeReview: LifeReviewService,
     private readonly financeHealth: FinanceHealthService,
     private readonly dailyBrief: DailyBriefService,
+    private readonly reminderOverview: ReminderOverviewService,
     private readonly financePlan: FinancePlanService,
     private readonly voice: VoiceTranscriberService,
     private readonly receiptReader: ReceiptReaderService,
@@ -551,6 +553,8 @@ export class LineService {
     '月回顧',
     '財務健檢',
     '早報',
+    '提醒總覽',
+    '我的提醒',
     '理財評估',
     '財務規劃',
     '套用預算',
@@ -830,6 +834,10 @@ export class LineService {
       } catch (error) {
         await this.reply(replyToken, error instanceof Error ? error.message : '套用失敗');
       }
+      return;
+    }
+    if (text === '提醒總覽' || text === '我的提醒') {
+      await this.reply(replyToken, await this.reminderOverview.text(userId));
       return;
     }
     if (text === '早報') {
