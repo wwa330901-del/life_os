@@ -97,6 +97,17 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     state = AsyncValue.data(AuthSession(token: current.token, user: user));
   }
 
+  /// 新手引導做完或跳過：記在伺服器，畫面馬上進主畫面（伺服器沒記到也先讓他進去）。
+  Future<void> finishOnboarding() async {
+    final current = state.value;
+    if (current == null) return;
+    try {
+      await ref.read(apiClientProvider).markOnboarded();
+    } finally {
+      state = AsyncValue.data(AuthSession(token: current.token, user: current.user.copyWith(onboarded: true)));
+    }
+  }
+
   Future<void> logout() async {
     ref.read(apiClientProvider).setToken(null);
     await ref.read(tokenStorageProvider).clear();

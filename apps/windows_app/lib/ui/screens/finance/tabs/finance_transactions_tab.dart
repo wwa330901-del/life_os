@@ -310,6 +310,7 @@ class _TransactionEditorDialogState extends State<_TransactionEditorDialog> {
   late String? _accountId = widget.existing?.accountId ?? widget.accounts.firstOrNull?.id;
   late String? _toAccountId = widget.existing?.toAccountId;
   late String? _categoryId = widget.existing?.categoryId;
+  String? _amountError;
   late DateTime _date = widget.existing?.date ?? DateTime.now();
   late final _amountController = TextEditingController(
     text: widget.existing == null ? '' : widget.existing!.amount.toStringAsFixed(0),
@@ -353,8 +354,12 @@ class _TransactionEditorDialogState extends State<_TransactionEditorDialog> {
   void _submit() {
     final accountId = _accountId;
     if (accountId == null) return;
-    final amount = double.tryParse(_amountController.text);
-    if (amount == null || amount <= 0) return;
+    final amount = double.tryParse(_amountController.text.replaceAll(',', '').trim());
+    if (amount == null || amount <= 0) {
+      setState(() => _amountError = amount == null ? '金額只能打數字，例如 180' : '金額要大於 0');
+      return;
+    }
+    if (_amountError != null) setState(() => _amountError = null);
     if (_type == FinanceTransactionType.transfer && (_toAccountId == null || _toAccountId == accountId)) {
       return;
     }
@@ -400,7 +405,10 @@ class _TransactionEditorDialogState extends State<_TransactionEditorDialog> {
                 controller: _amountController,
                 autofocus: true,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: '金額'),
+                decoration: InputDecoration(labelText: '金額', errorText: _amountError),
+                onChanged: (_) {
+                  if (_amountError != null) setState(() => _amountError = null);
+                },
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(

@@ -10,6 +10,7 @@ import 'state/auth_provider.dart';
 import 'state/update_provider.dart';
 import 'state/app_layout_provider.dart';
 import 'ui/screens/login_screen.dart';
+import 'ui/screens/onboarding_screen.dart';
 import 'ui/shell/main_shell.dart';
 import 'ui/widgets/update_dialog.dart';
 
@@ -88,6 +89,9 @@ class _RootRouter extends ConsumerWidget {
     final session = authState.value;
     if (session == null) {
       return const LoginScreen();
+    }
+    if (!session.user.onboarded) {
+      return const OnboardingScreen();
     }
     return const MainShell();
   }

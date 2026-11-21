@@ -172,6 +172,11 @@ class ApiClient {
     return AppUser.fromJson(body);
   }
 
+  /// 新手引導做完或跳過。
+  Future<void> markOnboarded() async {
+    await _post('/auth/me/onboarded', const {});
+  }
+
   Future<List<SpaceSummary>> mySpaces() async {
     final body = await _getList('/spaces/me');
     return body
