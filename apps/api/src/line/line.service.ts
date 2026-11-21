@@ -58,6 +58,17 @@ import {
   formatTaipeiDateTime,
 } from '../common/taipei-date';
 import { LineMessageLogService, QuotedMessage, withQuoteContext } from '../line-notifier/line-message-log.service';
+import { buttonMessage, type LineMessageButton } from '../line-notifier/line-notifier.service';
+
+/** AI 問確認時下面的按鈕；按了等於使用者打了 AI_POSTBACK_TEXT 那句話。 */
+const CONFIRM_BUTTONS: LineMessageButton[] = [
+  { label: '確定', data: 'ai:confirm' },
+  { label: '取消', data: 'ai:cancel' },
+];
+const AI_POSTBACK_TEXT: Record<string, string> = {
+  'ai:confirm': '確定，照這樣做',
+  'ai:cancel': '取消，不要做',
+};
 import { dateToPickerValue, parseSnoozeTime, pickerValueToDate } from './snooze-time';
 
 const SNOOZE_REPLY_WINDOW_MS = 30 * 60 * 1000;
@@ -221,6 +232,9 @@ export class LineService {
         if (event.type === 'postback') {
           const data = event.postback?.data ?? '';
           if (link && data.startsWith('todo:')) await this.handleTodoPostback(link, data, replyToken, event.postback?.params?.datetime);
+          // AI 問確認時的「確定」「取消」按鈕：當成使用者打了那句話
+          const answer = AI_POSTBACK_TEXT[data];
+          if (link && answer) await this.handleTextForLinkedUser(link, answer, replyToken, undefined);
           continue;
         }
 
@@ -2846,7 +2860,12 @@ export class LineService {
     try {
       const result = await this.aiAgent.handleLine({ link, apiKey, text, forceAgent });
       if (!result.handled) return false;
-      await this.reply(replyToken, result.reply);
+      if (result.needsConfirmation) {
+        // 要確認的事（記帳猜帳戶、借錢、刪除…）：給按鈕，不用打字回「對」
+        await this.replyWithButtons(replyToken, result.reply, CONFIRM_BUTTONS);
+      } else {
+        await this.reply(replyToken, result.reply);
+      }
       return true;
     } catch (error) {
       if (error instanceof AiUnavailableError) {
@@ -2987,6 +3006,13 @@ export class LineService {
     if (!title) return null;
 
     return { startAt, allDay, title, location };
+  }
+
+  /** 文字＋下面一排按鈕（Flex），按了會送 postback。 */
+  private async replyWithButtons(replyToken: string, text: string, buttons: LineMessageButton[]): Promise<void> {
+    const prefix = this.replyPrefix.getStore();
+    if (prefix) text = `${prefix}\n\n${text}`;
+    await this.callReplyApi({ replyToken, messages: [buttonMessage(text, buttons)] });
   }
 
   private async reply(replyToken: string, text: string): Promise<void> {

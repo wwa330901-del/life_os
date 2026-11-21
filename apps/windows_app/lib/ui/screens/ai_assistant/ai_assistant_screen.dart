@@ -8,10 +8,13 @@ import '../../widgets/ai_memory_dialog.dart';
 import '../../widgets/ai_settings_dialog.dart';
 
 class _ChatMessage {
-  const _ChatMessage({required this.text, required this.isUser});
+  const _ChatMessage({required this.text, required this.isUser, this.needsConfirmation = false});
 
   final String text;
   final bool isUser;
+
+  /// AI 在問確認：下面顯示「確定／取消」按鈕（只有最後一則才顯示）。
+  final bool needsConfirmation;
 }
 
 /// AI 問答 chat screen — Q&A only over the user's own 記帳/代辦/專案/行事曆
@@ -54,6 +57,13 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
     super.dispose();
   }
 
+  /// 按「確定／取消」按鈕：等於打了那句話送出。
+  void _quickReply(String text) {
+    if (_sending) return;
+    _inputController.text = text;
+    _send();
+  }
+
   Future<void> _send() async {
     final question = _inputController.text.trim();
     if (question.isEmpty || _sending) return;
@@ -70,7 +80,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
           .read(apiClientProvider)
           .askAiAssistant(question: question, previousInteractionId: _lastInteractionId);
       setState(() {
-        _messages.add(_ChatMessage(text: result.answer, isUser: false));
+        _messages.add(_ChatMessage(text: result.answer, isUser: false, needsConfirmation: result.needsConfirmation));
         _lastInteractionId = result.interactionId;
       });
     } on ApiException catch (e) {
@@ -119,7 +129,33 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
                     controller: _scrollController,
                     padding: const EdgeInsets.all(16),
                     itemCount: _messages.length,
-                    itemBuilder: (context, index) => _MessageBubble(message: _messages[index]),
+                    itemBuilder: (context, index) {
+                      final message = _messages[index];
+                      final bubble = _MessageBubble(message: message);
+                      if (!message.needsConfirmation || index != _messages.length - 1) return bubble;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          bubble,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4, bottom: 8),
+                            child: Wrap(
+                              spacing: 8,
+                              children: [
+                                FilledButton(
+                                  onPressed: _sending ? null : () => _quickReply('確定，照這樣做'),
+                                  child: const Text('確定'),
+                                ),
+                                OutlinedButton(
+                                  onPressed: _sending ? null : () => _quickReply('取消，不要做'),
+                                  child: const Text('取消'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
           ),
           if (_sending)

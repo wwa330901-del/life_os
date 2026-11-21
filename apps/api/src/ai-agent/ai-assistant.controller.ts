@@ -38,6 +38,10 @@ export class AiAssistantController {
       if (error instanceof AiUnavailableError) return { answer: aiUnavailableMessage(error), interactionId: dto.previousInteractionId };
       throw error;
     }
-    return { answer: result.handled ? result.reply : NOT_UNDERSTOOD, interactionId: result.interactionId };
+    return {
+      answer: result.handled ? result.reply : NOT_UNDERSTOOD,
+      interactionId: result.interactionId,
+      needsConfirmation: result.needsConfirmation ?? false,
+    };
   }
 }

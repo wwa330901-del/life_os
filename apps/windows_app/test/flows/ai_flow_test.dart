@@ -48,4 +48,25 @@ void main() {
     expect(find.textContaining('已經通知管理員'), findsOneWidget);
     expect(find.textContaining('Exception'), findsNothing);
   });
+  testWidgets('AI 問確認 → 下面有「確定／取消」按鈕，按確定等於回答確定', (tester) async {
+    var n = 0;
+    final backend = loggedInBackend()
+      ..onCall('POST /ai-assistant/ask', (body) {
+        n++;
+        return n == 1
+            ? {'answer': '晚餐 150 記在現金可以嗎？', 'interactionId': 't1', 'needsConfirmation': true}
+            : {'answer': '記好了。', 'interactionId': 't2', 'needsConfirmation': false};
+      });
+    await pumpApp(tester, backend, token: 't1');
+    await _openAi(tester);
+
+    await _say(tester, '晚餐 150');
+    expect(find.widgetWithText(FilledButton, '確定'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '確定'));
+    await tester.pumpAndSettle();
+
+    expect(backend.sent('POST /ai-assistant/ask')[1]['question'], '確定，照這樣做');
+    expect(find.text('記好了。'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '確定'), findsNothing);
+  });
 }

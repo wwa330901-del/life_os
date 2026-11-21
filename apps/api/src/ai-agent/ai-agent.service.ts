@@ -460,6 +460,8 @@ export interface AgentResult {
   handled: boolean;
   reply: string;
   interactionId: string;
+  /** 回覆在問使用者確認（有等確認的動作）：LINE／App 顯示「確定／取消」按鈕。 */
+  needsConfirmation?: boolean;
 }
 
 /** 萬用 AI (2026-09-30 LINE，2026-10-01 App 的 AI 問答也共用): 記帳、代辦、
@@ -806,7 +808,7 @@ export class AiAgentService {
           update: data,
         });
       }
-      return { handled, reply: handled ? text : '', interactionId: ctx.turnId };
+      return { handled, reply: handled ? text : '', interactionId: ctx.turnId, needsConfirmation: handled && ctx.pending != null };
     } catch (error) {
       status = AiUsageStatus.FAILED;
       errorMessage = error instanceof Error ? error.message : String(error);
