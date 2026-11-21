@@ -9,7 +9,14 @@ const token = process.env.LINE_TOKEN;
 if (!token) throw new Error('請設定 LINE_TOKEN');
 
 // 要跟 apps/windows_app/lib/core/theme/app_themes.dart 的 id 一致
-const THEMES = ['dawn', 'ink-gold', 'paper', 'forest', 'ocean', 'sakura', 'night', 'nordic', 'retro', 'candy'];
+const THEMES = [
+  'dawn', 'ink-gold', 'paper', 'forest', 'ocean', 'sakura', 'night', 'nordic', 'retro', 'candy',
+  // 2026-11-22 純色系列
+  'cloud', 'graphite', 'mist-blue', 'sage', 'milk-tea', 'lavender', 'coral', 'lemon', 'midnight', 'cocoa',
+  // 2026-11-22 真實系列
+  'p-clouds', 'p-coast', 'p-boardwalk', 'p-city', 'p-galaxy', 'p-sakura', 'p-snowpeak', 'p-dunes',
+  'p-moraine', 'p-fuji', 'p-bookstore', 'p-waterfall', 'p-maple', 'p-lavender', 'p-aurora',
+];
 const W = 2500, H = 1686, COLS = 4, ROWS = 2;
 // 按鈕送出的文字要跟 apps/api/src/line/line.service.ts 的 MENU_COMMANDS 對得上（「算命」故意交給 AI）
 const TEXTS = ['財務總覽', '今日行事曆', '代辦事項總覽', '人生目標', '知識庫', '購物車', '算命', '我能做什麼'];

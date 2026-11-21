@@ -29,6 +29,8 @@ public static class ThemeMenus
     {
         public string Id, Head, Body;
         public string Text, Sub, Primary, Card, Border, ChipBg, ChipLine;
+        // 純色系列：沒有背景圖，用 Top→Bottom 漸層
+        public string Top, Bottom;
         public float CardR, ChipR;
     }
 
@@ -44,6 +46,33 @@ public static class ThemeMenus
         new Spec { Id="nordic", Head="geo", Body="sans", Text="FF1F2430", Sub="FF5D6472", Primary="FF3E63B8", Card="EDFFFFFF", Border="FFDADDE3", ChipBg="FFE3E8F2", CardR=8, ChipR=8 },
         new Spec { Id="retro", Head="serif", Body="sans", Text="FF3B2A1A", Sub="FF6F5A43", Primary="FFA8441F", Card="E6FFFAF0", Border="FFDCC7A0", ChipBg="FFF0D9A8", CardR=12, ChipR=10 },
         new Spec { Id="candy", Head="round", Body="round", Text="FF4A3B47", Sub="FF7D6A78", Primary="FFB4507A", Card="E0FFFFFF", Border="FFF3E1D8", ChipBg="FFFFE3D8", CardR=26, ChipR=999 },
+        // 2026-11-22 純色系列
+        new Spec { Id="cloud", Head="sans", Body="sans", Text="FF1F2328", Sub="FF5E646B", Primary="FF3B4A5A", Card="D9FFFFFF", Border="14000000", ChipBg="FFE6E3DC", Top="FFFAFAF8", Bottom="FFECEAE5", CardR=14, ChipR=12 },
+        new Spec { Id="graphite", Head="sans", Body="sans", Text="FF1B2129", Sub="FF59626C", Primary="FF2E3A46", Card="D9FFFFFF", Border="14000000", ChipBg="FFDDE1E7", Top="FFEEF0F3", Bottom="FFD9DDE3", CardR=8, ChipR=8 },
+        new Spec { Id="mist-blue", Head="sans", Body="sans", Text="FF1B2A33", Sub="FF4F6370", Primary="FF2F6F8F", Card="D9FFFFFF", Border="14000000", ChipBg="FFD9E8F1", Top="FFEEF4F8", Bottom="FFD6E4EE", CardR=14, ChipR=12 },
+        new Spec { Id="sage", Head="sans", Body="sans", Text="FF1E2A20", Sub="FF566459", Primary="FF4E7A57", Card="D9FFFFFF", Border="14000000", ChipBg="FFDDE8D9", Top="FFF0F3EE", Bottom="FFDCE6D8", CardR=16, ChipR=12 },
+        new Spec { Id="milk-tea", Head="serif", Body="sans", Text="FF2B1F17", Sub="FF6B5747", Primary="FF8A5A3C", Card="D9FFFFFF", Border="14000000", ChipBg="FFEFDFCB", Top="FFF8F2EA", Bottom="FFEADCCB", CardR=14, ChipR=12 },
+        new Spec { Id="lavender", Head="sans", Body="sans", Text="FF221C33", Sub="FF5D5670", Primary="FF6A55A6", Card="D9FFFFFF", Border="14000000", ChipBg="FFE6E0F4", Top="FFF4F1F9", Bottom="FFE2DCF1", CardR=18, ChipR=12 },
+        new Spec { Id="coral", Head="sans", Body="sans", Text="FF2E1A14", Sub="FF6E5248", Primary="FFC24E33", Card="D9FFFFFF", Border="14000000", ChipBg="FFFBE0D5", Top="FFFFF4EF", Bottom="FFF9DCCF", CardR=16, ChipR=999 },
+        new Spec { Id="lemon", Head="sans", Body="sans", Text="FF2A2208", Sub="FF625A3A", Primary="FF7A5C00", Card="D9FFFFFF", Border="14000000", ChipBg="FFF6E9AE", Top="FFFFFCEB", Bottom="FFF7ECB8", CardR=16, ChipR=12 },
+        new Spec { Id="midnight", Head="sans", Body="sans", Text="FFE8EEF6", Sub="FFA7B3C2", Primary="FF7FB2FF", Card="14FFFFFF", Border="24FFFFFF", ChipBg="FF263347", Top="FF1E2838", Bottom="FF111824", CardR=14, ChipR=12 },
+        new Spec { Id="cocoa", Head="sans", Body="sans", Text="FFF3EAE2", Sub="FFBFAE9F", Primary="FFE2B07A", Card="14FFFFFF", Border="24FFFFFF", ChipBg="FF3A2E26", Top="FF2E241E", Bottom="FF17110E", CardR=14, ChipR=12 },
+        // 2026-11-22 真實系列（背景圖跟 App 同一張）
+        new Spec { Id="p-clouds", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF2D5B8A", Card="D1FFFFFF", Border="12000000", ChipBg="FFDCE7F2", CardR=16, ChipR=12 },
+        new Spec { Id="p-coast", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF2B5F7A", Card="D1FFFFFF", Border="12000000", ChipBg="FFDCE8EE", CardR=16, ChipR=12 },
+        new Spec { Id="p-boardwalk", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF3D6B52", Card="D1FFFFFF", Border="12000000", ChipBg="FFDCE8DF", CardR=16, ChipR=12 },
+        new Spec { Id="p-city", Head="sans", Body="sans", Text="FFF4F6F8", Sub="FFC3C9D1", Primary="FFF2B84B", Card="B814181E", Border="2EFFFFFF", ChipBg="FF2A3242", CardR=16, ChipR=12 },
+        new Spec { Id="p-galaxy", Head="sans", Body="sans", Text="FFF4F6F8", Sub="FFC3C9D1", Primary="FF9DB4FF", Card="B814181E", Border="2EFFFFFF", ChipBg="FF262D52", CardR=16, ChipR=12 },
+        new Spec { Id="p-sakura", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FFB84D72", Card="D1FFFFFF", Border="12000000", ChipBg="FFF7E1E8", CardR=16, ChipR=12 },
+        new Spec { Id="p-snowpeak", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF5A5A9E", Card="D1FFFFFF", Border="12000000", ChipBg="FFE4E2F2", CardR=16, ChipR=12 },
+        new Spec { Id="p-dunes", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF7A6A52", Card="D1FFFFFF", Border="12000000", ChipBg="FFEAE5DC", CardR=16, ChipR=12 },
+        new Spec { Id="p-moraine", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF16708A", Card="D1FFFFFF", Border="12000000", ChipBg="FFD5EAF0", CardR=16, ChipR=12 },
+        new Spec { Id="p-fuji", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF2F4F8A", Card="D1FFFFFF", Border="12000000", ChipBg="FFDCE4F2", CardR=16, ChipR=12 },
+        new Spec { Id="p-bookstore", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF7A5A3A", Card="D1FFFFFF", Border="12000000", ChipBg="FFEDE3D6", CardR=16, ChipR=12 },
+        new Spec { Id="p-waterfall", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF3D7A3A", Card="D1FFFFFF", Border="12000000", ChipBg="FFDDEAD8", CardR=16, ChipR=12 },
+        new Spec { Id="p-maple", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FFB9501C", Card="D1FFFFFF", Border="12000000", ChipBg="FFF7E0CF", CardR=16, ChipR=12 },
+        new Spec { Id="p-lavender", Head="sans", Body="sans", Text="FF1C2228", Sub="FF4E565E", Primary="FF6A4FA3", Card="D1FFFFFF", Border="12000000", ChipBg="FFE7E0F3", CardR=16, ChipR=12 },
+        new Spec { Id="p-aurora", Head="sans", Body="sans", Text="FFF4F6F8", Sub="FFC3C9D1", Primary="FF7EE0A8", Card="B814181E", Border="2EFFFFFF", ChipBg="FF1F3330", CardR=16, ChipR=12 },
     };
 
     static Color C(string argb) { return Color.FromArgb(Convert.ToInt32(argb, 16)); }
@@ -94,16 +123,25 @@ public static class ThemeMenus
         {
             using (var bmp = new Bitmap(W, H))
             using (var g = Graphics.FromImage(bmp))
-            using (var bg = Image.FromFile(Path.Combine(bgDir, s.Id + ".jpg")))
+            using (var bg = s.Top != null ? null : Image.FromFile(Path.Combine(bgDir, s.Id + ".jpg")))
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-                // 背景圖等比裁切填滿
-                float k = Math.Max((float)W / bg.Width, (float)H / bg.Height);
-                float bw = bg.Width * k, bh = bg.Height * k;
-                g.DrawImage(bg, (W - bw) / 2, (H - bh) / 2, bw, bh);
+                if (bg == null)
+                {
+                    // 純色系列：上到下漸層
+                    using (var grad = new LinearGradientBrush(new Rectangle(0, 0, W, H), C(s.Top), C(s.Bottom), LinearGradientMode.Vertical))
+                        g.FillRectangle(grad, 0, 0, W, H);
+                }
+                else
+                {
+                    // 背景圖等比裁切填滿
+                    float k = Math.Max((float)W / bg.Width, (float)H / bg.Height);
+                    float bw = bg.Width * k, bh = bg.Height * k;
+                    g.DrawImage(bg, (W - bw) / 2, (H - bh) / 2, bw, bh);
+                }
 
                 var titleFont = MakeFont(fams[s.Head], 108, true);
                 var subFont = MakeFont(fams[s.Body], 50, false);

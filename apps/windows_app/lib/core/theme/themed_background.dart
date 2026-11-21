@@ -16,13 +16,20 @@ class ThemedBackground extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         ColoredBox(color: spec.ground),
-        Image.asset(
-          spec.backgroundAsset,
-          fit: BoxFit.cover,
-          alignment: Alignment.bottomCenter,
-          gaplessPlayback: true,
-          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-        ),
+        if (spec.gradient case final colors?)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: colors),
+            ),
+          )
+        else
+          Image.asset(
+            spec.backgroundAsset,
+            fit: BoxFit.cover,
+            alignment: Alignment.bottomCenter,
+            gaplessPlayback: true,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
         child,
       ],
     );

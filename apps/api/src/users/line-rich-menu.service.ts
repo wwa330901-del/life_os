@@ -50,10 +50,18 @@ export class LineRichMenuService implements OnApplicationBootstrap {
 
   private async apply(lineUserId: string, appTheme: string | null): Promise<void> {
     if (!this.token) return;
-    const alias = themeMenuAlias(appTheme);
+    let alias = themeMenuAlias(appTheme);
     for (let attempt = 0; ; attempt++) {
       try {
-        const res = await this.call(`https://api.line.me/v2/bot/richmenu/alias/${alias}`);
+        let res: Response;
+        try {
+          res = await this.call(`https://api.line.me/v2/bot/richmenu/alias/${alias}`);
+        } catch (err) {
+          // 新風格的選單還沒上傳（別名不存在）→ 先用預設的晨光選單
+          if (!(err instanceof LineApiError) || !err.message.includes('404') || alias === themeMenuAlias(null)) throw err;
+          alias = themeMenuAlias(null);
+          res = await this.call(`https://api.line.me/v2/bot/richmenu/alias/${alias}`);
+        }
         const { richMenuId } = (await res.json()) as { richMenuId: string };
         await this.call(`https://api.line.me/v2/bot/user/${lineUserId}/richmenu/${richMenuId}`, 'POST');
         return;

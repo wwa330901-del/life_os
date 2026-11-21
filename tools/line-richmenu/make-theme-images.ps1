@@ -1,4 +1,4 @@
-﻿# 產生 10 套外觀風格的 LINE 圖文選單圖片 → themes/{id}.jpg（再用 upload-themes.js 上傳）
+﻿# 產生每一套外觀風格的 LINE 圖文選單圖片 → themes/{id}.jpg（再用 upload-themes.js 上傳）
 # 用法：powershell -ExecutionPolicy Bypass -File make-theme-images.ps1
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot

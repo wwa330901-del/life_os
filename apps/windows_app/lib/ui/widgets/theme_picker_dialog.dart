@@ -26,7 +26,12 @@ class ThemePickerDialog extends ConsumerWidget {
                 '每個人可以選自己喜歡的，電腦和平板會一起換。',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
-              const SizedBox(height: 16),
+              for (final series in ThemeSeries.values) ...[
+              const SizedBox(height: 20),
+              Text(series.label, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(series.description, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 12),
               GridView.count(
                 crossAxisCount: columns,
                 shrinkWrap: true,
@@ -35,7 +40,7 @@ class ThemePickerDialog extends ConsumerWidget {
                 crossAxisSpacing: 14,
                 childAspectRatio: 1.25,
                 children: [
-                  for (final spec in appThemes)
+                  for (final spec in appThemes.where((t) => t.series == series))
                     _ThemeTile(
                       spec: spec,
                       selected: spec.id == current,
@@ -52,6 +57,7 @@ class ThemePickerDialog extends ConsumerWidget {
                     ),
                 ],
               ),
+              ],
             ],
           ),
         ),
@@ -94,7 +100,14 @@ class _ThemeTile extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.asset(spec.backgroundAsset, fit: BoxFit.cover, alignment: Alignment.bottomCenter),
+                if (spec.gradient case final colors?)
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: colors),
+                    ),
+                  )
+                else
+                  Image.asset(spec.backgroundAsset, fit: BoxFit.cover, alignment: Alignment.bottomCenter, cacheWidth: 480),
                 Padding(
                   padding: const EdgeInsets.all(10),
                   child: Column(

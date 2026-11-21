@@ -1,5 +1,19 @@
 import 'package:flutter/material.dart';
 
+import 'app_themes_more.dart';
+
+/// 外觀風格系列（選風格的視窗分開列）。
+enum ThemeSeries {
+  classic('經典系列', '有插畫背景的 10 套'),
+  solid('純色系列', '沒有圖，單色＋淡淡漸層，最清爽'),
+  photo('真實系列', '真的風景照片，淡化當背景');
+
+  const ThemeSeries(this.label, this.description);
+
+  final String label;
+  final String description;
+}
+
 /// 10 套外觀風格（2026-10-05 使用者逐套確認過，提案板：元序 品牌視覺提案）。
 /// 每套不只換顏色：字體、卡片／按鈕圓角、背景圖都不同。背景圖在
 /// `assets/themes/{id}.jpg`，由 tools/theme-backgrounds 程式產生（寫實但淡化）。
@@ -27,7 +41,14 @@ class AppThemeSpec {
     required this.cardRadius,
     required this.buttonRadius,
     required this.chipRadius,
+    this.series = ThemeSeries.classic,
+    this.gradient,
   });
+
+  final ThemeSeries series;
+
+  /// 純色系列：背景用這組顏色從上到下漸層，沒有背景圖。
+  final List<Color>? gradient;
 
   final String id;
   final String name;
@@ -80,7 +101,10 @@ const _kai = 'LXGW WenKai TC';
 const _round = 'Huninn';
 const _geo = 'Chocolate Classical Sans';
 
-const appThemes = <AppThemeSpec>[
+/// 全部風格：經典 10 套＋純色 10 套＋真實 15 套。
+final appThemes = <AppThemeSpec>[..._classicThemes, ...moreAppThemes];
+
+const _classicThemes = <AppThemeSpec>[
   AppThemeSpec(
     id: 'dawn', name: '晨光', description: '米白配暖橘，像清晨的陽光', brightness: Brightness.light,
     ground: Color(0xFFFBF5EC), panel: Color(0xFFF3E8D6), text: Color(0xFF3D362C), sub: Color(0xFF6B5D4C),
