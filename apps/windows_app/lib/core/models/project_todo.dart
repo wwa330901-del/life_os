@@ -41,6 +41,7 @@ class ProjectTodo {
     required this.notes,
     required this.sortOrder,
     this.calendarSyncTarget,
+    this.lifeGoalId,
   });
 
   final String id;
@@ -61,6 +62,9 @@ class ProjectTodo {
   /// 有日期時自動產生的行程存到哪（2026-09-30）。
   final CalendarSyncTarget? calendarSyncTarget;
 
+  /// 為了哪個人生目標（2026-11-22）。
+  final String? lifeGoalId;
+
   factory ProjectTodo.fromJson(Map<String, dynamic> json) => ProjectTodo(
     id: json['id'] as String,
     title: json['title'] as String,
@@ -73,6 +77,7 @@ class ProjectTodo {
     notes: json['notes'] as String?,
     sortOrder: json['sortOrder'] as int,
     calendarSyncTarget: CalendarSyncTargetJson.fromJson(json['calendarSyncTarget'] as String?),
+    lifeGoalId: json['lifeGoalId'] as String?,
   );
 }
 

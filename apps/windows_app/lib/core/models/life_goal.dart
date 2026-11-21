@@ -116,6 +116,7 @@ class LifeGoal {
     required this.trackingKeyword,
     required this.checkInPeriod,
     required this.requireCheckInNote,
+    this.openTodos = const [],
   });
 
   final String id;
@@ -135,6 +136,9 @@ class LifeGoal {
   final String? trackingKeyword;
   final LifeGoalPeriod checkInPeriod;
   final bool requireCheckInNote;
+
+  /// 為這個目標還沒做完的代辦（標題）。
+  final List<String> openTodos;
 
   double? get progress => lifeGoalProgress(targetValue, currentValue, startValue);
 
@@ -156,6 +160,9 @@ class LifeGoal {
     trackingKeyword: json['trackingKeyword'] as String?,
     checkInPeriod: LifeGoalPeriodJson.fromJson(json['checkInPeriod'] as String?),
     requireCheckInNote: json['requireCheckInNote'] as bool? ?? false,
+    openTodos: [
+      for (final t in (json['openTodos'] as List<dynamic>? ?? const [])) (t as Map<String, dynamic>)['title'] as String,
+    ],
   );
 
   /// 「自動追蹤：帳戶「郵局」」-style one-liner for the card; null for plain manual goals.

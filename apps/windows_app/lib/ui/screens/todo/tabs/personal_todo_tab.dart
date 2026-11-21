@@ -7,6 +7,8 @@ import '../../../../state/auth_provider.dart';
 import '../../../../core/models/calendar_event.dart';
 import '../../../../state/calendar_provider.dart';
 import '../../../../state/todo_provider.dart';
+import '../../../../core/models/life_goal.dart';
+import '../../../../state/life_goal_provider.dart';
 import '../../../widgets/calendar_target_picker.dart';
 import '../todo_tile.dart';
 import '../../../widgets/error_panel.dart';
@@ -96,7 +98,14 @@ class PersonalTodoTab extends ConsumerWidget {
     try {
       targets = await ref.read(myCalendarTargetsProvider.future);
     } catch (_) {}
+    // 可以選「為了哪個人生目標」（2026-11-22）；讀不到目標就不顯示這格
+    var goals = const <LifeGoal>[];
+    try {
+      goals = (await ref.read(lifeGoalsProvider.future)).where((g) => g.status == LifeGoalStatus.active).toList();
+    } catch (_) {}
     if (!context.mounted) return;
+    var goalId = existing?.lifeGoalId;
+    if (goalId != null && !goals.any((g) => g.id == goalId)) goalId = null;
     var calendarTarget = existing?.calendarSyncTarget;
     final titleController = TextEditingController(text: existing?.title ?? '');
     var dueDate = existing?.dueDate;
@@ -182,6 +191,21 @@ class PersonalTodoTab extends ConsumerWidget {
                     onChanged: (t) => setState(() => calendarTarget = t),
                   ),
                 ],
+                if (goals.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    initialValue: goalId,
+                    decoration: const InputDecoration(
+                      labelText: '為了哪個人生目標（選填）',
+                      helperText: '打卡型目標：這件做完會自動打卡一次',
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('不屬於任何目標')),
+                      for (final g in goals) DropdownMenuItem<String?>(value: g.id, child: Text(g.title)),
+                    ],
+                    onChanged: (v) => setState(() => goalId = v),
+                  ),
+                ],
               ],
             ),
           ),
@@ -218,6 +242,7 @@ class PersonalTodoTab extends ConsumerWidget {
           dueDateAllDay: allDay,
           isOngoing: isOngoing,
           calendarSyncTarget: isOngoing ? null : calendarTarget,
+          lifeGoalId: goalId,
         );
       } else {
         await api.updateTodo(
@@ -228,9 +253,11 @@ class PersonalTodoTab extends ConsumerWidget {
           clearDueDate: effectiveDueDate == null,
           isOngoing: isOngoing,
           calendarSyncTarget: !isOngoing && calendarTarget != existing.calendarSyncTarget ? calendarTarget : null,
+          lifeGoalId: goalId != existing.lifeGoalId ? (goalId ?? '') : null,
         );
       }
       ref.invalidate(todoOverviewProvider);
+      ref.invalidate(lifeGoalsProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));

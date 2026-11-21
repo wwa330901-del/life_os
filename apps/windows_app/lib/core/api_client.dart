@@ -1377,8 +1377,10 @@ class ApiClient {
     TodoPriority? priority,
     String? notes,
     CalendarSyncTarget? calendarSyncTarget,
+    String? lifeGoalId,
   }) async {
     await _post('/todos', {
+      if (lifeGoalId != null) 'lifeGoalId': lifeGoalId,
       if (calendarSyncTarget != null) 'calendarSyncTarget': calendarSyncTarget.toJson(),
       'title': title,
       if (dueDate != null)
@@ -1402,8 +1404,11 @@ class ApiClient {
     String? notes,
     bool clearNotes = false,
     CalendarSyncTarget? calendarSyncTarget,
+    /// 要改屬於哪個目標時才給；空字串＝拿掉連結。
+    String? lifeGoalId,
   }) async {
     await _patchIgnoreBody('/todos/$todoId', {
+      if (lifeGoalId != null) 'lifeGoalId': lifeGoalId,
       if (calendarSyncTarget != null) 'calendarSyncTarget': calendarSyncTarget.toJson(),
       if (title != null) 'title': title,
       if (done != null) 'done': done,

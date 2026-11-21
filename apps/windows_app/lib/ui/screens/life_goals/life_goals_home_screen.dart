@@ -193,6 +193,13 @@ class _GoalCardState extends ConsumerState<_GoalCard> {
                     const SizedBox(height: 2),
                     Text(goal.trackingDescription!, style: textTheme.bodySmall?.copyWith(color: scheme.primary)),
                   ],
+                  if (goal.openTodos.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '要做的事：${goal.openTodos.take(3).join('、')}${goal.openTodos.length > 3 ? ' 等 ${goal.openTodos.length} 件' : ''}',
+                      style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ],
                   if (progress != null) ...[
                     const SizedBox(height: 8),
                     ClipRRect(

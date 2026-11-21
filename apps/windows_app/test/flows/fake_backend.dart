@@ -92,6 +92,7 @@ FakeBackend loggedInBackend() => FakeBackend()
   ..on('GET /spaces/me', [
     {'id': 'sp1', 'type': 'PERSONAL', 'name': '我的空間'},
   ])
+  ..on('GET /life-goals', [])
   ..on('GET /home/layout', [
     {'type': 'personalFinance', 'visible': true},
     {'type': 'todayTodos', 'visible': true},
