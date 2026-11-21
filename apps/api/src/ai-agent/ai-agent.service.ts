@@ -215,6 +215,12 @@ const AGENT_TOOLS = [
   },
   {
     type: 'function' as const,
+    name: 'set_review_focus',
+    description: '使用者說「下週幫我盯著…」「下次回顧檢查我有沒有…」：記下來，下一次自動週／月回顧會先檢查這件事做得怎樣。focus 寫成一句短短的目標，例如「外食每週 3 次以內」。',
+    parameters: { type: 'object', properties: { focus: { type: 'string' } }, required: ['focus'] },
+  },
+  {
+    type: 'function' as const,
     name: 'record_transaction',
     description:
       '記一筆收入或支出。categoryName 從系統提示列出的分類裡挑意思最接近的一個（必填）。使用者有講帳戶才填 accountName；沒講就不要填，系統會猜最常用的帳戶並回傳 needsConfirmation，這時要問使用者「記在 X 可以嗎？」，等他回覆再 confirm_pending_action。',
@@ -1105,6 +1111,8 @@ export class AiAgentService {
         return (await this.financeHealth.forUser(ctx.userId)) ?? { error: '找不到個人空間' };
       case 'get_life_review':
         return (await this.lifeReview.build(ctx.userId, args.period === 'month' ? 'month' : 'week')) ?? '這段時間還沒有記錄';
+      case 'set_review_focus':
+        return { saved: await this.lifeReview.setFocus(ctx.userId, String(args.focus ?? '')) };
       case 'confirm_pending_action':
         return this.confirmPending(ctx);
       case 'cancel_pending_action':

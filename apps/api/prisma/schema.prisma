@@ -113,6 +113,9 @@ model User {
   appLayout    String?
   /// 新手引導（2026-11-22）做完或跳過的時間；null＝新帳號第一次登入要顯示。功能上線前的帳號在 migration 填好了。
   onboardedAt  DateTime?
+  /// 回顧最後說「下次幫我檢查這件事」（2026-11-22）；下一次自動回顧會先講這件，講完清掉。
+  reviewFocus   String?
+  reviewFocusAt DateTime?
 
   /// 算命用的生辰（2026-10-01）：日期必填、時間可以不知道。
   birthDate DateTime? @db.Date

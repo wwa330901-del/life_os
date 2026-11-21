@@ -19,7 +19,7 @@ import { JournalService } from '../journal/journal.service';
 import { FinanceHealthService } from '../finance/finance-health.service';
 import { FinanceLoansService } from '../finance/finance-loans.service';
 import { FinanceAdvancesService } from '../finance/finance-advances.service';
-import { dateKeyString, keyToInstant, ReviewKind, ReviewPeriod, reviewPeriod } from './review-period';
+import { dateKeyString, keyToInstant, parseReviewAi, ReviewKind, ReviewPeriod, reviewPeriod } from './review-period';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const TOP_CATEGORIES = 3;
@@ -76,8 +76,18 @@ export class LifeReviewService {
     });
     for (const { userId } of links) {
       try {
-        const text = await this.build(userId, kind, new Date(), completedMonth);
-        if (text) await this.lineNotifier.notifyByUser(userId, text);
+        const result = await this.buildFull(userId, kind, new Date(), completedMonth);
+        if (!result) continue;
+        // 最後給按鈕：AI 建議的那件事下次回顧幫你檢查（2026-11-22）
+        const buttons = result.suggestion
+          ? [
+              { label: '下次檢查這件', data: `review:focus:${result.suggestion.slice(0, 60)}` },
+              { label: '我自己想一件', data: 'review:custom' },
+            ]
+          : undefined;
+        await this.lineNotifier.notifyByUser(userId, result.text, buttons);
+        // 上次說要檢查的已經在這次回顧講過了
+        if (result.hadFocus) await this.prisma.user.update({ where: { id: userId }, data: { reviewFocus: null, reviewFocusAt: null } });
       } catch (error) {
         this.logger.error(`${kind === 'week' ? '週' : '月'}回顧失敗（userId=${userId}）`, error as Error);
       }
@@ -86,7 +96,31 @@ export class LifeReviewService {
 
   /** The full review text, or null when the user has no data at all. */
   async build(userId: string, kind: ReviewKind, now = new Date(), completedMonth = false): Promise<string | null> {
+    return (await this.buildFull(userId, kind, now, completedMonth))?.text ?? null;
+  }
+
+  /** 記下「下次回顧幫我檢查這件事」。 */
+  async setFocus(userId: string, focus: string): Promise<string> {
+    const text = focus.trim().slice(0, 100);
+    await this.prisma.user.update({ where: { id: userId }, data: { reviewFocus: text || null, reviewFocusAt: text ? new Date() : null } });
+    return text;
+  }
+
+  /** 回顧全文＋AI 建議下次檢查的一件事；hadFocus＝有講到上次說要檢查的。 */
+  async buildFull(
+    userId: string,
+    kind: ReviewKind,
+    now = new Date(),
+    completedMonth = false,
+  ): Promise<{ text: string; suggestion: string | null; hadFocus: boolean } | null> {
     const period = reviewPeriod(kind, now, completedMonth);
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { reviewFocus: true } });
+    const focus: Section | null = user?.reviewFocus
+      ? {
+          text: `🔁 上次說要注意：${user.reviewFocus}\n（下面的數字和 AI 會看你做得怎麼樣）`,
+          facts: { lastFocus: user.reviewFocus, instruction: '先評一句上次說要注意的這件事做得怎樣（看數據有沒有改善）' },
+        }
+      : null;
     const [money, owed, tasks, goals, journal, stocks] = await Promise.all([
       this.moneySection(userId, period),
       this.owedSection(userId, period, now),
@@ -95,13 +129,16 @@ export class LifeReviewService {
       this.journalSection(userId, period),
       this.stockSection(userId, period),
     ]);
-    const sections = [money, owed, tasks, goals, journal, stocks].filter((s): s is Section => s != null);
-    if (sections.length === 0) return null;
+    const dataSections = [money, owed, tasks, goals, journal, stocks].filter((s): s is Section => s != null);
+    if (dataSections.length === 0) return null;
+    const sections = focus ? [focus, ...dataSections] : dataSections;
 
     const title = `${kind === 'week' ? '📅 週回顧' : '🗓 月回顧'}（${period.label}${period.partial ? '，到今天為止' : ''}）`;
     const body = sections.map((s) => s.text).join('\n\n');
-    const summary = await this.aiSummary(userId, period, sections);
-    return [title, '', body, ...(summary ? ['', `💬 ${summary}`] : [])].join('\n');
+    const ai = await this.aiSummary(userId, period, sections);
+    const lines = [title, '', body, ...(ai?.summary ? ['', `💬 ${ai.summary}`] : [])];
+    if (ai?.suggestion) lines.push('', `👉 下${kind === 'week' ? '週' : '個月'}可以注意：${ai.suggestion}`, '按下面的按鈕，下次回顧幫你檢查。');
+    return { text: lines.join('\n'), suggestion: ai?.suggestion ?? null, hadFocus: focus != null };
   }
 
   // --- 錢 ---
@@ -293,10 +330,25 @@ export class LifeReviewService {
       }
     }
     if (behind.length > 0) lines.push(`⚠️ 進度落後：${behind.join('、')}`);
+    // 月回顧：每個目標哪幾天打卡，AI 拿去跟日記心情對照（2026-11-22）
+    const checkInDays =
+      period.kind === 'month'
+        ? await this.prisma.lifeGoalCheckIn.findMany({
+            where: { goalId: { in: goals.map((g) => g.id) }, date: { gte: period.start, lt: period.end } },
+            select: { goalId: true, date: true },
+          })
+        : [];
     return {
       text: lines.join('\n'),
       facts: {
-        goals: goals.map((g) => ({ title: g.title, progress: formatGoalProgress(g), checkInsThisPeriod: checkInCount.get(g.id) ?? 0 })),
+        goals: goals.map((g) => ({
+          title: g.title,
+          progress: formatGoalProgress(g),
+          checkInsThisPeriod: checkInCount.get(g.id) ?? 0,
+          ...(period.kind === 'month' && {
+            checkInDates: checkInDays.filter((c) => c.goalId === g.id).map((c) => c.date.toISOString().slice(0, 10)),
+          }),
+        })),
         behind,
       },
     };
@@ -310,8 +362,19 @@ export class LifeReviewService {
     const mood = stats.averageMood != null ? `，平均心情 ${stats.averageMood}/5 ${MOOD_EMOJI[Math.round(stats.averageMood)]}` : '';
     const tags = stats.topTags.length > 0 ? `
 常寫到：${stats.topTags.join('、')}` : '';
+    // 月回顧：每天的心情和一小段內容，讓 AI 跟目標打卡對照（2026-11-22）
+    const days =
+      period.kind === 'month'
+        ? (
+            await this.prisma.journalEntry.findMany({
+              where: { ownerUserId: userId, date: { gte: period.start, lt: period.end } },
+              orderBy: { date: 'asc' },
+              select: { date: true, mood: true, content: true },
+            })
+          ).map((e) => ({ date: e.date.toISOString().slice(0, 10), mood: e.mood, text: e.content.slice(0, 40) }))
+        : undefined;
     return { text: `📝 日記
-寫了 ${stats.days} 天${mood}${tags}`, facts: { journal: stats } };
+寫了 ${stats.days} 天${mood}${tags}`, facts: { journal: stats, ...(days && { days }) } };
   }
 
   // --- 股票 ---
@@ -351,14 +414,19 @@ export class LifeReviewService {
 
   // --- AI 總結 ---
 
-  private async aiSummary(userId: string, period: ReviewPeriod, sections: Section[]): Promise<string | null> {
+  private async aiSummary(userId: string, period: ReviewPeriod, sections: Section[]): Promise<{ summary: string; suggestion: string | null } | null> {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { claudeApiKey: true } });
     const apiKey = decryptSecret(user?.claudeApiKey);
     if (!apiKey) return null;
     const prompt = [
       `以下是使用者${period.kind === 'week' ? '這週' : period.label}的生活數據（JSON）。`,
-      '用繁體中文、像朋友一樣寫 2～3 句總結：先講一個做得好的地方，再點出最值得注意的一件事（例如某分類花太多、代辦拖太久、目標落後），最後給一個下一期可以做的具體小建議。',
-      '不要重複列數字清單，不要用 Markdown，總長 100 字以內。',
+      '用繁體中文、像朋友一樣寫 2～3 句總結（summary）：先講一個做得好的地方，再點出最值得注意的一件事（例如某分類花太多、代辦拖太久、目標落後）。',
+      '數據裡有 lastFocus 的話，summary 第一句先評這件事做得怎樣。',
+      ...(period.kind === 'month'
+        ? ['月回顧：看日記每天的心情分數和內容，跟目標打卡的日子對照，有明顯關聯就點出一個（例如有運動的那幾天心情比較好）；看不出關聯就不要硬講。']
+        : []),
+      'suggestion：下一期可以做的一件具體小事，15 字以內，例如「外食控制在每週 3 次」。',
+      '只回 JSON：{"summary": "…", "suggestion": "…"}。不要用 Markdown，summary 總長 120 字以內。',
       JSON.stringify(sections.map((s) => s.facts)),
     ].join('\n');
 
@@ -374,7 +442,7 @@ export class LifeReviewService {
         durationMs: Date.now() - startedAt,
         status: AiUsageStatus.SUCCESS,
       });
-      return res.text || null;
+      return parseReviewAi(res.text);
     } catch (error) {
       await this.aiUsage.record({
         userId,

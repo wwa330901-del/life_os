@@ -38,3 +38,19 @@ describe('reviewPeriod', () => {
     expect(p.partial).toBe(true);
   });
 });
+
+describe('parseReviewAi', () => {
+  const { parseReviewAi } = jest.requireActual('./review-period') as typeof import('./review-period');
+
+  it('JSON：拆成 summary 和 suggestion', () => {
+    expect(parseReviewAi('{"summary": "這週很棒", "suggestion": "外食每週 3 次"}')).toEqual({ summary: '這週很棒', suggestion: '外食每週 3 次' });
+  });
+
+  it('前後有多的字也找得到 JSON', () => {
+    expect(parseReviewAi('好的\n{"summary":"不錯","suggestion":""}\n')).toEqual({ summary: '不錯', suggestion: null });
+  });
+
+  it('不是 JSON 就整段當 summary', () => {
+    expect(parseReviewAi('這週存了不少錢。')).toEqual({ summary: '這週存了不少錢。', suggestion: null });
+  });
+});

@@ -86,3 +86,21 @@ export function keyToInstant(key: Date): Date {
 export function dateKeyString(key: Date): string {
   return key.toISOString().slice(0, 10);
 }
+
+/** 回顧 AI 回的 JSON（summary、suggestion）；不是 JSON 就整段當 summary。 */
+export function parseReviewAi(raw: string): { summary: string; suggestion: string | null } | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      const data = JSON.parse(match[0]) as { summary?: unknown; suggestion?: unknown };
+      const summary = typeof data.summary === 'string' ? data.summary.trim() : '';
+      const suggestion = typeof data.suggestion === 'string' && data.suggestion.trim() ? data.suggestion.trim().slice(0, 40) : null;
+      if (summary) return { summary, suggestion };
+    } catch {
+      // 掉到下面當純文字
+    }
+  }
+  return { summary: text, suggestion: null };
+}

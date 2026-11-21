@@ -315,6 +315,14 @@ export class LineService {
           const answer = AI_POSTBACK_TEXT[data];
           if (link && answer) await this.handleTextForLinkedUser(link, answer, replyToken, undefined);
           if (data.startsWith('guide:')) await this.callReplyApi({ replyToken, messages: [LineService.guideMessage(true, data.slice(6))] });
+          // 回顧最後的「下次檢查這件」「我自己想一件」
+          if (link && data.startsWith('review:focus:')) {
+            const focus = await this.lifeReview.setFocus(link.userId, data.slice('review:focus:'.length));
+            await this.reply(replyToken, `好，下次回顧會先幫你看「${focus}」做得怎麼樣 👍`);
+          }
+          if (link && data === 'review:custom') {
+            await this.reply(replyToken, '直接打「下次檢查：」再接你想注意的事，例如「下次檢查：每天走一萬步」。');
+          }
           continue;
         }
 
@@ -884,6 +892,13 @@ export class LineService {
     }
     if (LineService.AI_USAGE_KEYWORDS.includes(text)) {
       await this.reply(replyToken, await this.aiUsageText(userId));
+      return;
+    }
+    // 「下次檢查：少喝飲料」→ 下次回顧先檢查這件（2026-11-22）
+    const focusMatch = text.match(/^下次(?:回顧)?(?:幫我)?檢查[:：\s]*(.+)$/);
+    if (focusMatch) {
+      const focus = await this.lifeReview.setFocus(userId, focusMatch[1]);
+      await this.reply(replyToken, `好，下次回顧會先幫你看「${focus}」做得怎麼樣 👍`);
       return;
     }
     if (LineService.GUIDE_KEYWORDS.includes(text)) {
