@@ -159,7 +159,7 @@ const CASES: Case[] = [
     name: '跨類搜尋',
     say: ['我上次換機油是什麼時候？'],
     tools: ['search_records'],
-    check: async (c) => has(/8\s*月\s*14|8\/14/.test(c.reply), '沒說出 8/14'),
+    check: async (c) => has(/0?8\s*[月/-]\s*14/.test(c.reply), '沒說出 8/14'),
   },
   { name: '這個月花多少', say: ['這個月花了多少錢'], tools: ['get_finance_overview', 'list_finance_transactions'] },
   { name: '帳戶餘額', say: ['我每個帳戶還剩多少錢'], tools: ['list_account_balances', 'get_finance_overview'], check: replyHas('郵局') },
