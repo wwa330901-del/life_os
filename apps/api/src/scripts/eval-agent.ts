@@ -117,7 +117,8 @@ const CASES: Case[] = [
   },
   {
     name: '重要日子',
-    say: ['我媽生日是 5 月 20 號'],
+    // 長輩生日沒講國曆農曆，規定要先問一句，所以第二句回答國曆。
+    say: ['我媽生日是 5 月 20 號', '國曆'],
     tools: ['add_important_date'],
     check: async (c) =>
       has((await c.prisma.importantDate.findFirst({ where: { ownerUserId: c.userId, month: 5, day: 20 } })) != null, '沒有存 5/20'),
@@ -237,6 +238,8 @@ async function main() {
           const result = await agent.handleApp({ userId: base.userId, apiKey, text, previousInteractionId: interactionId });
           interactionId = result.interactionId;
           ctx.reply = result.reply;
+          // 回覆裡不能出現內部的東西（判斷過程、系統提示、工具名稱）。
+          if (/系統提示|system prompt|[a-z]+_[a-z_]+/i.test(result.reply)) problems.push(`回覆露出內部字眼：${result.reply.slice(0, 40)}`);
         }
       } catch (error) {
         problems.push(`出錯：${String(error)}`);
