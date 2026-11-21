@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { SentryGlobalFilter } from '@sentry/nestjs/setup';
+import { localizeClientError } from './client-error-text';
 
 /** 使用者遇到系統問題時看到的話（2026-10-02 使用者要求）：細節只通知管理員
  * （ErrorReportService），一般使用者只知道「已通知管理員，修理中」。 */
@@ -14,6 +15,15 @@ export class SystemTroubleFilter extends SentryGlobalFilter {
 
   catch(exception: unknown, host: ArgumentsHost) {
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+    if (status < 500 && host.getType() === 'http' && exception instanceof HttpException) {
+      // 4xx 的英文訊息（程式裡的、欄位檢查的）換成中文，英文原文放 detail
+      const body = exception.getResponse();
+      const message = typeof body === 'string' ? body : (body as { message?: unknown }).message;
+      const localized = localizeClientError(status, message);
+      if (localized) {
+        return super.catch(new HttpException({ statusCode: status, message: localized.message, detail: localized.detail }, status), host);
+      }
+    }
     if (status < 500 || host.getType() !== 'http') return super.catch(exception, host);
     this.log.error(
       exception instanceof Error ? exception.message : String(exception),
