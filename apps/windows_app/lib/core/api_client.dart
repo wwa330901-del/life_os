@@ -1758,6 +1758,12 @@ class ApiClient {
   /// 提醒設定 — `{linked, morningBriefEnabled, journalReminderEnabled, todoReminderEnabled, reviewEnabled, goalReminderEnabled}`.
   Future<Map<String, dynamic>> getReminderSettings() => _get('/line/settings');
 
+  /// 提醒總覽：接下來幾天會提醒的事（date、time、kind、title）。
+  Future<List<Map<String, dynamic>>> upcomingReminders({int days = 14}) async {
+    final body = await _getList('/reminders/upcoming?days=$days');
+    return body.cast<Map<String, dynamic>>();
+  }
+
   Future<Map<String, dynamic>> updateReminderSettings(Map<String, bool> changes) => _patch('/line/settings', changes);
 
   /// Generates (or replaces) a short-lived code the user sends as a LINE

@@ -1,3 +1,4 @@
+import 'reminder_overview_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -107,6 +108,12 @@ class _ReminderSettingsDialogState extends ConsumerState<ReminderSettingsDialog>
                     ),
                     const SizedBox(height: 8),
                   ],
+                  OutlinedButton.icon(
+                    onPressed: () => showDialog<void>(context: context, builder: (_) => const ReminderOverviewDialog()),
+                    icon: const Icon(Icons.event_note_outlined, size: 18),
+                    label: const Text('看接下來 14 天會提醒什麼'),
+                  ),
+                  const SizedBox(height: 8),
                   for (final (field, title, subtitle) in _reminders)
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
