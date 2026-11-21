@@ -328,6 +328,9 @@ class FinanceRecurringTransaction {
     required this.holidayAdjustment,
     required this.active,
     required this.note,
+    this.firedThisMonth = false,
+    this.thisMonthDate,
+    this.nextDate,
   });
 
   final String id;
@@ -341,6 +344,11 @@ class FinanceRecurringTransaction {
   final bool active;
   final String? note;
 
+  /// 這個月已經自動記帳（或提醒）了沒（後端算好的）。
+  final bool firedThisMonth;
+  final DateTime? thisMonthDate;
+  final DateTime? nextDate;
+
   factory FinanceRecurringTransaction.fromJson(Map<String, dynamic> json) => FinanceRecurringTransaction(
     id: json['id'] as String,
     type: FinanceTransactionTypeJson.fromJson(json['type'] as String),
@@ -352,6 +360,9 @@ class FinanceRecurringTransaction {
     holidayAdjustment: FinanceRecurringHolidayAdjustmentJson.fromJson(json['holidayAdjustment'] as String),
     active: json['active'] as bool,
     note: json['note'] as String?,
+    firedThisMonth: json['firedThisMonth'] as bool? ?? false,
+    thisMonthDate: json['thisMonthDate'] == null ? null : DateTime.parse(json['thisMonthDate'] as String),
+    nextDate: json['nextDate'] == null ? null : DateTime.parse(json['nextDate'] as String),
   );
 }
 

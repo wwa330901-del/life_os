@@ -65,7 +65,9 @@ class FinanceRecurringTab extends ConsumerWidget {
                           '每月 ${r.dayOfMonth} 日'
                           '${r.holidayAdjustment == FinanceRecurringHolidayAdjustment.none ? '' : '（遇假日${r.holidayAdjustment.label}）'}'
                           '${r.amount == null ? '（金額不固定，到期只提醒）' : '（自動記帳 ${formatAmount(r.amount!)}）'}'
-                          '${!r.active ? ' · 已停用' : ''}',
+                          '${!r.active ? ' · 已停用' : ''}'
+                          '${r.active && r.firedThisMonth && r.thisMonthDate != null ? '\n✓ ${r.thisMonthDate!.month}/${r.thisMonthDate!.day} ${r.amount == null ? '已提醒' : '已自動記帳'}' : ''}'
+                          '${r.active && r.nextDate != null ? '${r.firedThisMonth ? '・' : '\n'}下次 ${r.nextDate!.month}/${r.nextDate!.day}' : ''}',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -75,10 +77,12 @@ class FinanceRecurringTab extends ConsumerWidget {
                               onChanged: (value) => _toggleActive(context, ref, r, value),
                             ),
                             IconButton(
+                              tooltip: '編輯',
                               icon: const Icon(Icons.edit_outlined, size: 18),
                               onPressed: () => _openEditor(context, ref, accounts, categories, r),
                             ),
                             IconButton(
+                              tooltip: '刪除',
                               icon: const Icon(Icons.delete_outline, size: 18),
                               onPressed: () => _delete(context, ref, r),
                             ),

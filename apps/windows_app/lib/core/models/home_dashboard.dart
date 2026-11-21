@@ -1,6 +1,9 @@
 import 'finance.dart';
 import 'knowledge.dart';
+import 'home_stats.dart';
 import 'life_goal.dart';
+
+export 'home_stats.dart';
 
 /// Read-only account balance for the home dashboard — unlike
 /// `FinanceAccount`, there's no `initialBalance`/`sortOrder` to carry
@@ -48,6 +51,9 @@ String homeWidgetLabel(String type) => switch (type) {
   'ongoingTodos' => '持續性任務',
   'lifeGoals' => '人生目標',
   'recentKnowledgeItems' => '知識庫最新入庫',
+  'budgetProgress' => '預算進度',
+  'financialHealth' => '財務健檢＋淨資產走勢',
+  'recurringStatus' => '每月固定的扣款狀態',
   _ => type,
 };
 
@@ -197,6 +203,9 @@ class HomeDashboard {
     required this.ongoingTodos,
     required this.lifeGoals,
     required this.recentKnowledgeItems,
+    this.budgetProgress,
+    this.financialHealth,
+    this.recurringStatus,
   });
 
   final HomePersonalFinance? personalFinance;
@@ -205,6 +214,9 @@ class HomeDashboard {
   final List<HomeTodoRef> ongoingTodos;
   final List<HomeLifeGoal> lifeGoals;
   final List<HomeKnowledgeItemPreview> recentKnowledgeItems;
+  final HomeBudgetProgress? budgetProgress;
+  final HomeFinancialHealth? financialHealth;
+  final HomeRecurringStatus? recurringStatus;
 
   factory HomeDashboard.fromJson(Map<String, dynamic> json) => HomeDashboard(
     personalFinance: json['personalFinance'] == null
@@ -225,5 +237,14 @@ class HomeDashboard {
     recentKnowledgeItems: (json['recentKnowledgeItems'] as List<dynamic>)
         .map((e) => HomeKnowledgeItemPreview.fromJson(e as Map<String, dynamic>))
         .toList(),
+    budgetProgress: json['budgetProgress'] == null
+        ? null
+        : HomeBudgetProgress.fromJson(json['budgetProgress'] as Map<String, dynamic>),
+    financialHealth: json['financialHealth'] == null
+        ? null
+        : HomeFinancialHealth.fromJson(json['financialHealth'] as Map<String, dynamic>),
+    recurringStatus: json['recurringStatus'] == null
+        ? null
+        : HomeRecurringStatus.fromJson(json['recurringStatus'] as Map<String, dynamic>),
   );
 }

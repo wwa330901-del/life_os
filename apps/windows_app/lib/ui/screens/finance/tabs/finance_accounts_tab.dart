@@ -6,6 +6,7 @@ import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
+import '../widgets/reconcile_dialog.dart';
 import '../../../widgets/error_panel.dart';
 
 class FinanceAccountsTab extends ConsumerWidget {
@@ -30,10 +31,27 @@ class FinanceAccountsTab extends ConsumerWidget {
           }
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-            itemCount: accounts.length,
+            itemCount: accounts.length + 1,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
-              final account = accounts[index];
+              if (index == 0) {
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '好幾天沒記帳？按帳戶旁的「平帳」，填現在實際有多少就好。',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => showReconciliationHistory(context, spaceId),
+                      icon: const Icon(Icons.history, size: 18),
+                      label: const Text('平帳紀錄'),
+                    ),
+                  ],
+                );
+              }
+              final account = accounts[index - 1];
               return Card(
                 child: ListTile(
                   leading: Icon(_iconFor(account.type)),
@@ -48,11 +66,18 @@ class FinanceAccountsTab extends ConsumerWidget {
                           color: account.balance < 0 ? Theme.of(context).colorScheme.error : null,
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () => showReconcileDialog(context, ref, spaceId, account),
+                        child: const Text('平帳'),
+                      ),
                       IconButton(
+                        tooltip: '編輯',
                         icon: const Icon(Icons.edit_outlined, size: 18),
                         onPressed: () => _openEditor(context, ref, account),
                       ),
                       IconButton(
+                        tooltip: '刪除',
                         icon: const Icon(Icons.delete_outline, size: 18),
                         onPressed: () => _delete(context, ref, account),
                       ),

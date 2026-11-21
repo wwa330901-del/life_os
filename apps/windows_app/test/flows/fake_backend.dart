@@ -15,6 +15,9 @@ class FakeBackend {
   final Set<String> unknown = {};
 
   void on(String route, Object? response) => _routes[route] = (_) => response;
+
+  /// 目前某個路由會回什麼（拿來改一點再設回去）。
+  Object? response(String route) => _routes[route]?.call(const {});
   void onCall(String route, Object? Function(Map<String, dynamic> body) handler) => _routes[route] = handler;
 
   /// 讓某個路由回 4xx 錯誤＋後端的中文訊息。

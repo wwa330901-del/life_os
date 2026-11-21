@@ -23,6 +23,7 @@ import 'models/wishlist.dart';
 import 'models/retirement.dart';
 import 'models/trip.dart';
 import 'models/project_todo.dart';
+import 'models/reconciliation.dart';
 import 'models/stock.dart';
 
 /// 跟後端 SYSTEM_TROUBLE_MESSAGE 同一句。
@@ -680,6 +681,25 @@ class ApiClient {
   Future<List<FinanceAccount>> listFinanceAccounts(String spaceId) async {
     final body = await _getList('/spaces/$spaceId/finance/accounts');
     return body.map((e) => FinanceAccount.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// 平帳預覽：帳上多少、差多少（不寫入）。
+  Future<ReconcilePreview> previewReconcile({required String spaceId, required String accountId, required double actualBalance}) async {
+    final body = await _post('/spaces/$spaceId/finance/accounts/$accountId/reconcile', {
+      'actualBalance': actualBalance,
+      'previewOnly': true,
+    });
+    return ReconcilePreview.fromJson(body);
+  }
+
+  /// 平帳：差額記一筆「忘記記帳」／「多出來的錢」。
+  Future<void> reconcileAccount({required String spaceId, required String accountId, required double actualBalance}) async {
+    await _post('/spaces/$spaceId/finance/accounts/$accountId/reconcile', {'actualBalance': actualBalance});
+  }
+
+  Future<ReconciliationHistory> listReconciliations(String spaceId) async {
+    final body = await _get('/spaces/$spaceId/finance/reconciliations');
+    return ReconciliationHistory.fromJson(body);
   }
 
   /// Returns the new account's id.

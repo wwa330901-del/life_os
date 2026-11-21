@@ -4,6 +4,7 @@ import '../../../core/models/finance.dart';
 import '../../../core/models/home_dashboard.dart';
 import '../../../core/models/knowledge.dart';
 import '../finance/widgets/finance_format.dart';
+import 'home_stats_widgets.dart';
 
 /// One card per configured+visible widget type — `HomePickerDashboard`
 /// (in space_picker_screen.dart) looks up the right builder by type string
@@ -26,6 +27,12 @@ Widget? buildHomeWidget(BuildContext context, String type, HomeDashboard dashboa
       return _LifeGoalsCard(data: dashboard.lifeGoals);
     case 'recentKnowledgeItems':
       return _RecentKnowledgeItemsCard(data: dashboard.recentKnowledgeItems);
+    case 'budgetProgress':
+      return BudgetProgressCard(data: dashboard.budgetProgress);
+    case 'financialHealth':
+      return FinancialHealthCard(data: dashboard.financialHealth);
+    case 'recurringStatus':
+      return RecurringStatusCard(data: dashboard.recurringStatus);
     default:
       return null;
   }
