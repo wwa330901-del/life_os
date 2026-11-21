@@ -29,6 +29,11 @@ function makeService() {
   const loans = { create: jest.fn(), addRepayment: jest.fn(), list: jest.fn() };
   const advances = { create: jest.fn(), addRepayment: jest.fn(), list: jest.fn() };
   const stockTransactions = { create: jest.fn() };
+  const reconcile = {
+    preview: jest.fn().mockResolvedValue({ bookBalance: 6820, plan: { difference: -1820, type: 'EXPENSE', amount: 1820, categoryName: '忘記記帳' } }),
+    reconcile: jest.fn(),
+    list: jest.fn(),
+  };
   const service = new RecordToolsService(
     prisma as never,
     loans as never,
@@ -40,11 +45,28 @@ function makeService() {
     {} as never,
     {} as never,
     {} as never,
+    reconcile as never,
   );
-  return { service, loans, advances, stockTransactions };
+  return { service, loans, advances, stockTransactions, reconcile };
 }
 
 describe('RecordToolsService', () => {
+  it('平帳：先提議（帳上→實際、差額），確認後才記', async () => {
+    const { service, reconcile } = makeService();
+    const out = (await service.execute('u1', 'propose_reconcile', { accountName: '現金', actualBalance: 5000, date: '2026-11-22' })) as {
+      pending: Parameters<RecordToolsService['run']>[1];
+    };
+    expect(out.pending.summary).toBe('平帳 現金：帳上 6,820 → 實際 5,000，記一筆「忘記記帳」支出 1,820（2026-11-22）');
+    expect(reconcile.reconcile).not.toHaveBeenCalled();
+    await service.run('u1', out.pending);
+    expect(reconcile.reconcile).toHaveBeenCalledWith('u1', 'personal', 'a1', 5000, '2026-11-22');
+  });
+
+  it('平帳沒講帳戶 → 要 AI 先問', async () => {
+    const { service } = makeService();
+    await expect(service.execute('u1', 'propose_reconcile', { actualBalance: 5000 })).rejects.toThrow('哪個帳戶');
+  });
+
   it('proposes a stock trade using the last settlement account, without writing', async () => {
     const { service, stockTransactions } = makeService();
     const out = (await service.execute('u1', 'propose_stock_trade', {

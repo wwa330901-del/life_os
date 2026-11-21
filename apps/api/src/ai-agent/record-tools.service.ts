@@ -9,6 +9,7 @@ import { StocksTransactionsService } from '../stocks/stocks-transactions.service
 import { CreditCardService } from '../finance/credit-card.service';
 import { FinanceAccountsService } from '../finance/finance-accounts.service';
 import { SubscriptionService } from '../finance/subscription.service';
+import { FinanceReconcileService } from '../finance/finance-reconcile.service';
 import { taipeiDateKey, taipeiWallClockToUtc, utcDateKey } from '../common/taipei-date';
 import { FinanceAccountType, FinanceLoanDirection, FinanceTransactionType, StockTransactionType } from '../../generated/prisma/client.js';
 
@@ -39,7 +40,8 @@ export type RecordPending =
   | { kind: 'advance_repayment'; summary: string; data: { advanceId: string; amount: number; accountId: string; date: string } }
   | { kind: 'stock_trade'; summary: string; data: { type: StockTransactionType; stockCode: string; shares: number; pricePerShare: number; accountId: string; tradeDate: string; backfill?: boolean } }
   | { kind: 'delete'; summary: string; data: { entity: 'transaction' | 'todo' | 'calendar_event'; id: string } }
-  | { kind: 'card_payment'; summary: string; data: { cardId: string; fromAccountId: string; amount: number; date: string } };
+  | { kind: 'card_payment'; summary: string; data: { cardId: string; fromAccountId: string; amount: number; date: string } }
+  | { kind: 'reconcile'; summary: string; data: { accountId: string; actualBalance: number; date: string } };
 
 const optionalAccount = { accountName: { type: 'string', description: '使用者有講才填；沒講系統會挑最常用的，確認時一起問' } };
 const optionalDate = { date: { type: 'string', description: 'YYYY-MM-DD，不填＝今天' } };
@@ -87,6 +89,23 @@ export const RECORD_TOOLS = [
       type: 'object',
       properties: { cardName: { type: 'string' }, amount: { type: 'number' }, ...optionalAccount, ...optionalDate },
     },
+  },
+  {
+    type: 'function' as const,
+    name: 'propose_reconcile',
+    description:
+      '平帳：使用者好幾天沒記帳，說某個帳戶「現在其實只剩/有多少」（「現金只剩 5000」「郵局其實有 8 萬」「幫我平帳」）。actualBalance＝他說的實際金額（信用卡欠錢用負數，例如欠 800 → -800）。系統算帳上差多少，差額記成一筆「忘記記帳」支出或「多出來的錢」收入，之前的帳不動。accountName 一定要他講清楚，沒講就先問哪個帳戶；說要平帳但沒講金額就先問現在實際有多少。回傳 needsConfirmation，要把帳上、實際、差額講給他確認。',
+    parameters: {
+      type: 'object',
+      properties: { accountName: { type: 'string' }, actualBalance: { type: 'number' }, ...optionalDate },
+      required: ['accountName', 'actualBalance'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'list_reconciliations',
+    description: '平帳紀錄：每次平帳的日期、帳戶、帳上→實際、差額，加上今年每個帳戶總共忘記記多少。',
+    parameters: { type: 'object', properties: {} },
   },
   {
     type: 'function' as const,
@@ -287,7 +306,7 @@ export const RECORD_TOOLS = [
 ];
 
 export const RECORD_AI_GUIDE =
-  '信用卡：問卡費、要繳多少 → get_credit_card_bills；說結帳日/繳款日/扣款帳戶/自動扣繳 → set_credit_card；說卡費繳好了、要繳卡費 → propose_card_payment。借錢、還錢、代墊、收回、股票買賣、繳卡費、刪除 → 用 propose_* 提議，等他確認才 confirm_pending_action；改記錯的資料（金額、分類、日期、名稱）直接 update_*，改完說改了什麼。要改或刪之前先用 list_ 工具找到正確那一筆，找到好幾筆就先問是哪一筆。';
+  '信用卡：問卡費、要繳多少 → get_credit_card_bills；說結帳日/繳款日/扣款帳戶/自動扣繳 → set_credit_card；說卡費繳好了、要繳卡費 → propose_card_payment。說某個帳戶現在其實只剩/有多少、要平帳 → propose_reconcile（是平帳，不是記一筆支出）。借錢、還錢、代墊、收回、股票買賣、繳卡費、平帳、刪除 → 用 propose_* 提議，等他確認才 confirm_pending_action；改記錯的資料（金額、分類、日期、名稱）直接 update_*，改完說改了什麼。要改或刪之前先用 list_ 工具找到正確那一筆，找到好幾筆就先問是哪一筆。';
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
@@ -304,6 +323,7 @@ export class RecordToolsService {
     private readonly creditCards: CreditCardService,
     private readonly accounts: FinanceAccountsService,
     private readonly subscriptions: SubscriptionService,
+    private readonly reconcile: FinanceReconcileService,
   ) {}
 
   static readonly toolNames = new Set(RECORD_TOOLS.map((t) => t.name));
@@ -329,6 +349,19 @@ export class RecordToolsService {
         const monthly = subs.reduce((s, x) => s + x.monthlyCost, 0);
         return { subscriptions: subs.map(({ key: _key, ...s }) => s), monthlyTotal: monthly, yearlyTotal: monthly * 12 };
       }
+      case 'propose_reconcile': {
+        const wanted = typeof args.accountName === 'string' ? args.accountName.trim() : '';
+        if (!wanted) throw new Error('要先問他是哪個帳戶');
+        const actual = Number(args.actualBalance);
+        if (!Number.isFinite(actual)) throw new Error('要先問他這個帳戶現在實際有多少');
+        const account = await this.resolveAccount(spaceId, wanted);
+        const { bookBalance, plan } = await this.reconcile.preview(userId, spaceId, account.id, actual);
+        if (!plan) return { noChange: true, message: `${account.name}帳上就是 ${fmt(bookBalance)}，跟實際一樣，不用平帳` };
+        const summary = `平帳 ${account.name}：帳上 ${fmt(bookBalance)} → 實際 ${fmt(actual)}，記一筆「${plan.categoryName}」${plan.type === 'EXPENSE' ? '支出' : '收入'} ${fmt(plan.amount)}（${date}）`;
+        return { pending: { kind: 'reconcile', summary, data: { accountId: account.id, actualBalance: actual, date } } };
+      }
+      case 'list_reconciliations':
+        return this.reconcile.list(userId, spaceId);
       case 'set_credit_card':
         return this.setCreditCard(userId, spaceId, args);
       case 'propose_card_payment':
@@ -501,6 +534,11 @@ export class RecordToolsService {
       case 'delete':
         await this.runDelete(userId, spaceId, pending.data);
         break;
+      case 'reconcile': {
+        const { accountId, actualBalance, date } = pending.data;
+        await this.reconcile.reconcile(userId, spaceId, accountId, actualBalance, date);
+        break;
+      }
       case 'card_payment': {
         const { cardId, fromAccountId, amount, date } = pending.data;
         await this.creditCards.pay(userId, spaceId, cardId, fromAccountId, amount, date);

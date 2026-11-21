@@ -52,7 +52,8 @@ export class SpendingAlertService {
     const since = taipeiDateKeyToUtcMidnight(`${monthBefore(month, 3)}-01`);
     const [expenses, budgets] = await Promise.all([
       this.prisma.financeTransaction.findMany({
-        where: { spaceId, type: FinanceTransactionType.EXPENSE, date: { gte: since } },
+        // 平帳記的「忘記記帳」不是真的突然花很多，不提醒。
+        where: { spaceId, type: FinanceTransactionType.EXPENSE, date: { gte: since }, reconciliation: null },
         select: {
           id: true,
           amount: true,

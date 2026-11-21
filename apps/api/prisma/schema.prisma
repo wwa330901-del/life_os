@@ -108,7 +108,7 @@ model User {
   /// 跟 geminiApiKey 一樣加密存（common/secret-box）。
   claudeApiKey String?
   /// 外觀風格（App 設定裡選的 10 套之一，id 見 auth/dto/update-me.dto.ts）；null＝預設「晨光」
-  appTheme String?
+  appTheme     String?
 
   /// 算命用的生辰（2026-10-01）：日期必填、時間可以不知道。
   birthDate DateTime? @db.Date
@@ -230,6 +230,7 @@ model Space {
   financeTransactions          FinanceTransaction[]
   financeBudgets               FinanceBudget[]
   financeRecurringTransactions FinanceRecurringTransaction[]
+  financeReconciliations       FinanceReconciliation[]
   financeLoans                 FinanceLoan[]
   financeAdvances              FinanceAdvance[]
   calendarEvents               CalendarEvent[]
@@ -491,6 +492,7 @@ model FinanceAccount {
 
   recurringAsSource FinanceRecurringTransaction[] @relation("RecurringSourceAccount")
   recurringAsTarget FinanceRecurringTransaction[] @relation("RecurringToAccount")
+  reconciliations   FinanceReconciliation[]
 
   stockTransactions         StockTransaction[]
   stockRecurringInvestments StockRecurringInvestment[]
@@ -573,6 +575,33 @@ model FinanceTransaction {
 
   advanceRepaymentId String?                  @unique
   advanceRepayment   FinanceAdvanceRepayment? @relation(fields: [advanceRepaymentId], references: [id], onDelete: Cascade)
+
+  reconciliation FinanceReconciliation?
+
+  @@index([spaceId, date])
+}
+
+/// 平帳（2026-11-21 使用者要求）：好幾天沒記帳時，填帳戶「現在實際有多少」，
+/// 差額記成一筆「忘記記帳」支出（或「多出來的錢」收入），之前的帳都不動。
+/// 這張表是平帳紀錄：當時帳上多少、實際多少、差多少。刪掉那筆交易，紀錄也一起刪。
+model FinanceReconciliation {
+  id      String @id @default(uuid())
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   FinanceAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  date          DateTime @db.Date
+  bookBalance   Float
+  actualBalance Float
+  /// actualBalance − bookBalance：負的＝忘記記的支出，正的＝多出來的錢。
+  difference    Float
+
+  transactionId String             @unique
+  transaction   FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 
   @@index([spaceId, date])
 }

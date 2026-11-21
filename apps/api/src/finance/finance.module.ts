@@ -26,6 +26,8 @@ import { SpendingAlertService } from './spending-alert.service';
 import { SubscriptionService } from './subscription.service';
 import { FinanceResetController } from './finance-reset.controller';
 import { FinanceResetService } from './finance-reset.service';
+import { FinanceReconcileController } from './finance-reconcile.controller';
+import { FinanceReconcileService } from './finance-reconcile.service';
 
 @Module({
   imports: [SpacesModule, LineNotifierModule, UsersModule, FriendsModule],
@@ -39,6 +41,7 @@ import { FinanceResetService } from './finance-reset.service';
     FinanceLoanInvitesController,
     FinanceAdvancesController,
     FinanceResetController,
+    FinanceReconcileController,
   ],
   providers: [
     FinanceAccessService,
@@ -55,12 +58,14 @@ import { FinanceResetService } from './finance-reset.service';
     SpendingAlertService,
     SubscriptionService,
     FinanceResetService,
+    FinanceReconcileService,
   ],
   // Reused directly by LineModule so the LINE 財務總覽 command shares the
   // exact same balance/summary logic as the app's own finance screens,
   // instead of a second copy of the derived-balance math drifting out of
   // sync with it.
   exports: [
+    FinanceReconcileService,
     FinanceAccessService,
     FinanceAccountsService,
     FinanceCategoriesService,

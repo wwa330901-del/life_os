@@ -147,6 +147,13 @@ const CASES: Case[] = [
       ),
   },
 
+  {
+    name: '平帳',
+    say: ['我好幾天沒記帳，現金其實只剩 3000', '對'],
+    tools: ['propose_reconcile'],
+    check: async (c) =>
+      has((await c.prisma.financeReconciliation.findFirst({ where: { spaceId: c.spaceId, actualBalance: 3000 } })) != null, '沒有平帳紀錄'),
+  },
   // ── 查詢 ──
   { name: '這個月花多少', say: ['這個月花了多少錢'], tools: ['get_finance_overview', 'list_finance_transactions'] },
   { name: '帳戶餘額', say: ['我每個帳戶還剩多少錢'], tools: ['list_account_balances', 'get_finance_overview'], check: replyHas('郵局') },
