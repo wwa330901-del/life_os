@@ -49,9 +49,12 @@ class AuthResult {
 /// first request after a period of inactivity can take 30-60s to wake up).
 /// Backed by Supabase PostgreSQL.
 class ApiClient {
-  ApiClient({this.baseUrl = 'https://life-os-api-yhh2.onrender.com'});
+  /// [client] 只有測試會換成假的後端（package:http/testing.dart 的 MockClient）。
+  ApiClient({this.baseUrl = 'https://life-os-api-yhh2.onrender.com', http.Client? client})
+      : _http = client ?? http.Client();
 
   final String baseUrl;
+  final http.Client _http;
   String? _token;
 
   void setToken(String? token) => _token = token;
@@ -147,7 +150,7 @@ class ApiClient {
   }
 
   Future<List<HomeWidgetConfig>> setHomeLayout(List<HomeWidgetConfig> widgets) async {
-    final res = await http.put(
+    final res = await _http.put(
       Uri.parse('$baseUrl/home/layout'),
       headers: _headers,
       body: jsonEncode({'widgets': widgets.map((w) => w.toJson()).toList()}),
@@ -1665,7 +1668,7 @@ class ApiClient {
   /// 錯誤自動通報 — only works when logged in (the endpoint needs the token); failures are the caller's to ignore.
   Future<void> reportClientError(String message, {String? stack, String? appVersion}) async {
     if (_token == null) return;
-    await http.post(
+    await _http.post(
       Uri.parse('$baseUrl/client-errors'),
       headers: _headers,
       body: jsonEncode({
@@ -1678,7 +1681,7 @@ class ApiClient {
 
   /// 匯出全部資料：一個 Excel 檔的內容。
   Future<List<int>> downloadExport() async {
-    final res = await http.get(Uri.parse('$baseUrl/export/xlsx'), headers: _headers);
+    final res = await _http.get(Uri.parse('$baseUrl/export/xlsx'), headers: _headers);
     if (res.statusCode != 200) _decodeObject(res);
     return res.bodyBytes;
   }
@@ -1716,12 +1719,12 @@ class ApiClient {
   String _dateOnlyIso(DateTime d) => DateTime.utc(d.year, d.month, d.day).toIso8601String();
 
   Future<Map<String, dynamic>> _get(String path) async {
-    final res = await http.get(Uri.parse('$baseUrl$path'), headers: _headers);
+    final res = await _http.get(Uri.parse('$baseUrl$path'), headers: _headers);
     return _decodeObject(res);
   }
 
   Future<List<dynamic>> _getList(String path) async {
-    final res = await http.get(Uri.parse('$baseUrl$path'), headers: _headers);
+    final res = await _http.get(Uri.parse('$baseUrl$path'), headers: _headers);
     return _decodeList(res);
   }
 
@@ -1729,7 +1732,7 @@ class ApiClient {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
       body: jsonEncode(body),
@@ -1741,7 +1744,7 @@ class ApiClient {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final res = await http.patch(
+    final res = await _http.patch(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
       body: jsonEncode(body),
@@ -1750,12 +1753,12 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> _put(String path, Map<String, dynamic> body) async {
-    final res = await http.put(Uri.parse('$baseUrl$path'), headers: _headers, body: jsonEncode(body));
+    final res = await _http.put(Uri.parse('$baseUrl$path'), headers: _headers, body: jsonEncode(body));
     return _decodeObject(res);
   }
 
   Future<void> _delete(String path) async {
-    final res = await http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
+    final res = await _http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
     _checkStatus(res);
   }
 
@@ -1763,7 +1766,7 @@ class ApiClient {
   /// reorder returns the touched siblings, which we discard and refetch
   /// the authoritative list instead).
   Future<void> _patchIgnoreBody(String path, Map<String, dynamic> body) async {
-    final res = await http.patch(
+    final res = await _http.patch(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
       body: jsonEncode(body),

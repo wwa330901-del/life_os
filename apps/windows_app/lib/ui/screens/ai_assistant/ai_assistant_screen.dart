@@ -133,6 +133,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
+                    tooltip: '送出',
                     onPressed: _sending ? null : _send,
                     icon: const Icon(Icons.send),
                   ),

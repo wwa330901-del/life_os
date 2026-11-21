@@ -301,7 +301,10 @@ class _KnowledgeLibraryCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '知識蒐集中心',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  // 兩行說明要塞得進 140 高的卡片：行高收一點、最多兩行。
+                  style: TextStyle(fontSize: 12, height: 1.3, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -349,7 +352,10 @@ class _TodoSpaceCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '持續性任務與待辦',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  // 兩行說明要塞得進 140 高的卡片：行高收一點、最多兩行。
+                  style: TextStyle(fontSize: 12, height: 1.3, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -396,7 +402,10 @@ class _LifeGoalsCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '設定目標、追蹤進度',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  // 兩行說明要塞得進 140 高的卡片：行高收一點、最多兩行。
+                  style: TextStyle(fontSize: 12, height: 1.3, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -442,7 +451,10 @@ class _JournalCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '用講的就記，看心情變化',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  // 兩行說明要塞得進 140 高的卡片：行高收一點、最多兩行。
+                  style: TextStyle(fontSize: 12, height: 1.3, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -488,7 +500,10 @@ class _DivinationCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '梅花易數，想算什麼就起卦',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  // 兩行說明要塞得進 140 高的卡片：行高收一點、最多兩行。
+                  style: TextStyle(fontSize: 12, height: 1.3, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -536,7 +551,10 @@ class _AiAssistantCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '問你的記帳/代辦/行事曆',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  // 兩行說明要塞得進 140 高的卡片：行高收一點、最多兩行。
+                  style: TextStyle(fontSize: 12, height: 1.3, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -600,7 +618,10 @@ class _SpaceCard extends StatelessWidget {
                     SpaceType.personal => '個人空間',
                     SpaceType.calendar => '行事曆空間',
                   },
-                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  // 兩行說明要塞得進 140 高的卡片：行高收一點、最多兩行。
+                  style: TextStyle(fontSize: 12, height: 1.3, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -647,7 +668,10 @@ class _CreateCalendarSpaceCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '建立你的行事曆空間',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  // 兩行說明要塞得進 140 高的卡片：行高收一點、最多兩行。
+                  style: TextStyle(fontSize: 12, height: 1.3, color: scheme.onSurface.withValues(alpha: 0.6)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
