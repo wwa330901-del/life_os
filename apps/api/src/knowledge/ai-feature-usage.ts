@@ -12,6 +12,7 @@ export const AI_TOOL_FEATURES: Record<string, { feature: string; label: string }
   get_finance_overview: { feature: '記帳', label: '財務總覽' },
   list_account_balances: { feature: '記帳', label: '查帳戶餘額' },
   propose_reconcile: { feature: '記帳', label: '平帳' },
+  link_todo_goal: { feature: '代辦', label: '代辦連目標' },
   list_reconciliations: { feature: '記帳', label: '查平帳紀錄' },
   // 信用卡
   get_credit_card_bills: { feature: '信用卡', label: '查卡費帳單' },

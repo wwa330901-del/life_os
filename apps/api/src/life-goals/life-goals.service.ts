@@ -31,7 +31,19 @@ export class LifeGoalsService {
       where: { ownerUserId: userId, ...(status && { status }) },
       orderBy: [{ status: 'asc' }, { targetDate: 'asc' }, { sortOrder: 'asc' }],
     });
-    return this.progress.resolve(userId, goals);
+    const [resolved, todos] = await Promise.all([
+      this.progress.resolve(userId, goals),
+      // 為每個目標還沒做完的代辦（2026-11-22 代辦連目標）
+      this.prisma.projectTodo.findMany({
+        where: { personalOwnerUserId: userId, done: false, lifeGoalId: { in: goals.map((g) => g.id) } },
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true, title: true, lifeGoalId: true },
+      }),
+    ]);
+    return resolved.map((g) => ({
+      ...g,
+      openTodos: todos.filter((t) => t.lifeGoalId === g.id).map((t) => ({ id: t.id, title: t.title })),
+    }));
   }
 
   async getOne(userId: string, id: string) {

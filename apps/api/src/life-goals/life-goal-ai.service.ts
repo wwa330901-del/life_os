@@ -141,6 +141,7 @@ export class LifeGoalAiService {
           startValue: g.startValue,
           unit: g.unit,
           targetDate: g.targetDate ? g.targetDate.toISOString().slice(0, 10) : null,
+          openTodos: g.openTodos.map((t) => t.title),
         }));
       }
       case 'set_goal_value': {

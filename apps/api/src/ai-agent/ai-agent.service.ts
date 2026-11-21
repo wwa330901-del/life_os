@@ -262,8 +262,19 @@ const AGENT_TOOLS = [
         isOngoing: { type: 'boolean' },
         notes: { type: 'string' },
         calendarTarget: { type: 'string', enum: ['GOOGLE', 'ICLOUD'] },
+        goalId: { type: 'string', description: '這件事是為了哪個人生目標（list_life_goals 的 id）。使用者有講、或很明顯是為某個目標做的才填' },
       },
       required: ['title'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'link_todo_goal',
+    description: '把已經有的代辦連到某個人生目標（或拿掉連結）。連上之後，打卡型目標的代辦做完會自動打卡一次。todoId 從 list_todos、goalId 從 list_life_goals；goalId 不填＝拿掉連結。',
+    parameters: {
+      type: 'object',
+      properties: { todoId: { type: 'string' }, goalId: { type: 'string' } },
+      required: ['todoId'],
     },
   },
   {
@@ -1012,7 +1023,16 @@ export class AiAgentService {
         return this.createReminder(ctx, args);
       case 'complete_todo': {
         const todo = await this.todos.update(ctx.userId, String(args.todoId), { done: true });
-        return { completed: todo.title };
+        const goal = todo.lifeGoalId ? await this.prisma.lifeGoal.findUnique({ where: { id: todo.lifeGoalId }, select: { title: true, trackingType: true } }) : null;
+        return {
+          completed: todo.title,
+          ...(goal && { forGoal: goal.title, autoCheckedIn: goal.trackingType === 'CHECK_IN' }),
+        };
+      }
+      case 'link_todo_goal': {
+        const goalId = typeof args.goalId === 'string' && args.goalId ? args.goalId : null;
+        const todo = await this.todos.update(ctx.userId, String(args.todoId), { lifeGoalId: goalId ?? '' });
+        return { todo: todo.title, linked: goalId != null };
       }
       case 'create_calendar_event': {
         const data = this.calendarEventData(ctx, args);
@@ -1225,9 +1245,11 @@ export class AiAgentService {
       ...(dueIso ? { dueDate: dueIso, dueDateAllDay: dueTime == null } : { isOngoing: true }),
       ...(typeof args.notes === 'string' && args.notes && { notes: args.notes }),
       ...(target && { calendarSyncTarget: target }),
+      ...(typeof args.goalId === 'string' && args.goalId && { lifeGoalId: args.goalId }),
     });
     return {
       created: todo.title,
+      ...(todo.lifeGoalId && { forGoal: true }),
       due: dueDate ? `${dueDate}${dueTime == null ? '' : ` ${args.dueTime}`}` : '持續性任務',
       calendar: dueDate ? (target ? TARGET_LABEL[target] : '元序') : null,
     };

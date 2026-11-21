@@ -154,6 +154,15 @@ const CASES: Case[] = [
     check: async (c) =>
       has((await c.prisma.financeReconciliation.findFirst({ where: { spaceId: c.spaceId, actualBalance: 3000 } })) != null, '沒有平帳紀錄'),
   },
+  {
+    name: '代辦連目標',
+    say: ['為了每月讀 2 本書的目標，幫我加一個代辦：讀完《被討厭的勇氣》，持續性任務就好'],
+    tools: ['create_todo', 'link_todo_goal'],
+    check: async (c) => {
+      const todo = await c.prisma.projectTodo.findFirst({ where: { personalOwnerUserId: c.userId, title: { contains: '被討厭的勇氣' } } });
+      return has(todo?.lifeGoalId != null, '代辦沒有連到目標');
+    },
+  },
   // ── 查詢 ──
   {
     name: '跨類搜尋',
