@@ -41,6 +41,8 @@ jobs:
       TZ: Asia/Taipei
     steps:
       - name: Check secret is set
+        # 這步在 checkout 前，apps/api 還不存在
+        working-directory: .
         env:
           KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
