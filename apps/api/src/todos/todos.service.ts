@@ -1,7 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalendarEventsService } from '../calendar/calendar-events.service';
-import { CalendarSyncTarget } from '../../generated/prisma/client.js';
+import { CalendarSyncTarget, LifeGoalStatus, LifeGoalTrackingType } from '../../generated/prisma/client.js';
+import { taipeiDateKey, taipeiDateKeyToUtcMidnight } from '../common/taipei-date';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
 
@@ -80,6 +81,7 @@ export class TodosService {
 
   async create(userId: string, dto: CreateTodoDto) {
     this.assertDueDateXorOngoing(dto.dueDate ?? null, dto.isOngoing ?? false);
+    const lifeGoalId = dto.lifeGoalId ? await this.assertOwnGoal(userId, dto.lifeGoalId) : null;
 
     const todo = await this.prisma.projectTodo.create({
       data: {
@@ -92,6 +94,7 @@ export class TodosService {
         notes: dto.notes,
         calendarSyncTarget: dto.calendarSyncTarget,
         remindAt: dto.remindAt ? new Date(dto.remindAt) : null,
+        lifeGoalId,
         sortOrder: await this.nextSortOrder(userId),
       },
     });
@@ -114,6 +117,9 @@ export class TodosService {
 
     const justCompleted = dto.done === true && !existing.done;
     const justReopened = dto.done === false && existing.done;
+    // lifeGoalId：undefined＝不改、null 或空字串＝拿掉連結
+    const nextGoalId =
+      dto.lifeGoalId === undefined ? undefined : dto.lifeGoalId ? await this.assertOwnGoal(userId, dto.lifeGoalId) : null;
     // LINE 提醒的代辦在 App 改了時間 → 提醒跟著改（改成全天就不再提醒）。
     // （App 存檔會把日期原封不動再送一次，所以要比對真的有變才算。）
     const nextDue = dto.dueDate !== undefined ? dto.dueDate : existing.dueDate;
@@ -138,8 +144,11 @@ export class TodosService {
         ...(dto.priority !== undefined && { priority: dto.priority }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
         ...(dto.calendarSyncTarget !== undefined && { calendarSyncTarget: dto.calendarSyncTarget }),
+        ...(nextGoalId !== undefined && { lifeGoalId: nextGoalId }),
       },
     });
+    if (justCompleted && todo.lifeGoalId) await this.checkInForGoal(todo.lifeGoalId, todo.id, todo.title);
+    if (justReopened) await this.prisma.lifeGoalCheckIn.deleteMany({ where: { todoId: todo.id } });
     // 完成/取消完成、優先順序、備註都不影響行事曆那筆——只有會改變行事曆上
     // 看到的內容（時間、標題、存到哪個行事曆）才需要重新同步。
     if (
@@ -152,6 +161,30 @@ export class TodosService {
       await this.syncCalendarEvent(todo);
     }
     return todo;
+  }
+
+  /** 只能連到自己的目標。 */
+  private async assertOwnGoal(userId: string, goalId: string): Promise<string> {
+    const goal = await this.prisma.lifeGoal.findFirst({ where: { id: goalId, ownerUserId: userId }, select: { id: true } });
+    if (!goal) throw new BadRequestException('找不到這個人生目標');
+    return goal.id;
+  }
+
+  /** 為打卡型目標做的代辦完成 → 自動打卡一次（改回沒做完會刪掉）。其他類型的目標只記連結。 */
+  private async checkInForGoal(goalId: string, todoId: string, title: string): Promise<void> {
+    const goal = await this.prisma.lifeGoal.findUnique({ where: { id: goalId } });
+    if (!goal || goal.trackingType !== LifeGoalTrackingType.CHECK_IN || goal.status !== LifeGoalStatus.ACTIVE) return;
+    await this.prisma.lifeGoalCheckIn.create({
+      data: {
+        goalId,
+        todoId,
+        date: taipeiDateKeyToUtcMidnight(taipeiDateKey(new Date())),
+        value: 1,
+        title,
+        note: `完成代辦：${title}`,
+      },
+    });
+    await this.prisma.lifeGoal.update({ where: { id: goalId }, data: { progressUpdatedAt: new Date(), staleRemindedAt: null } });
   }
 
   /** Every todo needs exactly one of a due date or the 持續性任務 flag —

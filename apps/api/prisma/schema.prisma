@@ -1137,6 +1137,9 @@ model ProjectTodo {
   /// 已經提醒過幾次（0＝還沒到第一次）。
   remindCount        Int                 @default(0)
   notes              String?
+  /// 這件事是為了哪個人生目標（2026-11-22）；做完而且是打卡型目標會自動打卡一次。
+  lifeGoalId         String?
+  lifeGoal           LifeGoal?           @relation(fields: [lifeGoalId], references: [id], onDelete: SetNull)
 
   /// The auto-created 行事曆 event mirroring this todo's due date/time, if
   /// any — see CalendarEvent.sourceTodoId for the full sync explanation.
@@ -1148,6 +1151,7 @@ model ProjectTodo {
 
   @@index([personalOwnerUserId])
   @@index([remindAt])
+  @@index([lifeGoalId])
 }
 
 enum KnowledgeItemStatus {
@@ -1423,6 +1427,8 @@ model LifeGoal {
   staleRemindedAt   DateTime?
 
   checkIns LifeGoalCheckIn[]
+  /// 為這個目標要做的代辦（ProjectTodo.lifeGoalId）。
+  todos    ProjectTodo[]
 
   targetDate  DateTime?      @db.Date
   status      LifeGoalStatus @default(ACTIVE)
@@ -1444,10 +1450,12 @@ model LifeGoalCheckIn {
   goalId String
   goal   LifeGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
-  date  DateTime @db.Date
-  value Float    @default(1)
-  title String?
-  note  String?
+  date   DateTime @db.Date
+  value  Float    @default(1)
+  title  String?
+  note   String?
+  /// 由哪一件代辦完成自動打卡的；那件代辦改回沒做完時一起刪掉。
+  todoId String?
 
   createdAt DateTime @default(now())
 

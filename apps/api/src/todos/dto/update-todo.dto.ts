@@ -37,4 +37,9 @@ export class UpdateTodoDto {
   @IsOptional()
   @IsEnum(CalendarSyncTarget)
   calendarSyncTarget?: CalendarSyncTarget;
+
+  /** 為了哪個人生目標（空字串＝拿掉連結）。 */
+  @IsOptional()
+  @IsString()
+  lifeGoalId?: string | null;
 }
