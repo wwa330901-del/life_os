@@ -10,6 +10,25 @@ import { formatTaipeiDateTime, taipeiCurrentMonth, taipeiDateKey, taipeiDateKeyT
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 const LIST_MAX = 6;
+/** 沒日期的代辦放超過幾天，早報就提醒一下。 */
+const STALE_DAYS = 7;
+/** 「別忘了」最多列幾件（過期的先列，再列放太久的）。 */
+const FORGET_MAX = 6;
+
+/** 早報「別忘了」：過期的（過期幾天）先列，再列沒日期放太久的，合計最多 6 件。 */
+export function forgetList(
+  overdue: { title: string; dueDate: Date | null }[],
+  stale: { title: string; createdAt: Date }[],
+  now: Date,
+): string[] {
+  const days = (d: Date) => Math.max(1, Math.floor((now.getTime() - d.getTime()) / MS_PER_DAY));
+  const lines = [
+    ...overdue.map((t) => `⏳ ${t.title}（過期 ${t.dueDate ? days(t.dueDate) : 1} 天）`),
+    ...stale.map((t) => `💤 ${t.title}（放了 ${days(t.createdAt)} 天）`),
+  ];
+  const more = lines.length - FORGET_MAX;
+  return more > 0 ? [...lines.slice(0, FORGET_MAX), `…還有 ${more} 件，傳「代辦事項」看全部`] : lines;
+}
 const BUDGET_WARN_RATIO = 0.8;
 const DUE_REMINDER_LEAD_MS = 60 * 60 * 1000;
 
@@ -77,7 +96,9 @@ export class DailyBriefService {
       this.prisma.space.findUnique({ where: { calendarOwnerUserId: userId } }),
     ]);
 
-    const [events, dueToday, overdue] = await Promise.all([
+    const tomorrowEnd = new Date(today.end.getTime() + MS_PER_DAY);
+    const staleBefore = new Date(now.getTime() - STALE_DAYS * MS_PER_DAY);
+    const [events, dueToday, overdue, tomorrow, stale] = await Promise.all([
       calendar
         ? this.calendarEvents.list(userId, calendar.id, today.start.toISOString(), new Date(today.end.getTime() - 1).toISOString())
         : Promise.resolve([]),
@@ -88,8 +109,19 @@ export class DailyBriefService {
       }),
       this.prisma.projectTodo.findMany({
         where: { personalOwnerUserId: userId, done: false, isOngoing: false, dueDate: { lt: today.start } },
+        select: { title: true, dueDate: true },
+        orderBy: { dueDate: 'asc' },
+      }),
+      // 防忘（2026-11-22）：明天要做的、沒日期又放超過 7 天的
+      this.prisma.projectTodo.findMany({
+        where: { personalOwnerUserId: userId, done: false, dueDate: { gte: today.end, lt: tomorrowEnd } },
         select: { title: true },
         orderBy: { dueDate: 'asc' },
+      }),
+      this.prisma.projectTodo.findMany({
+        where: { personalOwnerUserId: userId, done: false, dueDate: null, createdAt: { lt: staleBefore } },
+        select: { title: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
       }),
     ]);
 
@@ -99,14 +131,18 @@ export class DailyBriefService {
         ['📅 今天的行程', ...events.slice(0, LIST_MAX).map((e) => `・${e.allDay ? '全天' : formatTaipeiDateTime(e.startAt, false).split(' ').pop()} ${e.title}`)].join('\n'),
       );
     }
-    if (dueToday.length > 0 || overdue.length > 0) {
+    if (dueToday.length > 0) {
       const lines = ['✅ 代辦'];
       for (const t of dueToday.slice(0, LIST_MAX)) {
         lines.push(`・${t.title}${t.dueDateAllDay || !t.dueDate ? '（今天）' : `（${formatTaipeiDateTime(t.dueDate, false).split(' ').pop()}）`}`);
       }
-      if (overdue.length > 0) {
-        lines.push(`⏳ 還有 ${overdue.length} 件過期：${overdue.slice(0, 3).map((t) => t.title).join('、')}${overdue.length > 3 ? '…' : ''}`);
-      }
+      sections.push(lines.join('\n'));
+    }
+    const forget = forgetList(overdue, stale, now);
+    if (forget.length > 0 || tomorrow.length > 0) {
+      const lines = ['🧠 別忘了'];
+      lines.push(...forget);
+      if (tomorrow.length > 0) lines.push(`📌 明天：${tomorrow.slice(0, LIST_MAX).map((t) => t.title).join('、')}${tomorrow.length > LIST_MAX ? '…' : ''}`);
       sections.push(lines.join('\n'));
     }
 

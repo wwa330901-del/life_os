@@ -13,7 +13,9 @@ function makeService(opts: { empty?: boolean } = {}) {
         Promise.resolve(
           opts.empty
             ? []
-            : where.dueDate.gte
+            : where.dueDate === null
+              ? []
+              : where.dueDate.gte
               ? [{ title: '繳電話費', dueDate: new Date('2026-10-01T07:00:00Z'), dueDateAllDay: false }]
               : [{ title: '整理房間' }],
         ),
@@ -38,7 +40,8 @@ describe('DailyBriefService.build', () => {
     expect(text).toContain('☀️ 早安！10/1（四）');
     expect(text).toContain('・14:30 看牙醫');
     expect(text).toContain('・繳電話費（15:00）');
-    expect(text).toContain('還有 1 件過期：整理房間');
+    expect(text).toContain('🧠 別忘了');
+    expect(text).toContain('⏳ 整理房間（過期 1 天）');
     expect(text).toContain('昨天花了 420');
     expect(text).toContain('🟡 餐飲預算已用 85%（剩 900）');
   });
@@ -78,5 +81,27 @@ describe('LINE 代辦提醒', () => {
     });
     expect(notifier.notifyByUser).toHaveBeenCalledTimes(1);
     expect(notifier.notifyByUser.mock.calls[0][2]).toHaveLength(2);
+  });
+});
+
+describe('forgetList（早報防忘）', () => {
+  const { forgetList } = jest.requireActual('./daily-brief.service') as typeof import('./daily-brief.service');
+  const now = new Date('2026-11-22T00:00:00Z');
+  const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
+
+  it('過期的寫過期幾天，沒日期放太久的寫放了幾天', () => {
+    expect(forgetList([{ title: '繳電費', dueDate: daysAgo(3) }], [{ title: '整理衣櫃', createdAt: daysAgo(9) }], now)).toEqual([
+      '⏳ 繳電費（過期 3 天）',
+      '💤 整理衣櫃（放了 9 天）',
+    ]);
+  });
+
+  it('超過 6 件只列 6 件，其他叫他看代辦', () => {
+    const overdue = Array.from({ length: 5 }, (_, i) => ({ title: `過期${i}`, dueDate: daysAgo(2) }));
+    const stale = Array.from({ length: 4 }, (_, i) => ({ title: `放著${i}`, createdAt: daysAgo(10) }));
+    const lines = forgetList(overdue, stale, now);
+    expect(lines).toHaveLength(7);
+    expect(lines[5]).toBe('💤 放著0（放了 10 天）');
+    expect(lines[6]).toBe('…還有 3 件，傳「代辦事項」看全部');
   });
 });
