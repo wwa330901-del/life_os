@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FinanceAccessService } from './finance-access.service';
 import { FinanceTransactionsService } from './finance-transactions.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
+import { FinanceAccountsService } from './finance-accounts.service';
+import { recurringRecordedMessage } from './finance-recurring-message';
 import {
   FinanceRecurringHolidayAdjustment,
   FinanceTransactionType,
@@ -36,6 +38,7 @@ export class FinanceRecurringTransactionsService {
     private readonly access: FinanceAccessService,
     private readonly transactions: FinanceTransactionsService,
     private readonly lineNotifier: LineNotifierService,
+    private readonly accounts: FinanceAccountsService,
   ) {}
 
   async list(userId: string, spaceId: string) {
@@ -145,6 +148,7 @@ export class FinanceRecurringTransactionsService {
     const label = r.note ?? this.describe(r);
 
     if (r.amount != null) {
+      const recordedAt = new Date();
       await this.prisma.financeTransaction.create({
         data: {
           spaceId: r.spaceId,
@@ -153,13 +157,22 @@ export class FinanceRecurringTransactionsService {
           accountId: r.accountId,
           toAccountId: r.toAccountId,
           categoryId: r.categoryId,
-          date: new Date(),
+          date: recordedAt,
           note: r.note ?? undefined,
         },
       });
+      const balance = await this.accounts.balanceOf(r.spaceId, r.accountId).catch(() => null);
       await this.lineNotifier.notifyBySpace(
         r.spaceId,
-        `🔁 已自動記帳：${label} ${Math.round(r.amount).toLocaleString('en-US')}`,
+        recurringRecordedMessage({
+          label,
+          type: r.type,
+          amount: r.amount,
+          accountName: r.account.name,
+          toAccountName: r.toAccount?.name,
+          date: recordedAt,
+          balance,
+        }),
       );
     } else {
       await this.lineNotifier.notifyBySpace(r.spaceId, `🔔 定期提醒：該處理「${label}」了，記得到元序記一筆。`);

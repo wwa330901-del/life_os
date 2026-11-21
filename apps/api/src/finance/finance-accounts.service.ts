@@ -25,6 +25,14 @@ export class FinanceAccountsService {
     return accounts.map((a) => ({ ...a, balance: a.initialBalance + (deltas.get(a.id) ?? 0) }));
   }
 
+  /** 某個帳戶現在的餘額（內部用，不檢查權限）；帳戶不存在回 null。 */
+  async balanceOf(spaceId: string, accountId: string): Promise<number | null> {
+    const account = await this.prisma.financeAccount.findFirst({ where: { id: accountId, spaceId } });
+    if (!account) return null;
+    const deltas = await this.computeBalanceDeltas(spaceId);
+    return account.initialBalance + (deltas.get(accountId) ?? 0);
+  }
+
   async create(userId: string, spaceId: string, dto: CreateFinanceAccountDto) {
     await this.access.assertPersonalSpace(userId, spaceId);
     const maxSortOrder = await this.prisma.financeAccount.aggregate({
