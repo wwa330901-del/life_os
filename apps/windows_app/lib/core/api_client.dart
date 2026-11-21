@@ -28,14 +28,52 @@ import 'models/stock.dart';
 /// 跟後端 SYSTEM_TROUBLE_MESSAGE 同一句。
 const systemTroubleMessage = '系統出了點問題，已經通知管理員，正在修理中，請稍後再試 🙏';
 
-class ApiException implements Exception {
-  ApiException(this.statusCode, this.message);
+/// 連不上伺服器（沒網路、伺服器重開中、逾時）時給使用者看的話。
+const offlineMessage = '連不上伺服器，請確認網路有開，或等一分鐘再試';
 
+/// App 版本（main.dart 啟動時填），放進錯誤的英文詳細內容裡。
+String appVersionLabel = '?';
+
+class ApiException implements Exception {
+  ApiException(this.statusCode, this.message, {this.detail = ''});
+
+  /// 0＝連不上伺服器（沒有 HTTP 回應）。
   final int statusCode;
+
+  /// 給使用者看的中文。
   final String message;
+
+  /// 英文的詳細內容（版本、哪個功能、原始錯誤），讓使用者複製給 Claude 判讀。
+  final String detail;
 
   @override
   String toString() => message;
+}
+
+/// 包住真正的 HTTP client：網路層的例外（ClientException、SocketException、
+/// TimeoutException…）一律換成 ApiException(0)，畫面只要處理 ApiException。
+class _GuardedClient extends http.BaseClient {
+  _GuardedClient(this._inner);
+
+  final http.Client _inner;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    try {
+      return await _inner.send(request);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(
+        0,
+        offlineMessage,
+        detail: '[v$appVersionLabel] ${request.method} ${request.url.path} -> ${e.runtimeType}: $e',
+      );
+    }
+  }
+
+  @override
+  void close() => _inner.close();
 }
 
 class AuthResult {
@@ -51,7 +89,7 @@ class AuthResult {
 class ApiClient {
   /// [client] 只有測試會換成假的後端（package:http/testing.dart 的 MockClient）。
   ApiClient({this.baseUrl = 'https://life-os-api-yhh2.onrender.com', http.Client? client})
-      : _http = client ?? http.Client();
+      : _http = _GuardedClient(client ?? http.Client());
 
   final String baseUrl;
   final http.Client _http;
@@ -107,7 +145,8 @@ class ApiClient {
     Map<String, dynamic> body;
     try {
       body = await _post('/auth/google', payload);
-    } on http.ClientException {
+    } on ApiException catch (e) {
+      if (e.statusCode != 0) rethrow;
       // 平板從瀏覽器切回來的瞬間連線可能還沒恢復，再試一次。
       await Future<void>.delayed(const Duration(seconds: 2));
       body = await _post('/auth/google', payload);
@@ -1795,11 +1834,15 @@ class ApiClient {
     } on FormatException {
       decoded = null;
     }
+    final body = res.body.length > 300 ? '${res.body.substring(0, 300)}…' : res.body;
+    final detail =
+        '[v$appVersionLabel] ${res.request?.method ?? '?'} ${res.request?.url.path ?? '?'} -> ${res.statusCode} ${res.reasonPhrase ?? ''} $body'
+            .trim();
     // 500 以上是系統問題：細節後端已經通知管理員，這裡只講「已通知管理員」。
-    if (res.statusCode >= 500) throw ApiException(res.statusCode, systemTroubleMessage);
+    if (res.statusCode >= 500) throw ApiException(res.statusCode, systemTroubleMessage, detail: detail);
     final message = (decoded is Map && decoded['message'] != null)
         ? decoded['message'].toString()
         : '操作失敗（${res.statusCode}）';
-    throw ApiException(res.statusCode, message);
+    throw ApiException(res.statusCode, message, detail: detail);
   }
 }

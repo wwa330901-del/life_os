@@ -13,6 +13,7 @@ import '../../../state/calendar_provider.dart';
 import '../../../state/calendar_share_provider.dart';
 import '../../widgets/calendar_target_picker.dart';
 import 'calendar_share_dialog.dart';
+import '../../widgets/error_panel.dart';
 
 /// Month-grid view for a 行事曆空間 — CalendarEvents only (see module doc in
 /// 大系統 for why ProjectTodo due dates aren't overlaid here in v1). Google
@@ -93,7 +94,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               monthKey: key,
             ),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(child: Text('讀取行事曆失敗：$error')),
+            error: (error, _) => ErrorPanel(error: error),
           ),
         ),
       ],
@@ -155,7 +156,7 @@ class _GoogleConnectButton extends ConsumerWidget {
       _invalidateAllMonths(ref);
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('連結失敗：$e')));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e, prefix: '連結失敗'));
       }
     }
   }
@@ -167,7 +168,7 @@ class _GoogleConnectButton extends ConsumerWidget {
       _invalidateAllMonths(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -178,7 +179,7 @@ class _GoogleConnectButton extends ConsumerWidget {
       ref.invalidate(calendarConnectionProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -295,7 +296,7 @@ class _AppleConnectButton extends ConsumerWidget {
           .read(apiClientProvider)
           .discoverAppleCalendars(spaceId: spaceId, appleId: appleId, appPassword: appPassword);
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       return;
     }
     if (!context.mounted) return;
@@ -371,7 +372,7 @@ class _AppleConnectButton extends ConsumerWidget {
       ref.invalidate(appleCalendarConnectionProvider(spaceId));
       _invalidateAllMonths(ref);
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 
@@ -381,7 +382,7 @@ class _AppleConnectButton extends ConsumerWidget {
     try {
       calendars = await ref.read(apiClientProvider).listAppleSyncedCalendars(spaceId);
     } on ApiException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(errorSnackBar(e));
       return;
     }
     if (!context.mounted || calendars.isEmpty) return;
@@ -411,7 +412,7 @@ class _AppleConnectButton extends ConsumerWidget {
       await ref.read(apiClientProvider).setAppleWriteCalendar(spaceId: spaceId, writeCalendarUrl: chosen.url);
       messenger.showSnackBar(SnackBar(content: Text('之後新增的行程會寫進「${chosen.displayName}」')));
     } on ApiException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(errorSnackBar(e));
     }
   }
 
@@ -421,7 +422,7 @@ class _AppleConnectButton extends ConsumerWidget {
       ref.invalidate(appleCalendarConnectionProvider(spaceId));
       _invalidateAllMonths(ref);
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 
@@ -431,7 +432,7 @@ class _AppleConnectButton extends ConsumerWidget {
       ref.invalidate(appleCalendarConnectionProvider(spaceId));
       _invalidateAllMonths(ref);
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 
@@ -768,7 +769,7 @@ class _DayAgenda extends ConsumerWidget {
       ref.invalidate(calendarEventsProvider(monthKey));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -792,7 +793,7 @@ class _DayAgenda extends ConsumerWidget {
       ref.invalidate(calendarEventsProvider(monthKey));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -1105,7 +1106,7 @@ class _DayAgenda extends ConsumerWidget {
       ref.invalidate(calendarEventsProvider(monthKey));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

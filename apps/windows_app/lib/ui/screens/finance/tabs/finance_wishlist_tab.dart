@@ -6,6 +6,7 @@ import '../../../../core/models/wishlist.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 const _priorityLabel = {1: '高', 2: '中', 3: '低'};
 
@@ -33,7 +34,7 @@ class FinanceWishlistTab extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('讀取失敗：$e')),
+        error: (e, _) => ErrorPanel(error: e),
         data: (o) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
@@ -124,7 +125,7 @@ class _BudgetCard extends ConsumerWidget {
       await ref.read(apiClientProvider).setWishlistBudget(double.tryParse(result.trim()));
       container.invalidate(wishlistProvider);
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 }
@@ -243,7 +244,7 @@ class _ItemEditorState extends ConsumerState<_ItemEditor> {
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

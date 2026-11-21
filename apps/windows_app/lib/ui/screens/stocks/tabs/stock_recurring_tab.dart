@@ -8,6 +8,7 @@ import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../../../../state/stocks_provider.dart';
 import '../../finance/widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 定期定額（DCA）計畫（2026-08-12 起）— 到期時系統自動用 [monthlyAmount]
 /// 先建一筆待填成交價的交易（顯示在「交易紀錄」分頁），同時發 LINE 提醒;
@@ -108,7 +109,7 @@ class StockRecurringTab extends ConsumerWidget {
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text('讀取定期定額失敗：$error')),
+              error: (error, _) => ErrorPanel(error: error),
             ),
     );
   }
@@ -140,7 +141,7 @@ class StockRecurringTab extends ConsumerWidget {
       ref.invalidate(stockHoldingsProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -159,7 +160,7 @@ class StockRecurringTab extends ConsumerWidget {
       }
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -177,7 +178,7 @@ class StockRecurringTab extends ConsumerWidget {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -201,7 +202,7 @@ class StockRecurringTab extends ConsumerWidget {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -247,7 +248,7 @@ class StockRecurringTab extends ConsumerWidget {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

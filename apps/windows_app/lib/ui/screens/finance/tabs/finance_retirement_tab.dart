@@ -9,6 +9,7 @@ import '../../../../core/models/retirement.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 「1,234 萬」／「8,500」：退休的金額動輒上千萬，用萬比較好讀。
 String _wan(num v) => v.abs() >= 10000 ? '${formatAmount(v / 10000)} 萬' : formatAmount(v);
@@ -23,7 +24,7 @@ class FinanceRetirementTab extends ConsumerWidget {
     final async = ref.watch(retirementProvider);
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('讀取失敗：$e')),
+      error: (e, _) => ErrorPanel(error: e),
       data: (r) => ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -64,7 +65,7 @@ class FinanceRetirementTab extends ConsumerWidget {
       await ref.read(apiClientProvider).updateRetirementSettings(patch);
       container.invalidate(retirementProvider);
     } on ApiException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(errorSnackBar(e));
     }
   }
 }

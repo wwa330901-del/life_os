@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/ai_usage.dart';
 import '../../../state/admin_provider.dart';
+import '../../widgets/error_panel.dart';
 
 String _usd(double v) => '\$${v.toStringAsFixed(v < 1 ? 3 : 2)}';
 
@@ -27,7 +28,7 @@ class AdminAiUsageScreen extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('讀取失敗：$e')),
+        error: (e, _) => ErrorPanel(error: e),
         data: (u) => ListView(
           padding: const EdgeInsets.all(16),
           children: [

@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../core/models/memory.dart';
 import '../../state/auth_provider.dart';
 import '../../state/memory_provider.dart';
+import './error_panel.dart';
 
 /// 「AI 記得的事」：AI 記住的事＋重要日子。平常靠跟 AI 講（「記住我不吃牛」
 /// 「媽媽生日是農曆 9/1」），這裡可以看、改、刪、補。
@@ -47,7 +48,7 @@ Future<void> _run(BuildContext context, WidgetRef ref, Future<void> Function() a
     await action();
     refresh(container);
   } on ApiException catch (e) {
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
   }
 }
 
@@ -96,7 +97,7 @@ class _MemoriesTab extends ConsumerWidget {
                     },
                   ),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('讀取失敗：$e')),
+            error: (e, _) => ErrorPanel(error: e),
           ),
         ),
         Padding(
@@ -198,7 +199,7 @@ class _DatesTab extends ConsumerWidget {
                     },
                   ),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('讀取失敗：$e')),
+            error: (e, _) => ErrorPanel(error: e),
           ),
         ),
         Padding(
@@ -262,7 +263,7 @@ class _DateEditorState extends ConsumerState<_DateEditor> {
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

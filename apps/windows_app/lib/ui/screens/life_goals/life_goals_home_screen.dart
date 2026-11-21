@@ -6,6 +6,7 @@ import '../../../core/models/life_goal.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/life_goal_provider.dart';
 import 'life_goal_editor_dialog.dart';
+import '../../widgets/error_panel.dart';
 
 /// 人生目標 — account-level module, independent of any Space. 進行中 vs
 /// 已結束（已完成＋已放棄）split the same single `/life-goals` list
@@ -77,7 +78,7 @@ class _LifeGoalsHomeScreenState extends ConsumerState<LifeGoalsHomeScreen> with 
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text('讀取人生目標失敗：$error')),
+              error: (error, _) => ErrorPanel(error: error),
             ),
           ),
         ],
@@ -316,7 +317,7 @@ class _CheckInHistory extends ConsumerWidget {
         );
       },
       loading: () => const LinearProgressIndicator(),
-      error: (e, _) => Text('讀取打卡紀錄失敗：$e'),
+      error: (e, _) => ErrorPanel(error: e),
     );
   }
 }
@@ -360,7 +361,7 @@ class _Tag extends StatelessWidget {
 enum _GoalAction { edit, complete, abandon, reopen, delete }
 
 void _showError(BuildContext context, ApiException e) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+  ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
 }
 
 Future<void> _handleAction(BuildContext context, WidgetRef ref, LifeGoal goal, _GoalAction action) async {
@@ -587,7 +588,7 @@ Future<void> _updateProgress(BuildContext context, WidgetRef ref, LifeGoal goal)
                     .updateLifeGoalStatus(id: goal.id, status: LifeGoalStatus.completed);
                 container.invalidate(lifeGoalsProvider);
               } on ApiException catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text(e.message)));
+                messenger.showSnackBar(errorSnackBar(e));
               }
             },
           ),
@@ -595,6 +596,6 @@ Future<void> _updateProgress(BuildContext context, WidgetRef ref, LifeGoal goal)
       );
     }
   } on ApiException catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    messenger.showSnackBar(errorSnackBar(e));
   }
 }

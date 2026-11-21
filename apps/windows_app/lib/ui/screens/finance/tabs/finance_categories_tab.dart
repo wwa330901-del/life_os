@@ -5,6 +5,7 @@ import '../../../../core/api_client.dart';
 import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 母分類/子分類 management — exactly two levels. A 母分類 with children
 /// can no longer be picked directly on a transaction (see
@@ -70,7 +71,7 @@ class FinanceCategoriesTab extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('讀取分類失敗：$error')),
+      error: (error, _) => ErrorPanel(error: error),
     );
   }
 
@@ -159,7 +160,7 @@ class FinanceCategoriesTab extends ConsumerWidget {
       ref.invalidate(financeCategoriesProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -295,7 +296,7 @@ class _CategoryTile extends StatelessWidget {
       ref.invalidate(financeCategoriesProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

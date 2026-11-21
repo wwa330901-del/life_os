@@ -12,6 +12,7 @@ import '../widgets/reminder_settings_dialog.dart';
 import '../widgets/export_backup.dart';
 import '../screens/friends/friends_dialog.dart';
 import 'space_switcher_list.dart';
+import '../widgets/error_panel.dart';
 
 const _sidebarWidth = 220.0;
 const _railWidth = 14.0;
@@ -244,7 +245,7 @@ class _SidebarPanel extends ConsumerWidget {
       await ref.read(authControllerProvider.notifier).updateName(name);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

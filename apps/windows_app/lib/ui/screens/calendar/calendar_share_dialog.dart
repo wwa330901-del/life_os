@@ -7,6 +7,7 @@ import '../../../core/models/friend.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/calendar_share_provider.dart';
 import '../../../state/friend_provider.dart';
+import '../../widgets/error_panel.dart';
 
 /// 共用行事曆管理——「別人分享給我的」（含待處理邀請）跟「我分享出去的」
 /// 兩個分頁。詳細程度是擁有者（分享出去那邊）的權限，顏色是檢視者（收到
@@ -107,7 +108,7 @@ class _ReceivedTab extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('讀取失敗：$error')),
+      error: (error, _) => ErrorPanel(error: error),
     );
   }
 
@@ -118,7 +119,7 @@ class _ReceivedTab extends ConsumerWidget {
       ref.invalidate(combinedCalendarEventsProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -130,7 +131,7 @@ class _ReceivedTab extends ConsumerWidget {
       ref.invalidate(combinedCalendarEventsProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -258,7 +259,7 @@ class _GivenTab extends ConsumerWidget {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(child: Text('讀取失敗：$error')),
+            error: (error, _) => ErrorPanel(error: error),
           ),
         ),
       ],
@@ -273,7 +274,7 @@ class _GivenTab extends ConsumerWidget {
       friends = await ref.read(friendsProvider.future);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
       return;
     }
@@ -305,7 +306,7 @@ class _GivenTab extends ConsumerWidget {
       ref.invalidate(calendarSharesGivenProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -334,7 +335,7 @@ class _GivenTab extends ConsumerWidget {
       ref.invalidate(calendarSharesGivenProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

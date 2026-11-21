@@ -6,6 +6,7 @@ import '../../../core/api_client.dart';
 import '../../../core/models/knowledge.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/knowledge_provider.dart';
+import '../../widgets/error_panel.dart';
 
 /// Full detail view for one knowledge item — works for both the caller's
 /// own items and a public one browsed from someone else (in which case
@@ -100,7 +101,7 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
       }
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

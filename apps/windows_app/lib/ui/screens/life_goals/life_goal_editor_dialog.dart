@@ -5,6 +5,7 @@ import '../../../core/api_client.dart';
 import '../../../core/models/life_goal.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/life_goal_provider.dart';
+import '../../widgets/error_panel.dart';
 
 /// How the editor presents 追蹤方式 — [LifeGoalTrackingType] plus 「不追蹤數字」,
 /// which is stored as MANUAL with no target.
@@ -239,7 +240,7 @@ class _LifeGoalEditorDialogState extends ConsumerState<_LifeGoalEditorDialog> {
         ].where((s) => s.isNotEmpty).join('\n');
       });
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     } finally {
       if (mounted) setState(() => _planning = false);
     }
@@ -534,7 +535,7 @@ class _LifeGoalEditorDialogState extends ConsumerState<_LifeGoalEditorDialog> {
                     onChanged: (id) => setState(() => _accountId = id),
                   ),
             loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('讀取帳戶失敗：$e'),
+            error: (e, _) => ErrorPanel(error: e),
           ),
           Row(children: [Expanded(child: numberField(_target, '目標金額')), const SizedBox(width: 12), unitField()]),
           hint('帳戶餘額每次記帳都會自動更新，不用自己改數字。'),

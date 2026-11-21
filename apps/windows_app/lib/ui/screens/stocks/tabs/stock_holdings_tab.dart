@@ -5,6 +5,7 @@ import '../../../../core/models/stock.dart';
 import '../../../../state/stocks_provider.dart';
 import '../../finance/widgets/finance_format.dart';
 import '../widgets/stock_openings_dialog.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 持股總覽 — one card per stock code, aggregated server-side from every
 /// StockTransaction against it (average-cost-basis method). `currentPrice`/
@@ -84,7 +85,7 @@ class StockHoldingsTab extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('讀取持股失敗：$error')),
+      error: (error, _) => ErrorPanel(error: error),
     );
   }
 

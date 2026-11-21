@@ -36,12 +36,12 @@ class FakeBackend {
     final handler = _routes[route];
     if (handler == null) {
       unknown.add(route);
-      return http.Response(jsonEncode({'message': '測試沒準備：$route'}), 404, headers: _json);
+      return http.Response(jsonEncode({'message': '測試沒準備：$route'}), 404, headers: _json, request: request);
     }
     final result = handler(body);
-    if (result is _ServerError) return http.Response('<html>oops</html>', 500);
-    if (result is _ClientError) return http.Response(jsonEncode({'message': result.message}), result.status, headers: _json);
-    return http.Response(jsonEncode(result), 200, headers: _json);
+    if (result is _ServerError) return http.Response('<html>oops</html>', 500, request: request);
+    if (result is _ClientError) return http.Response(jsonEncode({'message': result.message}), result.status, headers: _json, request: request);
+    return http.Response(jsonEncode(result), 200, headers: _json, request: request);
   });
 
   static const _json = {'content-type': 'application/json; charset=utf-8'};
@@ -112,3 +112,8 @@ FakeBackend loggedInBackend() => FakeBackend()
     'lifeGoals': [],
     'recentKnowledgeItems': [],
   });
+
+/// 讓某個路由像斷網一樣直接丟例外（測「連不上伺服器」）。
+extension FakeBackendOffline on FakeBackend {
+  void offline(String route) => onCall(route, (_) => throw http.ClientException('Failed host lookup'));
+}

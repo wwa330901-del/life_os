@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry/sentry.dart';
 
 import 'app.dart';
+import 'core/api_client.dart';
 import 'state/auth_provider.dart';
 
 /// Baked in at build time via `--dart-define=SENTRY_DSN=...` (see
@@ -33,7 +34,10 @@ Future<void> main() async {
   final container = ProviderContainer();
   final reported = <String>{};
   String? version;
-  PackageInfo.fromPlatform().then((info) => version = info.version).ignore();
+  PackageInfo.fromPlatform().then((info) {
+    version = info.version;
+    appVersionLabel = info.version;
+  }).ignore();
 
   void capture(Object error, StackTrace? stack) {
     if (_sentryDsn.isNotEmpty) Sentry.captureException(error, stackTrace: stack);

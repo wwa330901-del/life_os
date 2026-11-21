@@ -7,6 +7,7 @@ import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../../../../state/home_provider.dart';
 import '../../../../state/stocks_provider.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 清空記帳重來：很久沒記、帳對不起來時一次清掉所有紀錄（交易、借貸、代墊、
 /// 股票）。預設保留帳戶/分類/預算/定期交易，並讓使用者填每個帳戶現在實際有多少錢；
@@ -16,7 +17,7 @@ Future<void> showFinanceResetDialog(BuildContext context, WidgetRef ref, String 
   try {
     accounts = await ref.read(apiClientProvider).listFinanceAccounts(spaceId);
   } on ApiException catch (e) {
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     return;
   }
   if (!context.mounted) return;
@@ -113,7 +114,7 @@ Future<void> showFinanceResetDialog(BuildContext context, WidgetRef ref, String 
   try {
     await ref.read(apiClientProvider).resetFinance(spaceId: spaceId, deleteSetup: deleteSetup, balances: balances);
   } on ApiException catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('清空失敗：${e.message}')));
+    messenger.showSnackBar(errorSnackBar(e, prefix: '清空失敗'));
     return;
   }
 

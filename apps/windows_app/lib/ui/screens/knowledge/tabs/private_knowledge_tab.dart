@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../state/knowledge_provider.dart';
 import '../knowledge_category_settings_screen.dart';
 import '../knowledge_item_card.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 私人區 — everything the caller owns, regardless of that category's own
 /// public/private flag (an owner always sees 100% of their own stuff).
@@ -69,7 +70,7 @@ class _PrivateKnowledgeTabState extends ConsumerState<PrivateKnowledgeTab> {
                     onChanged: (value) => setState(() => _categoryId = value),
                   ),
                   loading: () => const LinearProgressIndicator(),
-                  error: (error, _) => Text('讀取分類失敗：$error'),
+                  error: (error, _) => ErrorPanel(error: error),
                 ),
               ),
               const SizedBox(width: 12),
@@ -111,7 +112,7 @@ class _PrivateKnowledgeTabState extends ConsumerState<PrivateKnowledgeTab> {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(child: Text('讀取失敗：$error')),
+            error: (error, _) => ErrorPanel(error: error),
           ),
         ),
       ],

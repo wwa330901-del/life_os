@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api_client.dart';
 import '../../state/auth_provider.dart';
+import './error_panel.dart';
 
 /// 匯出全部資料成 Excel，存到「下載」資料夾（Windows 會在檔案總管裡選取它）。
 Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
@@ -44,9 +45,9 @@ Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
     if (Platform.isWindows) await Process.run('explorer.exe', ['/select,', file.path]);
   } on ApiException catch (e) {
     navigator.pop();
-    messenger.showSnackBar(SnackBar(content: Text('匯出失敗：${e.message}')));
+    messenger.showSnackBar(errorSnackBar(e, prefix: '匯出失敗'));
   } on FileSystemException catch (e) {
     navigator.pop();
-    messenger.showSnackBar(SnackBar(content: Text('存檔失敗：${e.message}')));
+    messenger.showSnackBar(errorSnackBar(e, prefix: '存檔失敗'));
   }
 }

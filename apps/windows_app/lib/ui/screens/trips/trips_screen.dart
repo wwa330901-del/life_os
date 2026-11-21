@@ -7,6 +7,7 @@ import '../../../state/auth_provider.dart';
 import '../../../state/finance_provider.dart';
 import '../../../state/trip_provider.dart';
 import '../finance/widgets/finance_format.dart';
+import '../../widgets/error_panel.dart';
 
 String _md(String date) => '${int.parse(date.substring(5, 7))}/${int.parse(date.substring(8))}';
 String _key(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -44,7 +45,7 @@ class _TripsScreenState extends ConsumerState<TripsScreen> {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('讀取失敗：$e')),
+        error: (e, _) => ErrorPanel(error: e),
         data: (trips) {
           if (trips.isEmpty) {
             return const Center(
@@ -107,7 +108,7 @@ class _TripDetail extends ConsumerWidget {
     final async = ref.watch(tripProvider(tripId));
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('讀取失敗：$e')),
+      error: (e, _) => ErrorPanel(error: e),
       data: (t) => ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         children: [
@@ -135,7 +136,7 @@ Future<T?> _run<T>(BuildContext context, WidgetRef ref, String tripId, Future<T>
     if (done != null) messenger.showSnackBar(SnackBar(content: Text(done)));
     return result;
   } on ApiException catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    messenger.showSnackBar(errorSnackBar(e));
     return null;
   }
 }
@@ -558,7 +559,7 @@ class _PackingCardState extends ConsumerState<_PackingCard> {
     try {
       await ref.read(apiClientProvider).setTripPacking(widget.trip.id, next);
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 
@@ -692,7 +693,7 @@ class _TripEditorState extends ConsumerState<_TripEditor> {
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

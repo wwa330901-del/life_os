@@ -22,6 +22,7 @@ import '../../state/todo_provider.dart';
 import 'admin/admin_ai_usage_screen.dart';
 import 'admin/admin_home_screen.dart';
 import 'home/home_dashboard_widgets.dart';
+import '../widgets/error_panel.dart';
 
 class SpacePickerScreen extends ConsumerWidget {
   const SpacePickerScreen({super.key});
@@ -138,7 +139,7 @@ class SpacePickerScreen extends ConsumerWidget {
                                         if (context.mounted) {
                                           ScaffoldMessenger.of(
                                             context,
-                                          ).showSnackBar(SnackBar(content: Text(e.message)));
+                                          ).showSnackBar(errorSnackBar(e));
                                         }
                                       }
                                     },
@@ -147,7 +148,7 @@ class SpacePickerScreen extends ConsumerWidget {
                             );
                           },
                           loading: () => const CircularProgressIndicator(),
-                          error: (error, _) => Text('讀取空間失敗：$error'),
+                          error: (error, _) => ErrorPanel(error: error),
                         ),
                       ),
                       const SizedBox(height: 32),
@@ -221,7 +222,7 @@ class SpacePickerScreen extends ConsumerWidget {
       ref.invalidate(homeLayoutProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -252,13 +253,13 @@ class _HomeDashboardSection extends ConsumerWidget {
           padding: EdgeInsets.all(24),
           child: Center(child: CircularProgressIndicator()),
         ),
-        error: (error, _) => Text('讀取首頁資料失敗：$error'),
+        error: (error, _) => ErrorPanel(error: error),
       ),
       loading: () => const Padding(
         padding: EdgeInsets.all(24),
         child: Center(child: CircularProgressIndicator()),
       ),
-      error: (error, _) => Text('讀取版面設定失敗：$error'),
+      error: (error, _) => ErrorPanel(error: error),
     );
   }
 }

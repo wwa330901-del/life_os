@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../state/knowledge_provider.dart';
 import '../knowledge_item_card.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 公開區 — other users' items whose category owner marked it public and
 /// hasn't blacklisted the caller. Browsing here never touches the caller's
@@ -69,7 +70,7 @@ class _PublicKnowledgeTabState extends ConsumerState<PublicKnowledgeTab> {
                     onChanged: (value) => setState(() => _categoryId = value),
                   ),
                   loading: () => const LinearProgressIndicator(),
-                  error: (error, _) => Text('讀取分類失敗：$error'),
+                  error: (error, _) => ErrorPanel(error: error),
                 ),
               ),
               const SizedBox(width: 12),
@@ -105,7 +106,7 @@ class _PublicKnowledgeTabState extends ConsumerState<PublicKnowledgeTab> {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(child: Text('讀取失敗：$error')),
+            error: (error, _) => ErrorPanel(error: error),
           ),
         ),
       ],

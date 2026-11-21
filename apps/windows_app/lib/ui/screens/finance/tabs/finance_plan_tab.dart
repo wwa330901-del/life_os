@@ -7,6 +7,7 @@ import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
 import '../widgets/finance_plan_questions_dialog.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 財務規劃（2026-10-02）：AI 依固定薪資、近 3 個月的收支、財務健檢和購物車，
 /// 建議每月怎麼分配、各分類預算多少（可以一鍵套用）、接下來做什麼。
@@ -33,7 +34,7 @@ class _FinancePlanTabState extends ConsumerState<FinancePlanTab> {
       if (!mounted) return;
       answers = await showFinancePlanQuestionsDialog(context, form);
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       return;
     }
     if (answers == null || !mounted) return;
@@ -42,7 +43,7 @@ class _FinancePlanTabState extends ConsumerState<FinancePlanTab> {
       await api.generateFinancePlan(widget.spaceId, answers: answers);
       container.invalidate(financePlanProvider(widget.spaceId));
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     } finally {
       if (mounted) setState(() => _generating = false);
     }
@@ -60,7 +61,7 @@ class _FinancePlanTabState extends ConsumerState<FinancePlanTab> {
         );
       }
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     } finally {
       if (mounted) setState(() => _applying = false);
     }
@@ -74,7 +75,7 @@ class _FinancePlanTabState extends ConsumerState<FinancePlanTab> {
 
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('讀取失敗：$e')),
+      error: (e, _) => ErrorPanel(error: e),
       data: (plan) => ListView(
         padding: const EdgeInsets.all(24),
         children: [

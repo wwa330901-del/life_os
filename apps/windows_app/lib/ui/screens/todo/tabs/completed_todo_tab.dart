@@ -6,6 +6,7 @@ import '../../../../core/models/project_todo.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/todo_provider.dart';
 import '../todo_tile.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 已完成代辦事項 — full history（進行中分頁只會保留完成當天的項目，見
 /// `TodosService.listAll`），這裡才是完成過的東西真正找得到的地方：依完成
@@ -88,7 +89,7 @@ class _CompletedTodoTabState extends ConsumerState<CompletedTodoTab> {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(child: Text('讀取失敗：$error')),
+            error: (error, _) => ErrorPanel(error: error),
           ),
         ),
       ],
@@ -102,7 +103,7 @@ class _CompletedTodoTabState extends ConsumerState<CompletedTodoTab> {
       ref.invalidate(todoOverviewProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -126,7 +127,7 @@ class _CompletedTodoTabState extends ConsumerState<CompletedTodoTab> {
       ref.invalidate(completedTodosProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

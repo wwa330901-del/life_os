@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../state/admin_provider.dart';
+import '../../widgets/error_panel.dart';
 
 class AdminAccountsScreen extends ConsumerWidget {
   const AdminAccountsScreen({super.key});
@@ -43,7 +44,7 @@ class AdminAccountsScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('讀取失敗：$error')),
+        error: (error, _) => ErrorPanel(error: error),
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/finance_report.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 const _chartPalette = [
   Color(0xFF5B8DEF),
@@ -50,7 +51,7 @@ class FinanceReportTab extends ConsumerWidget {
         ],
       ),
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('讀取財務報表失敗：$error')),
+      error: (error, _) => ErrorPanel(error: error),
     );
   }
 }
@@ -95,7 +96,7 @@ class _HealthSection extends ConsumerWidget {
       title: '財務健檢',
       child: healthAsync.when(
         loading: () => const LinearProgressIndicator(),
-        error: (error, _) => Text('讀取失敗：$error'),
+        error: (error, _) => ErrorPanel(error: error),
         data: (health) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

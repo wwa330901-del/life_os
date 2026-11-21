@@ -9,6 +9,7 @@ import '../../../../state/finance_provider.dart';
 import '../../../../state/friend_provider.dart';
 import '../widgets/date_range_filter.dart';
 import '../widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 跟人借錢/借錢給人 — a lightweight receivable/payable ledger, independent
 /// of 代墊 despite the similar mechanic (see the backend's `FinanceLoan`
@@ -134,7 +135,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text('讀取借貸失敗：$error')),
+              error: (error, _) => ErrorPanel(error: error),
             ),
     );
   }
@@ -158,7 +159,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
       friends = await ref.read(friendsProvider.future);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
       return;
     }
@@ -199,7 +200,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -223,7 +224,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -253,7 +254,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -284,7 +285,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -313,7 +314,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -345,7 +346,7 @@ class _FinanceLoansTabState extends ConsumerState<FinanceLoansTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -1067,7 +1068,7 @@ class _LoanInvitesDialog extends ConsumerWidget {
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => Center(child: Text('讀取失敗：$error')),
+                error: (error, _) => ErrorPanel(error: error),
               ),
             ),
             Padding(
@@ -1089,7 +1090,7 @@ class _LoanInvitesDialog extends ConsumerWidget {
       ref.invalidate(financeLoanInvitesReceivedProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -1100,7 +1101,7 @@ class _LoanInvitesDialog extends ConsumerWidget {
       ref.invalidate(financeLoanInvitesReceivedProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

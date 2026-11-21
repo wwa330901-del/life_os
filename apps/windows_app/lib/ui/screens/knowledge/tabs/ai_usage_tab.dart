@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/ai_usage.dart';
 import '../../../../state/ai_usage_provider.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 用量記錄 — this user's own AI usage/cost only (Claude／Gemini 分開), never anyone else's.
 class AiUsageTab extends ConsumerWidget {
@@ -37,7 +38,7 @@ class AiUsageTab extends ConsumerWidget {
         ],
       ),
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('讀取失敗：$error')),
+      error: (error, _) => ErrorPanel(error: error),
     );
   }
 }

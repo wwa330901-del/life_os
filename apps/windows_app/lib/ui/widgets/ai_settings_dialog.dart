@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_client.dart';
 import '../../state/ai_usage_provider.dart';
 import '../../state/auth_provider.dart';
+import './error_panel.dart';
 
 /// AI 設定（2026-10-02 起 AI 主要用 Claude）：每個人用自己的金鑰，用量算在自己的
 /// 帳戶——沒有平台共用金鑰。Claude 負責 LINE／App 對話、規劃、收據；Gemini 負責
@@ -111,7 +112,7 @@ class _KeySectionState extends ConsumerState<_KeySection> {
       }
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -163,7 +164,7 @@ class _KeySectionState extends ConsumerState<_KeySection> {
             ],
           ),
           loading: () => const LinearProgressIndicator(),
-          error: (error, _) => Text('讀取失敗：$error'),
+          error: (error, _) => ErrorPanel(error: error),
         ),
         const SizedBox(height: 8),
         TextField(

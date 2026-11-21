@@ -6,6 +6,7 @@ import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 /// "每月第 N 天做一次某件事" — 信用卡費/房租/訂閱這類會重複發生的交易。有填金額
 /// 的（房租、訂閱這種固定金額）到期會自動記一筆＋傳 LINE 通知；沒填金額的（信用
@@ -89,7 +90,7 @@ class FinanceRecurringTab extends ConsumerWidget {
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text('讀取定期交易失敗：$error')),
+              error: (error, _) => ErrorPanel(error: error),
             ),
     );
   }
@@ -136,7 +137,7 @@ class FinanceRecurringTab extends ConsumerWidget {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -160,7 +161,7 @@ class FinanceRecurringTab extends ConsumerWidget {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -210,7 +211,7 @@ class FinanceRecurringTab extends ConsumerWidget {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

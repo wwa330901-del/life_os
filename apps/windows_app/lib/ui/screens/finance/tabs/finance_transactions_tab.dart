@@ -8,6 +8,7 @@ import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
 import '../widgets/finance_month_selector.dart';
+import '../../../widgets/error_panel.dart';
 
 class FinanceTransactionsTab extends ConsumerStatefulWidget {
   const FinanceTransactionsTab({super.key, required this.spaceId});
@@ -109,7 +110,7 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => Center(child: Text('讀取交易失敗：$error')),
+                error: (error, _) => ErrorPanel(error: error),
               ),
             ),
         ],
@@ -181,7 +182,7 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -233,7 +234,7 @@ class _FinanceTransactionsTabState extends ConsumerState<FinanceTransactionsTab>
       }
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

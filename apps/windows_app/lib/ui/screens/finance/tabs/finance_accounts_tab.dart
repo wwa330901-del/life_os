@@ -6,6 +6,7 @@ import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 class FinanceAccountsTab extends ConsumerWidget {
   const FinanceAccountsTab({super.key, required this.spaceId});
@@ -63,7 +64,7 @@ class FinanceAccountsTab extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('讀取帳戶失敗：$error')),
+        error: (error, _) => ErrorPanel(error: error),
       ),
     );
   }
@@ -229,7 +230,7 @@ class FinanceAccountsTab extends ConsumerWidget {
       container.invalidate(financeAccountsProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -253,7 +254,7 @@ class FinanceAccountsTab extends ConsumerWidget {
       ref.invalidate(financeAccountsProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

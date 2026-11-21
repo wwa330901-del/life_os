@@ -5,6 +5,7 @@ import '../../../core/api_client.dart';
 import '../../../core/models/knowledge.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/knowledge_provider.dart';
+import '../../widgets/error_panel.dart';
 
 /// 知識庫分類設定 — each category is entirely self-managed by its owner: its
 /// own name, public/private toggle, custom fields, and (while public) a
@@ -21,7 +22,7 @@ class KnowledgeCategorySettingsScreen extends ConsumerWidget {
       ref.invalidate(knowledgeCategoriesProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -47,7 +48,7 @@ class KnowledgeCategorySettingsScreen extends ConsumerWidget {
       }
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -94,7 +95,7 @@ class KnowledgeCategorySettingsScreen extends ConsumerWidget {
           ],
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('讀取失敗：$error')),
+        error: (error, _) => ErrorPanel(error: error),
       ),
     );
   }
@@ -111,7 +112,7 @@ class _CategoryCard extends ConsumerWidget {
       ref.invalidate(knowledgeCategoriesProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

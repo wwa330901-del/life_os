@@ -8,6 +8,7 @@ import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
 import '../widgets/finance_month_selector.dart';
+import '../../../widgets/error_panel.dart';
 
 const _chartPalette = [
   Color(0xFF5B8DEF),
@@ -59,7 +60,7 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
                   child: _TotalAssetsCard(accounts: accounts),
                 ),
           loading: () => const SizedBox.shrink(),
-          error: (error, _) => Text('讀取帳戶總資產失敗：$error'),
+          error: (error, _) => ErrorPanel(error: error),
         ),
         Center(child: FinanceMonthSelector(month: _month, onChanged: (m) => setState(() => _month = m))),
         const SizedBox(height: 16),
@@ -76,7 +77,7 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
             padding: EdgeInsets.symmetric(vertical: 32),
             child: Center(child: CircularProgressIndicator()),
           ),
-          error: (error, _) => Text('讀取本月統計失敗：$error'),
+          error: (error, _) => ErrorPanel(error: error),
         ),
         const SizedBox(height: 24),
         Text('近 6 個月收支趨勢', style: Theme.of(context).textTheme.titleMedium),
@@ -87,7 +88,7 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
             padding: EdgeInsets.symmetric(vertical: 32),
             child: Center(child: CircularProgressIndicator()),
           ),
-          error: (error, _) => Text('讀取收支趨勢失敗：$error'),
+          error: (error, _) => ErrorPanel(error: error),
         ),
         const SizedBox(height: 24),
         Text('預算進度', style: Theme.of(context).textTheme.titleMedium),
@@ -109,7 +110,7 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Text('讀取預算進度失敗：$error'),
+          error: (error, _) => ErrorPanel(error: error),
         ),
       ],
     );
@@ -151,7 +152,7 @@ class _FinanceOverviewTabState extends ConsumerState<FinanceOverviewTab> {
       );
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

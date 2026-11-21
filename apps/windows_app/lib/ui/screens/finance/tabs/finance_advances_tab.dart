@@ -7,6 +7,7 @@ import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/date_range_filter.dart';
 import '../widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 工作上先幫忙出錢，之後還你 — same shape/mechanic as `FinanceLoansTab` (see
 /// the backend's `FinanceAdvance` doc comment for why this is a separate
@@ -125,7 +126,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text('讀取代墊失敗：$error')),
+              error: (error, _) => ErrorPanel(error: error),
             ),
     );
   }
@@ -160,7 +161,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -187,7 +188,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -218,7 +219,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -247,7 +248,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -279,7 +280,7 @@ class _FinanceAdvancesTabState extends ConsumerState<FinanceAdvancesTab> {
       _invalidate();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

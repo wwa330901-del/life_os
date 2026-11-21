@@ -6,6 +6,7 @@ import '../../../../core/models/finance.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 /// Standing monthly targets per (expense) category — 收入 categories don't
 /// get a budget, there's nothing to cap.
@@ -64,11 +65,11 @@ class FinanceBudgetsTab extends ConsumerWidget {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Center(child: Text('讀取預算失敗：$error')),
+          error: (error, _) => ErrorPanel(error: error),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('讀取分類失敗：$error')),
+      error: (error, _) => ErrorPanel(error: error),
     );
   }
 
@@ -109,7 +110,7 @@ class FinanceBudgetsTab extends ConsumerWidget {
       ref.invalidate(financeBudgetsProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -120,7 +121,7 @@ class FinanceBudgetsTab extends ConsumerWidget {
       ref.invalidate(financeBudgetsProvider(spaceId));
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

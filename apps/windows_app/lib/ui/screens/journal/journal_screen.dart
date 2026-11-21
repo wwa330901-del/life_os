@@ -5,6 +5,7 @@ import '../../../core/api_client.dart';
 import '../../../core/models/journal_entry.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/journal_provider.dart';
+import '../../widgets/error_panel.dart';
 
 const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
 
@@ -57,7 +58,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       ),
       body: entriesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('讀取失敗：$error')),
+        error: (error, _) => ErrorPanel(error: error),
         data: (entries) {
           if (entries.isEmpty) {
             return Center(
@@ -203,7 +204,7 @@ class _JournalEditorDialogState extends ConsumerState<_JournalEditorDialog> {
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -226,7 +227,7 @@ class _JournalEditorDialogState extends ConsumerState<_JournalEditorDialog> {
       await ref.read(apiClientProvider).deleteJournalEntry(entry.id);
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 

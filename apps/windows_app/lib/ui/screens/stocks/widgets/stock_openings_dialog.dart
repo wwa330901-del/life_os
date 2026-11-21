@@ -6,6 +6,7 @@ import '../../../../core/models/stock.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/stocks_provider.dart';
 import '../../finance/widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 期初持股（2026-10-06）：開始記帳前就有的股票，跟帳戶的期初餘額一樣——
 /// 只填股數和均價，不會從任何帳戶扣錢。之後的買賣照樣記在「交易紀錄」，
@@ -68,7 +69,7 @@ class _StockOpeningsDialog extends ConsumerWidget {
                   padding: EdgeInsets.all(16),
                   child: Center(child: CircularProgressIndicator()),
                 ),
-                error: (error, _) => Text('讀取失敗：$error'),
+                error: (error, _) => ErrorPanel(error: error),
               ),
             ),
           ],
@@ -110,7 +111,7 @@ class _StockOpeningsDialog extends ConsumerWidget {
       );
       _refresh(ref);
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 
@@ -131,7 +132,7 @@ class _StockOpeningsDialog extends ConsumerWidget {
       await ref.read(apiClientProvider).deleteStockOpening(spaceId: spaceId, stockCode: o.stockCode);
       _refresh(ref);
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 }

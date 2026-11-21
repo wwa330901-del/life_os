@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/auth_provider.dart';
+import '../widgets/error_panel.dart';
 
 /// Shown right after registration. The account isn't usable until the
 /// 6-digit code emailed to [email] is confirmed here.
@@ -45,7 +46,7 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('重寄失敗：$e')));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e, prefix: '重寄失敗'));
       }
     } finally {
       if (mounted) setState(() => _resending = false);

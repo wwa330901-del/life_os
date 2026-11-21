@@ -8,6 +8,7 @@ import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../../../../state/stocks_provider.dart';
 import '../../finance/widgets/finance_format.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 交易紀錄 — every manually-entered stock buy/sell, plus 定期定額 rows
 /// (2026-08-12: these show up here immediately on their trigger date as a
@@ -152,7 +153,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text('讀取股票交易失敗：$error')),
+              error: (error, _) => ErrorPanel(error: error),
             ),
     );
   }
@@ -185,7 +186,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -231,7 +232,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -279,7 +280,7 @@ class _StockTransactionsTabState extends ConsumerState<StockTransactionsTab> {
       _invalidate(ref);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

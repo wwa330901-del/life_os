@@ -5,6 +5,7 @@ import '../../../../core/api_client.dart';
 import '../../../../state/auth_provider.dart';
 import '../../../../state/finance_provider.dart';
 import '../../../../state/stocks_provider.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 股票帳戶（2026-10-07）：股票買賣通常都走同一個交割帳戶，設一次之後新增
 /// 交易／定期定額預設選它，LINE「買股」和 AI 記股票沒講帳戶也用它。
@@ -59,7 +60,7 @@ class StockAccountButton extends ConsumerWidget {
           .setStockAccountId(spaceId: spaceId, accountId: picked.isEmpty ? null : picked);
       ref.invalidate(stockAccountIdProvider(spaceId));
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     }
   }
 }

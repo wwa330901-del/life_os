@@ -9,6 +9,7 @@ import '../../../../state/calendar_provider.dart';
 import '../../../../state/todo_provider.dart';
 import '../../../widgets/calendar_target_picker.dart';
 import '../todo_tile.dart';
+import '../../../widgets/error_panel.dart';
 
 /// 個人事項 — deliberately kept simple per the user's own spec: just a
 /// title and an optional due date.
@@ -47,7 +48,7 @@ class PersonalTodoTab extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('讀取個人事項失敗：$error')),
+        error: (error, _) => ErrorPanel(error: error),
       ),
     );
   }
@@ -59,7 +60,7 @@ class PersonalTodoTab extends ConsumerWidget {
       ref.invalidate(completedTodosProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -83,7 +84,7 @@ class PersonalTodoTab extends ConsumerWidget {
       ref.invalidate(todoOverviewProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -232,7 +233,7 @@ class PersonalTodoTab extends ConsumerWidget {
       ref.invalidate(todoOverviewProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

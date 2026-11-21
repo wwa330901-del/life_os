@@ -5,6 +5,7 @@ import '../../../core/api_client.dart';
 import '../../../core/models/friend.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/friend_provider.dart';
+import '../../widgets/error_panel.dart';
 
 /// 好友管理 (2026-08-06) — 共用行事曆/借出借入互通的邀請流程都要求對方先是
 /// 好友（見後端 `Friendship` schema 註解），這裡是唯一的「加好友」入口。
@@ -93,7 +94,7 @@ class _FriendsTab extends ConsumerWidget {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(child: Text('讀取失敗：$error')),
+            error: (error, _) => ErrorPanel(error: error),
           ),
         ),
       ],
@@ -127,7 +128,7 @@ class _FriendsTab extends ConsumerWidget {
       ref.invalidate(friendInvitesSentProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -152,7 +153,7 @@ class _FriendsTab extends ConsumerWidget {
       ref.invalidate(friendsProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -198,7 +199,7 @@ class _InvitesTab extends ConsumerWidget {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Text('讀取失敗：$error'),
+          error: (error, _) => ErrorPanel(error: error),
         ),
         const SizedBox(height: 20),
         Text('送出的邀請', style: Theme.of(context).textTheme.titleSmall),
@@ -224,7 +225,7 @@ class _InvitesTab extends ConsumerWidget {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Text('讀取失敗：$error'),
+          error: (error, _) => ErrorPanel(error: error),
         ),
       ],
     );
@@ -237,7 +238,7 @@ class _InvitesTab extends ConsumerWidget {
       ref.invalidate(friendsProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -248,7 +249,7 @@ class _InvitesTab extends ConsumerWidget {
       ref.invalidate(isReceived ? friendInvitesReceivedProvider : friendInvitesSentProvider);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }

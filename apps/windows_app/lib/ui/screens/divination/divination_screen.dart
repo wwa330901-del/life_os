@@ -5,6 +5,7 @@ import '../../../core/api_client.dart';
 import '../../../core/models/divination.dart';
 import '../../../state/auth_provider.dart';
 import '../../../state/divination_provider.dart';
+import '../../widgets/error_panel.dart';
 
 /// 算命（梅花易數）— 輸入一次生辰，之後打想算的事就用「現在」起卦，
 /// AI 依卦象與八字解卦。LINE / AI 問答說「我想算…」也會記到這裡。
@@ -40,7 +41,7 @@ class _DivinationScreenState extends ConsumerState<DivinationScreen> {
         await showDialog<void>(context: context, builder: (_) => _ReadingDialog(record: record));
       }
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
     } finally {
       if (mounted) setState(() => _casting = false);
     }
@@ -104,7 +105,7 @@ class _DivinationScreenState extends ConsumerState<DivinationScreen> {
           const SizedBox(height: 8),
           historyAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Text('讀取失敗：$error'),
+            error: (error, _) => ErrorPanel(error: error),
             data: (records) => records.isEmpty
                 ? Text('還沒有算過', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)))
                 : Column(
@@ -146,7 +147,7 @@ class _BirthCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: profileAsync.when(
           loading: () => const LinearProgressIndicator(),
-          error: (error, _) => Text('讀取失敗：$error'),
+          error: (error, _) => ErrorPanel(error: error),
           data: (profile) => Row(
             children: [
               Expanded(
@@ -222,7 +223,7 @@ class _BirthDialogState extends ConsumerState<_BirthDialog> {
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
@@ -315,7 +316,7 @@ class _ReadingDialogState extends ConsumerState<_ReadingDialog> {
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(errorSnackBar(e));
       }
     }
   }
