@@ -8,6 +8,7 @@ export const AI_TOOL_FEATURES: Record<string, { feature: string; label: string }
   update_transaction: { feature: '記帳', label: '改一筆記帳' },
   propose_delete: { feature: '記帳', label: '刪除記錄' },
   list_finance_transactions: { feature: '記帳', label: '查記帳明細' },
+  search_records: { feature: '找回記錄', label: '跨類搜尋' },
   get_finance_overview: { feature: '記帳', label: '財務總覽' },
   list_account_balances: { feature: '記帳', label: '查帳戶餘額' },
   propose_reconcile: { feature: '記帳', label: '平帳' },

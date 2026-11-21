@@ -7,10 +7,11 @@ import { UsersModule } from '../users/users.module';
 import { StocksModule } from '../stocks/stocks.module';
 import { LifeGoalsModule } from '../life-goals/life-goals.module';
 import { AiQueryToolsService } from './ai-query-tools.service';
+import { RecordSearchService } from './record-search.service';
 
 @Module({
   imports: [FinanceModule, CalendarModule, TodosModule, KnowledgeModule, UsersModule, StocksModule, LifeGoalsModule],
-  providers: [AiQueryToolsService],
+  providers: [AiQueryToolsService, RecordSearchService],
   // AiQueryToolsService's read-only tools are composed into the 萬用 AI (ai-agent).
   exports: [AiQueryToolsService],
 })

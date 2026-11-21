@@ -7,6 +7,7 @@ import { CalendarEventsService } from '../calendar/calendar-events.service';
 import { TodosService } from '../todos/todos.service';
 import { FinanceAccountType, FinanceTransactionType } from '../../generated/prisma/client.js';
 import { taipeiCurrentMonth } from '../common/taipei-date';
+import { RECORD_SEARCH_TOOL, RecordSearchService } from './record-search.service';
 
 /** Gemini Interactions API's tool-declaration shape (`FunctionT` in the SDK
  * — distinct from the older GenerateContent API's `{functionDeclarations:
@@ -77,6 +78,7 @@ export const AI_QUERY_TOOLS = [
       },
     },
   },
+  RECORD_SEARCH_TOOL,
 ];
 
 type ToolArgs = Record<string, unknown>;
@@ -90,6 +92,7 @@ export class AiQueryToolsService {
     private readonly financeAccounts: FinanceAccountsService,
     private readonly calendarEvents: CalendarEventsService,
     private readonly todosService: TodosService,
+    private readonly recordSearch: RecordSearchService,
   ) {}
 
   /** Dispatches one Gemini function-call step to the matching handler —
@@ -108,6 +111,8 @@ export class AiQueryToolsService {
         return this.listTodos(userId, args);
       case 'list_calendar_events':
         return this.listCalendarEvents(userId, args);
+      case 'search_records':
+        return this.recordSearch.search(userId, args.keyword, args.since);
       default:
         throw new Error(`未知的工具：${name}`);
     }

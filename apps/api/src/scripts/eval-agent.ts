@@ -155,6 +155,12 @@ const CASES: Case[] = [
       has((await c.prisma.financeReconciliation.findFirst({ where: { spaceId: c.spaceId, actualBalance: 3000 } })) != null, '沒有平帳紀錄'),
   },
   // ── 查詢 ──
+  {
+    name: '跨類搜尋',
+    say: ['我上次換機油是什麼時候？'],
+    tools: ['search_records'],
+    check: async (c) => has(/8\s*月\s*14|8\/14/.test(c.reply), '沒說出 8/14'),
+  },
   { name: '這個月花多少', say: ['這個月花了多少錢'], tools: ['get_finance_overview', 'list_finance_transactions'] },
   { name: '帳戶餘額', say: ['我每個帳戶還剩多少錢'], tools: ['list_account_balances', 'get_finance_overview'], check: replyHas('郵局') },
   { name: '沒做的代辦', say: ['我還有什麼代辦沒做'], tools: ['list_todos'], check: replyHas('繳房租') },
@@ -202,6 +208,10 @@ async function seed(prisma: PrismaService, spaces: SpacesService, categories: Fi
   const cash = await account('現金', 'CASH', 5000, 0);
   const post = await account('郵局', 'BANK', 80000, 1);
   const card = await account('國泰信用卡', 'CREDIT_CARD', 0, 2);
+  // 跨類搜尋用：很久以前的一筆換機油
+  await prisma.financeTransaction.create({
+    data: { spaceId: space.id, type: 'EXPENSE', amount: 1200, accountId: cash.id, date: new Date('2026-08-14T00:00:00Z'), note: '機車換機油' },
+  });
   await prisma.projectTodo.createMany({
     data: [
       { title: '買牛奶', personalOwnerUserId: user.id },
