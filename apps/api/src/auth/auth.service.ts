@@ -29,6 +29,7 @@ interface AuthUser {
   isPlatformAdmin: boolean;
   appTheme?: string | null;
   appLayout?: string | null;
+  onboardedAt?: Date | null;
 }
 
 @Injectable()
@@ -187,6 +188,7 @@ export class AuthService {
         isPlatformAdmin: user.isPlatformAdmin,
         appTheme: user.appTheme ?? null,
         appLayout: user.appLayout ?? null,
+        onboarded: user.onboardedAt != null,
       },
     };
   }

@@ -103,6 +103,10 @@ export class UsersService {
     });
   }
 
+  markOnboarded(userId: string) {
+    return this.prisma.user.update({ where: { id: userId }, data: { onboardedAt: new Date() } });
+  }
+
   setVerificationCode(userId: string, code: string, expiresAt: Date) {
     return this.prisma.user.update({
       where: { id: userId },

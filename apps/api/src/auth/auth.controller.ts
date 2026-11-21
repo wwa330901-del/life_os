@@ -69,6 +69,7 @@ export class AuthController {
       isPlatformAdmin: user!.isPlatformAdmin,
       appTheme: user!.appTheme,
       appLayout: user!.appLayout,
+      onboarded: user!.onboardedAt != null,
     };
   }
 
@@ -80,6 +81,14 @@ export class AuthController {
     const ip = clientIp(req.headers['x-forwarded-for'], req.socket?.remoteAddress);
     const location = await this.location.updateFromIp(currentUser.id, ip);
     return { name: location?.name ?? null, source: location?.source ?? null };
+  }
+
+  /** 新手引導做完或跳過：之後就不會再出現。 */
+  @UseGuards(JwtAuthGuard)
+  @Post('me/onboarded')
+  async markOnboarded(@CurrentUser() currentUser: AuthenticatedUser) {
+    await this.usersService.markOnboarded(currentUser.id);
+    return { onboarded: true };
   }
 
   /** Self-service display-name change — any logged-in user, not just a
@@ -101,6 +110,7 @@ export class AuthController {
       isPlatformAdmin: user.isPlatformAdmin,
       appTheme: user.appTheme,
       appLayout: user.appLayout,
+      onboarded: user.onboardedAt != null,
     };
   }
 }
