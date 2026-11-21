@@ -28,6 +28,7 @@ interface AuthUser {
   name: string;
   isPlatformAdmin: boolean;
   appTheme?: string | null;
+  appLayout?: string | null;
 }
 
 @Injectable()
@@ -185,6 +186,7 @@ export class AuthService {
         name: user.name,
         isPlatformAdmin: user.isPlatformAdmin,
         appTheme: user.appTheme ?? null,
+        appLayout: user.appLayout ?? null,
       },
     };
   }

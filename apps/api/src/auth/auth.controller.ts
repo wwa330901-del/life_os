@@ -68,6 +68,7 @@ export class AuthController {
       name: user!.name,
       isPlatformAdmin: user!.isPlatformAdmin,
       appTheme: user!.appTheme,
+      appLayout: user!.appLayout,
     };
   }
 
@@ -89,6 +90,7 @@ export class AuthController {
     const user = await this.usersService.updateProfile(currentUser.id, {
       name: dto.name?.trim(),
       appTheme: dto.appTheme,
+      appLayout: dto.appLayout,
     });
     if (dto.appTheme) void this.lineRichMenu.applyForUser(user.id);
     return {
@@ -98,6 +100,7 @@ export class AuthController {
       name: user.name,
       isPlatformAdmin: user.isPlatformAdmin,
       appTheme: user.appTheme,
+      appLayout: user.appLayout,
     };
   }
 }

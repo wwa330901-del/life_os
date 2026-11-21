@@ -109,6 +109,8 @@ model User {
   claudeApiKey String?
   /// 外觀風格（App 設定裡選的 10 套之一，id 見 auth/dto/update-me.dto.ts）；null＝預設「晨光」
   appTheme     String?
+  /// App 版面（2026-11-22 使用者要三種自己選）：cards＝功能卡片、sidebar＝左邊選單、ai＝AI 優先；null＝cards
+  appLayout    String?
 
   /// 算命用的生辰（2026-10-01）：日期必填、時間可以不知道。
   birthDate DateTime? @db.Date

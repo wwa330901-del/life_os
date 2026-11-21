@@ -14,6 +14,9 @@ export const APP_THEME_IDS = [
   'candy',
 ] as const;
 
+/** App 的 3 種版面：cards＝功能卡片、sidebar＝左邊選單、ai＝AI 優先。 */
+export const APP_LAYOUT_IDS = ['cards', 'sidebar', 'ai'] as const;
+
 export class UpdateMeDto {
   @IsOptional()
   @IsString()
@@ -23,4 +26,8 @@ export class UpdateMeDto {
   @IsOptional()
   @IsIn(APP_THEME_IDS)
   appTheme?: string;
+
+  @IsOptional()
+  @IsIn(APP_LAYOUT_IDS)
+  appLayout?: string;
 }
