@@ -38,6 +38,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:ci@localhost:5432/life_os_eval
       JWT_SECRET: ai-eval-only
+      # 寄信套件沒金鑰會在啟動時直接當掉；測試不會寄信，給假的就好
+      RESEND_API_KEY: re_ai_eval_dummy
       TZ: Asia/Taipei
     steps:
       - name: Check secret is set
