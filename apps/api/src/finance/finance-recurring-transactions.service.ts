@@ -10,7 +10,8 @@ import {
   FinanceRecurringHolidayAdjustment,
   FinanceTransactionType,
 } from '../../generated/prisma/client.js';
-import { effectiveTriggerDate } from './finance-recurring-schedule';
+import { effectiveTriggerDate, recurringMonthStatus } from './finance-recurring-schedule';
+import { taipeiDateKey } from '../common/taipei-date';
 import { CreateFinanceRecurringTransactionDto } from './dto/create-finance-recurring-transaction.dto';
 import { UpdateFinanceRecurringTransactionDto } from './dto/update-finance-recurring-transaction.dto';
 
@@ -41,12 +42,37 @@ export class FinanceRecurringTransactionsService {
     private readonly accounts: FinanceAccountsService,
   ) {}
 
+  /** 每一筆都附上這個月有沒有記了、下次哪天（firedThisMonth / thisMonthDate / nextDate）。 */
   async list(userId: string, spaceId: string) {
     await this.access.assertPersonalSpace(userId, spaceId);
-    return this.prisma.financeRecurringTransaction.findMany({
+    const rows = await this.prisma.financeRecurringTransaction.findMany({
       where: { spaceId },
       orderBy: { dayOfMonth: 'asc' },
     });
+    return rows.map((r) => ({ ...r, ...this.monthStatus(r) }));
+  }
+
+  /** 首頁「每月固定的」小工具用：狀態＋顯示用的名稱和帳戶。 */
+  async statusForSpace(spaceId: string) {
+    const rows = await this.prisma.financeRecurringTransaction.findMany({
+      where: { spaceId, active: true },
+      orderBy: { dayOfMonth: 'asc' },
+      include: { account: true, toAccount: true, category: true },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      label: r.note ?? this.describe(r),
+      type: r.type,
+      amount: r.amount,
+      accountName: r.account.name,
+      dayOfMonth: r.dayOfMonth,
+      ...this.monthStatus(r),
+    }));
+  }
+
+  private monthStatus(r: { dayOfMonth: number; holidayAdjustment: FinanceRecurringHolidayAdjustment; lastTriggeredMonth: string | null }) {
+    const [year, month, day] = taipeiDateKey(new Date()).split('-').map(Number);
+    return recurringMonthStatus({ year, month: month - 1, day }, r.dayOfMonth, r.holidayAdjustment, r.lastTriggeredMonth);
   }
 
   async create(userId: string, spaceId: string, dto: CreateFinanceRecurringTransactionDto) {

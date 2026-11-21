@@ -5,7 +5,11 @@ import { StocksHoldingsService } from '../stocks/stocks-holdings.service';
 import { LifeGoalProgressService } from '../life-goals/life-goal-progress.service';
 import { FinanceTransactionType, LifeGoalStatus } from '../../generated/prisma/client.js';
 import { UpdateHomeLayoutDto } from './dto/update-home-layout.dto';
-import { taipeiTodayRange } from '../common/taipei-date';
+import { taipeiCurrentMonth, taipeiTodayRange, utcDateKey } from '../common/taipei-date';
+import { FinanceBudgetsService } from '../finance/finance-budgets.service';
+import { FinanceRecurringTransactionsService } from '../finance/finance-recurring-transactions.service';
+import { FinanceReconcileService } from '../finance/finance-reconcile.service';
+import { FinanceHealthService } from '../finance/finance-health.service';
 
 /** Every widget the home dashboard knows how to show, in the default
  * order — a first-time user (or one who's never touched layout settings)
@@ -21,6 +25,10 @@ const DEFAULT_WIDGET_TYPES = [
   'ongoingTodos',
   'lifeGoals',
   'recentKnowledgeItems',
+  // 2026-11-21 使用者要的統計小工具
+  'budgetProgress',
+  'financialHealth',
+  'recurringStatus',
 ];
 
 export interface HomeWidgetConfig {
@@ -40,6 +48,10 @@ export class HomeService {
     private readonly financeAccountsService: FinanceAccountsService,
     private readonly stocksHoldingsService: StocksHoldingsService,
     private readonly lifeGoalProgress: LifeGoalProgressService,
+    private readonly budgets: FinanceBudgetsService,
+    private readonly recurring: FinanceRecurringTransactionsService,
+    private readonly reconcile: FinanceReconcileService,
+    private readonly health: FinanceHealthService,
   ) {}
 
   async getLayout(userId: string): Promise<HomeWidgetConfig[]> {
@@ -65,7 +77,10 @@ export class HomeService {
   }
 
   async getDashboard(userId: string) {
-    const [personalFinance, todosToday, stockSummary, ongoingTodos, lifeGoals, recentKnowledgeItems] =
+    const space = await this.prisma.space.findUnique({ where: { ownerUserId: userId }, select: { id: true } });
+    // 新的統計小工具出錯不能拖垮整個首頁：各自失敗就回 null（App 顯示「暫時沒有資料」）。
+    const safe = <T>(p: Promise<T>) => p.catch(() => null);
+    const [personalFinance, todosToday, stockSummary, ongoingTodos, lifeGoals, recentKnowledgeItems, budgetProgress, financialHealth, recurringStatus] =
       await Promise.all([
         this.getPersonalFinance(userId),
         this.getTodosToday(userId),
@@ -73,6 +88,9 @@ export class HomeService {
         this.getOngoingTodos(userId),
         this.getActiveLifeGoals(userId),
         this.getRecentKnowledgeItems(userId),
+        space ? safe(this.getBudgetProgress(userId, space.id)) : null,
+        space ? safe(this.getFinancialHealth(userId, space.id)) : null,
+        space ? safe(this.getRecurringStatus(userId, space.id)) : null,
       ]);
     return {
       personalFinance,
@@ -81,6 +99,50 @@ export class HomeService {
       ongoingTodos,
       lifeGoals,
       recentKnowledgeItems,
+      budgetProgress,
+      financialHealth,
+      recurringStatus,
+    };
+  }
+
+  /** 這個月每個預算用了多少，用最多的排前面。 */
+  private async getBudgetProgress(userId: string, spaceId: string) {
+    const month = taipeiCurrentMonth();
+    const rows = await this.budgets.monthlyStatus(userId, spaceId, month);
+    return {
+      month,
+      items: rows
+        .map((r) => ({ categoryName: r.categoryName, budget: r.monthlyAmount, spent: r.spent }))
+        .sort((a, b) => b.spent / (b.budget || 1) - a.spent / (a.budget || 1)),
+    };
+  }
+
+  /** 財務健檢分數＋最近半年淨資產（每週一點，最後一點是最新的）。 */
+  private async getFinancialHealth(userId: string, spaceId: string) {
+    const report = await this.health.forSpace(userId, spaceId);
+    const since = new Date(Date.now() - 182 * 24 * 60 * 60 * 1000);
+    const rows = await this.prisma.financeNetWorthSnapshot.findMany({
+      where: { spaceId, date: { gte: since } },
+      orderBy: { date: 'asc' },
+      select: { date: true, netWorth: true },
+    });
+    const trend = rows.filter((_, i) => i % 7 === 0 || i === rows.length - 1).map((r) => ({ date: utcDateKey(r.date), netWorth: r.netWorth }));
+    return { score: report.total, grade: report.grade, netWorth: rows.at(-1)?.netWorth ?? null, trend };
+  }
+
+  /** 每月固定的：這個月扣了沒、下次哪天；加上最近 3 次平帳。 */
+  private async getRecurringStatus(userId: string, spaceId: string) {
+    const [items, reconciliations] = await Promise.all([
+      this.recurring.statusForSpace(spaceId),
+      this.reconcile.list(userId, spaceId),
+    ]);
+    return {
+      items,
+      recentReconciliations: reconciliations.items.slice(0, 3).map((r) => ({
+        date: utcDateKey(r.date),
+        accountName: r.accountName,
+        difference: r.difference,
+      })),
     };
   }
 

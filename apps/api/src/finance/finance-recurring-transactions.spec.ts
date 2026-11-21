@@ -38,3 +38,26 @@ describe('effectiveTriggerDate', () => {
     expect(date.getUTCDate()).toBe(28);
   });
 });
+
+describe('recurringMonthStatus', () => {
+  const { recurringMonthStatus } = jest.requireActual('./finance-recurring-schedule') as typeof import('./finance-recurring-schedule');
+
+  it('這個月已經記了 → 下次是下個月', () => {
+    expect(recurringMonthStatus({ year: 2026, month: 10, day: 21 }, 5, 'NONE', '2026-11')).toEqual({
+      firedThisMonth: true,
+      thisMonthDate: '2026-11-05',
+      nextDate: '2026-12-05',
+    });
+  });
+
+  it('這個月還沒到 → 下次是這個月那天', () => {
+    expect(recurringMonthStatus({ year: 2026, month: 10, day: 21 }, 25, 'NONE', '2026-10')).toMatchObject({
+      firedThisMonth: false,
+      nextDate: '2026-11-25',
+    });
+  });
+
+  it('12 月記完 → 下次是隔年 1 月', () => {
+    expect(recurringMonthStatus({ year: 2026, month: 11, day: 10 }, 5, 'NONE', '2026-12').nextDate).toBe('2027-01-05');
+  });
+});

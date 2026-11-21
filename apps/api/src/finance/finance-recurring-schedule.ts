@@ -49,3 +49,23 @@ export function effectiveTriggerDate(
   if (adjustment === 'LATER') return rollToWorkingDay(nominal, 1);
   return nominal;
 }
+
+/** 定期交易這個月的狀態（App、首頁顯示「✓ 11/5 已自動記帳・下次 12/5」用）。
+ * today 是台北的年(year)、月(month, 0-based)、日(day)；回傳的日期都是 "YYYY-MM-DD"。 */
+export function recurringMonthStatus(
+  today: { year: number; month: number; day: number },
+  dayOfMonth: number,
+  adjustment: Adjustment,
+  lastTriggeredMonth: string | null,
+): { firedThisMonth: boolean; thisMonthDate: string; nextDate: string } {
+  const key = (d: Date) => d.toISOString().slice(0, 10);
+  const lastDay = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const monthKey = `${today.year}-${String(today.month + 1).padStart(2, '0')}`;
+  const thisMonth = effectiveTriggerDate(today.year, today.month, dayOfMonth, lastDay(today.year, today.month), adjustment);
+  const nextYear = today.month === 11 ? today.year + 1 : today.year;
+  const nextMonth = (today.month + 1) % 12;
+  const following = effectiveTriggerDate(nextYear, nextMonth, dayOfMonth, lastDay(nextYear, nextMonth), adjustment);
+  const firedThisMonth = lastTriggeredMonth === monthKey;
+  const stillAhead = !firedThisMonth && thisMonth.getUTCDate() >= today.day;
+  return { firedThisMonth, thisMonthDate: key(thisMonth), nextDate: key(stillAhead ? thisMonth : following) };
+}
