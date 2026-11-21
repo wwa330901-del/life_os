@@ -140,6 +140,25 @@ const LINK_CODE_TTL_MINUTES = 10;
  * logic in exactly one place instead of a second copy drifting out of
  * sync.
  */
+/** 看不懂時的回覆：短短一句＋常用的選項按鈕（按了等於傳那句話）。 */
+export function notUnderstoodMessage(text: string): Record<string, unknown> {
+  const shown = text.length > 20 ? `${text.slice(0, 20)}…` : text;
+  const options: [string, string][] = [
+    ['📖 我能做什麼', '我能做什麼'],
+    ['💰 財務總覽', '財務總覽'],
+    ['✅ 代辦事項', '代辦事項總覽'],
+    ['📅 今天行程', '今日行事曆'],
+    ['🎯 人生目標', '人生目標'],
+  ];
+  return {
+    type: 'text',
+    text: `我沒看懂「${shown}」🤔\n\n可以換個說法再講一次，例如「午餐 120」「明天 3 點看牙醫」；或點下面的選項 👇`,
+    quickReply: {
+      items: options.map(([label, msg]) => ({ type: 'action', action: { type: 'message', label, text: msg } })),
+    },
+  };
+}
+
 /** 「我能做什麼」的 5 個主題（按鈕 label 最多 20 字）。 */
 const GUIDE_TOPICS: Record<string, { label: string; text: string }> = {
   money: {
@@ -890,6 +909,12 @@ export class LineService {
     if (claudeApiKey && !aiFirst && (await this.tryAiAgent(link, text, replyToken, claudeApiKey))) return;
     if (this.eventState.getStore()?.aiFailed) {
       await this.reply(replyToken, SYSTEM_TROUBLE_MESSAGE);
+      return;
+    }
+
+    if (claudeApiKey) {
+      // 2026-11-22：有 AI 也看不懂 → 不丟一大串指令，給幾個選項按鈕
+      await this.callReplyApi({ replyToken, messages: [notUnderstoodMessage(text)] });
       return;
     }
 
