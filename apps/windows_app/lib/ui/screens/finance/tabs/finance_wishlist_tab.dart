@@ -34,7 +34,7 @@ class FinanceWishlistTab extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ErrorPanel(error: e),
+        error: (e, _) => ErrorPanel(error: e, onRetry: () => ref.invalidate(wishlistProvider)),
         data: (o) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [

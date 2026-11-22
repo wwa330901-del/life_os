@@ -94,7 +94,7 @@ class _FriendsTab extends ConsumerWidget {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => ErrorPanel(error: error),
+            error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(friendsProvider)),
           ),
         ),
       ],
@@ -199,7 +199,7 @@ class _InvitesTab extends ConsumerWidget {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => ErrorPanel(error: error),
+          error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(friendInvitesReceivedProvider)),
         ),
         const SizedBox(height: 20),
         Text('送出的邀請', style: Theme.of(context).textTheme.titleSmall),
@@ -225,7 +225,7 @@ class _InvitesTab extends ConsumerWidget {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => ErrorPanel(error: error),
+          error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(friendInvitesSentProvider)),
         ),
       ],
     );

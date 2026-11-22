@@ -108,7 +108,7 @@ class _ReceivedTab extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => ErrorPanel(error: error),
+      error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(calendarSharesReceivedProvider)),
     );
   }
 
@@ -259,7 +259,7 @@ class _GivenTab extends ConsumerWidget {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => ErrorPanel(error: error),
+            error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(calendarSharesGivenProvider)),
           ),
         ),
       ],

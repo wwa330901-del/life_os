@@ -75,7 +75,7 @@ class _FinancePlanTabState extends ConsumerState<FinancePlanTab> {
 
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => ErrorPanel(error: e),
+      error: (e, _) => ErrorPanel(error: e, onRetry: () => ref.invalidate(financePlanProvider(widget.spaceId))),
       data: (plan) => ListView(
         padding: const EdgeInsets.all(24),
         children: [

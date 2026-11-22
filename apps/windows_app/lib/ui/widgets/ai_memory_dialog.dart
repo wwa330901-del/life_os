@@ -97,7 +97,7 @@ class _MemoriesTab extends ConsumerWidget {
                     },
                   ),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => ErrorPanel(error: e),
+            error: (e, _) => ErrorPanel(error: e, onRetry: () => ref.invalidate(memoriesProvider)),
           ),
         ),
         Padding(
@@ -199,7 +199,7 @@ class _DatesTab extends ConsumerWidget {
                     },
                   ),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => ErrorPanel(error: e),
+            error: (e, _) => ErrorPanel(error: e, onRetry: () => ref.invalidate(importantDatesProvider)),
           ),
         ),
         Padding(

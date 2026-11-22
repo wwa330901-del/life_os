@@ -71,7 +71,7 @@ class FinanceCategoriesTab extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => ErrorPanel(error: error),
+      error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(financeCategoriesProvider(spaceId))),
     );
   }
 

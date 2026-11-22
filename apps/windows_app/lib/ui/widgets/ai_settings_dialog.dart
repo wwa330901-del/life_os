@@ -164,7 +164,7 @@ class _KeySectionState extends ConsumerState<_KeySection> {
             ],
           ),
           loading: () => const LinearProgressIndicator(),
-          error: (error, _) => ErrorPanel(error: error),
+          error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(widget.provider)),
         ),
         const SizedBox(height: 8),
         TextField(

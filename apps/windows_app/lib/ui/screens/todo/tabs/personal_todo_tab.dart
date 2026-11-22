@@ -50,7 +50,7 @@ class PersonalTodoTab extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => ErrorPanel(error: error),
+        error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(todoOverviewProvider)),
       ),
     );
   }

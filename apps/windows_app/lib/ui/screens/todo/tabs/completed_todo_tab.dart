@@ -89,7 +89,7 @@ class _CompletedTodoTabState extends ConsumerState<CompletedTodoTab> {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => ErrorPanel(error: error),
+            error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(completedTodosProvider(_query))),
           ),
         ),
       ],

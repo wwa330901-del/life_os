@@ -69,7 +69,7 @@ class _StockOpeningsDialog extends ConsumerWidget {
                   padding: EdgeInsets.all(16),
                   child: Center(child: CircularProgressIndicator()),
                 ),
-                error: (error, _) => ErrorPanel(error: error),
+                error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(stockOpeningsProvider(spaceId))),
               ),
             ),
           ],

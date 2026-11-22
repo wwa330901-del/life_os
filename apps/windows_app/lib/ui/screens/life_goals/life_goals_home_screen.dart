@@ -78,7 +78,7 @@ class _LifeGoalsHomeScreenState extends ConsumerState<LifeGoalsHomeScreen> with 
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => ErrorPanel(error: error),
+              error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(lifeGoalsProvider)),
             ),
           ),
         ],
@@ -324,7 +324,7 @@ class _CheckInHistory extends ConsumerWidget {
         );
       },
       loading: () => const LinearProgressIndicator(),
-      error: (e, _) => ErrorPanel(error: e),
+      error: (e, _) => ErrorPanel(error: e, onRetry: () => ref.invalidate(lifeGoalCheckInsProvider(goal.id))),
     );
   }
 }

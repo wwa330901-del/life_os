@@ -535,7 +535,7 @@ class _LifeGoalEditorDialogState extends ConsumerState<_LifeGoalEditorDialog> {
                     onChanged: (id) => setState(() => _accountId = id),
                   ),
             loading: () => const LinearProgressIndicator(),
-            error: (e, _) => ErrorPanel(error: e),
+            error: (e, _) => ErrorPanel(error: e, onRetry: () => ref.invalidate(lifeGoalTrackingOptionsProvider)),
           ),
           Row(children: [Expanded(child: numberField(_target, '目標金額')), const SizedBox(width: 12), unitField()]),
           hint('帳戶餘額每次記帳都會自動更新，不用自己改數字。'),

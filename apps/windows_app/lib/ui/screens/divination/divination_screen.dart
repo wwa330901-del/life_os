@@ -105,7 +105,7 @@ class _DivinationScreenState extends ConsumerState<DivinationScreen> {
           const SizedBox(height: 8),
           historyAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => ErrorPanel(error: error),
+            error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(divinationHistoryProvider)),
             data: (records) => records.isEmpty
                 ? Text('還沒有算過', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)))
                 : Column(
@@ -147,7 +147,7 @@ class _BirthCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: profileAsync.when(
           loading: () => const LinearProgressIndicator(),
-          error: (error, _) => ErrorPanel(error: error),
+          error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(birthProfileProvider)),
           data: (profile) => Row(
             children: [
               Expanded(

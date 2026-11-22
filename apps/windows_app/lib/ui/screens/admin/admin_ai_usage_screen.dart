@@ -28,7 +28,7 @@ class AdminAiUsageScreen extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ErrorPanel(error: e),
+        error: (e, _) => ErrorPanel(error: e, onRetry: () => ref.invalidate(adminAiUsageProvider)),
         data: (u) => ListView(
           padding: const EdgeInsets.all(16),
           children: [

@@ -51,7 +51,7 @@ class FinanceReportTab extends ConsumerWidget {
         ],
       ),
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => ErrorPanel(error: error),
+      error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(financeReportProvider(spaceId))),
     );
   }
 }
@@ -96,7 +96,7 @@ class _HealthSection extends ConsumerWidget {
       title: '財務健檢',
       child: healthAsync.when(
         loading: () => const LinearProgressIndicator(),
-        error: (error, _) => ErrorPanel(error: error),
+        error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(financeHealthProvider(spaceId))),
         data: (health) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

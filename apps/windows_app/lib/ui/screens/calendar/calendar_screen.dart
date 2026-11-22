@@ -94,7 +94,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               monthKey: key,
             ),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => ErrorPanel(error: error),
+            error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(calendarEventsProvider(key))),
           ),
         ),
       ],

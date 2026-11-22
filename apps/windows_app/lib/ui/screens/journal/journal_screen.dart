@@ -58,7 +58,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       ),
       body: entriesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => ErrorPanel(error: error),
+        error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(journalEntriesProvider)),
         data: (entries) {
           if (entries.isEmpty) {
             return Center(
