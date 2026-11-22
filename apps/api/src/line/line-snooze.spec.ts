@@ -1,4 +1,4 @@
-import { LineService } from './line.service';
+import { LineTodoCommandsService } from './line-todo-commands.service';
 import { buttonMessage } from '../line-notifier/line-notifier.service';
 
 function setup(link: Record<string, unknown>, todo: Record<string, unknown> | null = { id: 't1', title: '關火', personalOwnerUserId: 'u1', done: false }) {
@@ -10,11 +10,11 @@ function setup(link: Record<string, unknown>, todo: Record<string, unknown> | nu
     },
     lineAccountLink: { update: jest.fn().mockResolvedValue(undefined) },
   };
-  const service = Object.create(LineService.prototype) as Record<string, unknown>;
+  const service = Object.create(LineTodoCommandsService.prototype) as Record<string, unknown>;
   const reply = jest.fn().mockResolvedValue(undefined);
   const callReplyApi = jest.fn().mockResolvedValue(undefined);
   const todosService = { update: jest.fn().mockResolvedValue(undefined) };
-  Object.assign(service, { prisma, reply, callReplyApi, todosService });
+  Object.assign(service, { prisma, out: { reply, callReplyApi }, todosService });
   const call = (name: string, ...args: unknown[]) => (service[name] as (...a: unknown[]) => Promise<unknown>).apply(service, args);
   return { prisma, reply, callReplyApi, todosService, call, link: { id: 'l1', userId: 'u1', ...link } };
 }

@@ -12,6 +12,15 @@ import { LineWebhookController } from './line-webhook.controller';
 import { LineLinkController } from './line-link.controller';
 import { LineSettingsController } from './line-settings.controller';
 import { LineService } from './line.service';
+import { LineReplyService } from './line-reply.service';
+import { LineLinkingService } from './line-linking.service';
+import { LineTodoCommandsService } from './line-todo-commands.service';
+import { LineCalendarCommandsService } from './line-calendar-commands.service';
+import { LineFinanceCommandsService } from './line-finance-commands.service';
+import { LineLoanCommandsService } from './line-loan-commands.service';
+import { LineStockCommandsService } from './line-stock-commands.service';
+import { LineKnowledgeService } from './line-knowledge.service';
+import { LineAiService } from './line-ai.service';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { VoiceTranscriberService } from './voice-transcriber.service';
 import { ReceiptReaderService } from './receipt-reader.service';
@@ -40,6 +49,18 @@ import { AdminModule } from '../admin/admin.module';
     LineNotifierModule,
   ],
   controllers: [LineWebhookController, LineLinkController, LineSettingsController],
-  providers: [LineService, VoiceTranscriberService, ReceiptReaderService],
+  providers: [
+    LineService,
+    LineReplyService,
+    LineLinkingService,
+    LineTodoCommandsService,
+    LineCalendarCommandsService,
+    LineFinanceCommandsService,
+    LineLoanCommandsService,
+    LineStockCommandsService,
+    LineKnowledgeService,
+    LineAiService,
+    VoiceTranscriberService, ReceiptReaderService,
+  ],
 })
 export class LineModule {}

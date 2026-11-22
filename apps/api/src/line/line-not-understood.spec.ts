@@ -1,4 +1,4 @@
-import { notUnderstoodMessage } from './line.service';
+import { notUnderstoodMessage } from './line-shared';
 
 describe('notUnderstoodMessage', () => {
   it('短短一句＋選項按鈕（LINE 快速回覆 label 最多 20 字）', () => {
