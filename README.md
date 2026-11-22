@@ -1,6 +1,6 @@
 # life_os
 
-個人生活數位作業平台（記帳、投資、代辦事項、行事曆、知識庫、AI 問答），Windows 為第一階段完整操作介面，LINE 之後接入作為輕量入口。
+個人生活數位作業平台「元序」（記帳、投資、代辦事項、行事曆、收藏、人生目標、旅行、AI 助理）。App 有 Windows 版和安卓平板版；LINE 是日常主要入口（直接講話給 AI、提醒、早報、回顧）。
 
 規劃文件見 `../new/大系統V1.1.0.md` 起的各版本紀錄。
 
@@ -10,9 +10,25 @@
 life_os/
 ├── apps/
 │   ├── api/          NestJS + Prisma + PostgreSQL
-│   └── windows_app/  Flutter Windows App
+│   └── windows_app/  Flutter App（Windows＋安卓平板）
 └── docker-compose.yml  本機 PostgreSQL
 ```
+
+LINE 的程式在 `apps/api/src/line/`（2026-11-22 拆檔，每檔 800 行以內）：
+
+| 檔案 | 負責 |
+|---|---|
+| `line.service.ts` | 收 webhook、依訊息內容分派給下面各檔 |
+| `line-reply.service.ts` | 回訊息（文字、按鈕、輸入中動畫）、下載使用者傳的檔案 |
+| `line-ai.service.ts` | 交給 AI 的對話（含確定／取消按鈕）、照片 |
+| `line-finance-commands.service.ts` | 記帳、轉帳、財務總覽 |
+| `line-loan-commands.service.ts` | 借貸、代墊 |
+| `line-stock-commands.service.ts` | 股票 |
+| `line-todo-commands.service.ts` | 代辦、提醒按鈕（完成／延後）、人生目標 |
+| `line-calendar-commands.service.ts` | 行事曆 |
+| `line-knowledge.service.ts` | 收藏（連結、文字、影片、展覽） |
+| `line-linking.service.ts` | 綁定帳號 |
+| `line-shared.ts` | 共用的常數、說明文字、「看不懂」的回覆 |
 
 ## 本機開發環境設定
 
@@ -67,7 +83,13 @@ flutter run -d windows
 - 記帳（含借貸/代墊/定期交易/淨資產趨勢）、投資（股票）、代辦事項、行事曆（含 Google/iCloud 同步、共用行事曆）、知識庫（AI 內容分析）、AI 問答、好友
 - API 一律要求登入驗證，空間存取權限在後端檢查（不是前端隱藏按鈕）
 
-## 目前狀態（2026-09-29）
+## 目前狀態（2026-11-22）
+
+- 「每項到 90 分」計畫第 1～5 階段完成：自動備份＋還原演練、真 AI 測試（`ai-eval.yml`）、金鑰加密 v2、App 流程測試、三種版面＋新手引導、35 套外觀、LINE 確認按鈕／提醒總覽／早報防忘、AI 費用警告。
+- AI 費用：每小時估算本月 Claude＋Gemini 合計，到 20 美金 LINE 通知管理員、30 美金嚴重警告（AI 不會停），見 `apps/api/src/admin/ai-usage-admin.service.ts`。
+- 下一步：觀察 8 週後再做一次軟體健檢（`docs/軟體健檢/`）。
+
+## 2026-09-29 狀態
 
 `life_os` 原本是個人／公司共用的整合平台，依顧問文件規劃了 8 大模組＋2 項橫向基礎建設，其中 6 大模組＋2 項橫向建設（專案管理、成控、簽核、財務/請付款、CRM、工程執行紀錄、權限架構、監控儀表板）已完成並進入大測試。
 
