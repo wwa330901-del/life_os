@@ -12,6 +12,31 @@ const ALERT_FAILURES = 5;
 /** 今天花費超過「近 7 天平均的幾倍」而且超過這個金額（美金）就通知。 */
 const ALERT_COST_MULTIPLIER = 2;
 const ALERT_COST_MIN_USD = 0.5;
+/** 每月 AI 費用（Claude＋Gemini 合計，系統自己估的）到這兩個金額各通知一次（2026-11-22 使用者定的）；AI 不會停。 */
+export const AI_COST_NOTICE_USD = 20;
+export const AI_COST_SEVERE_USD = 30;
+
+/** 本月費用跨過哪些門檻（大的在前）。 */
+export const crossedCostLevels = (monthUsd: number) => [AI_COST_SEVERE_USD, AI_COST_NOTICE_USD].filter((t) => monthUsd >= t);
+
+/** 費用警告的 LINE 文字。 */
+export function costAlertText(
+  level: number,
+  month: { costUsd: number },
+  providers: { provider: string; costUsd: number }[],
+  features: { label: string; costUsd: number }[],
+): string {
+  const severe = level >= AI_COST_SEVERE_USD;
+  return [
+    severe ? `🚨 AI 費用嚴重警告（只有你收到）` : `💰 AI 費用通知（只有你收到）`,
+    `本月 AI 已經花了約 ${usd(month.costUsd)}，${severe ? '超過' : '到了'} ${level} 美金`,
+    `（${providers.map((p) => `${p.provider} ${usd(p.costUsd)}`).join('、')}）`,
+    ...(features.length ? ['', '花最多的功能：', ...features.slice(0, 3).map((f) => `・${f.label} ${usd(f.costUsd)}`)] : []),
+    '',
+    severe ? 'AI 還是會繼續用，不會停。想省錢可以少用花最多的功能。' : `到 ${AI_COST_SEVERE_USD} 美金會再發一次嚴重警告。AI 不會停。`,
+    '傳「AI 用量」看完整數字。（金額是依 token 估的，實際以帳單為準）',
+  ].join('\n');
+}
 
 interface Row {
   userId: string;
@@ -119,6 +144,7 @@ export class AiUsageAdminService {
       line('今天', o.today),
       line('近 7 天', o.thisWeek),
       line('本月', o.thisMonth),
+      `（本月到 ${AI_COST_NOTICE_USD} 美金會 LINE 通知你，到 ${AI_COST_SEVERE_USD} 美金發嚴重警告）`,
       '',
       '本月各 AI：',
       ...o.providers.map((p) => `・${p.provider} ${p.count} 次 ${usd(p.costUsd)}${p.failures ? `（失敗 ${p.failures}）` : ''}`),
@@ -141,6 +167,47 @@ export class AiUsageAdminService {
     } catch (error) {
       this.logger.error('AI 用量通知失敗', error);
     }
+  }
+
+  /** 每小時看一次本月 AI 費用，跨過 20／30 美金各發一次（同一個月不重發；一次跨兩個只發嚴重的）。 */
+  @Cron('5 * * * *', { timeZone: 'Asia/Taipei' })
+  async checkMonthlyCost(): Promise<void> {
+    try {
+      const text = await this.monthlyCostAlert();
+      if (!text) return;
+      const admins = await this.prisma.user.findMany({ where: { isPlatformAdmin: true }, select: { id: true } });
+      for (const a of admins) await this.notifier.notifyByUser(a.id, text);
+    } catch (error) {
+      this.logger.error('AI 費用警告失敗', error);
+    }
+  }
+
+  /** 要發的費用警告；已經發過或還沒到就 null。發之前先記下來，避免兩台同時發。 */
+  async monthlyCostAlert(): Promise<string | null> {
+    const { monthStart } = taipeiUsageWindows();
+    const month = await this.prisma.aiUsageLog.findMany({
+      where: { createdAt: { gte: monthStart } },
+      select: { userId: true, feature: true, model: true, costUsd: true, status: true, createdAt: true },
+    });
+    const total = sum(month);
+    const levels = crossedCostLevels(total.costUsd);
+    if (levels.length === 0) return null;
+    const monthKey = dayKey(monthStart).slice(0, 7);
+    let send: number | null = null;
+    for (const level of levels) {
+      const created = await this.prisma.systemAlertLog.createMany({ data: [{ key: `ai-cost:${level}:${monthKey}` }], skipDuplicates: true });
+      if (created.count > 0 && send === null) send = level;
+    }
+    // 大的門檻已經發過，小的就算剛補記也不用再發。
+    if (send === null || send !== levels[0]) return null;
+    const byFeature = new Map<string, number>();
+    for (const r of month) byFeature.set(r.feature, (byFeature.get(r.feature) ?? 0) + r.costUsd);
+    return costAlertText(
+      send,
+      total,
+      AI_PROVIDERS.map((provider) => ({ provider, costUsd: sum(month.filter((r) => aiProvider(r.model) === provider)).costUsd })),
+      [...byFeature.entries()].map(([f, costUsd]) => ({ label: featureLabel(f), costUsd })).sort((a, b) => b.costUsd - a.costUsd),
+    );
   }
 
   async alertText(): Promise<string | null> {

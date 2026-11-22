@@ -103,16 +103,16 @@ model User {
   /// as this schema's other third-party secrets (e.g.
   /// GoogleCalendarConnection.refreshToken) — Postgres access itself is
   /// the trust boundary.
-  geminiApiKey String?
+  geminiApiKey  String?
   /// Claude API 金鑰（2026-10-02 起 AI 主要用 Claude；Gemini 只剩語音轉文字、看影片）。
   /// 跟 geminiApiKey 一樣加密存（common/secret-box）。
-  claudeApiKey String?
+  claudeApiKey  String?
   /// 外觀風格（App 設定裡選的 10 套之一，id 見 auth/dto/update-me.dto.ts）；null＝預設「晨光」
-  appTheme     String?
+  appTheme      String?
   /// App 版面（2026-11-22 使用者要三種自己選）：cards＝功能卡片、sidebar＝左邊選單、ai＝AI 優先；null＝cards
-  appLayout    String?
+  appLayout     String?
   /// 新手引導（2026-11-22）做完或跳過的時間；null＝新帳號第一次登入要顯示。功能上線前的帳號在 migration 填好了。
-  onboardedAt  DateTime?
+  onboardedAt   DateTime?
   /// 回顧最後說「下次幫我檢查這件事」（2026-11-22）；下一次自動回顧會先講這件，講完清掉。
   reviewFocus   String?
   reviewFocusAt DateTime?
@@ -1610,6 +1610,12 @@ model FinanceAlertLog {
   createdAt DateTime @default(now())
 
   @@unique([spaceId, key])
+}
+
+/// 已經發過的系統通知（不屬於任何空間），key 只發一次，例如「ai-cost:20:2026-11」。
+model SystemAlertLog {
+  key       String   @id
+  createdAt DateTime @default(now())
 }
 
 enum WishlistStatus {
