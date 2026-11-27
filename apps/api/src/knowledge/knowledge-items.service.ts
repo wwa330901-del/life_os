@@ -19,6 +19,7 @@ const itemInclude = {
   category: true,
   fieldValues: { include: { definition: true, option: true } },
   owner: { select: { id: true, name: true } },
+  topics: { select: { topic: { select: { id: true, name: true } } } },
 } satisfies Prisma.KnowledgeItemInclude;
 
 type ItemWithRelations = Prisma.KnowledgeItemGetPayload<{
@@ -266,13 +267,24 @@ export class KnowledgeItemsService {
       where: {
         ownerUserId: userId,
         categoryId: filter.categoryId,
-        ...(filter.search
+        // 2026-11-27 大腦：空白隔開的每個字都要對到（「台南 咖啡」），每個字可以
+        // 出現在標題、摘要、原文、標籤、主題點、重點欄位（例如地址）任何一處。
+        ...(filter.search?.trim()
           ? {
-              OR: [
-                { title: { contains: filter.search, mode: 'insensitive' } },
-                { summary: { contains: filter.search, mode: 'insensitive' } },
-                { tags: { has: filter.search } },
-              ],
+              AND: filter.search
+                .trim()
+                .split(/s+/)
+                .slice(0, 5)
+                .map((word) => ({
+                  OR: [
+                    { title: { contains: word, mode: 'insensitive' as const } },
+                    { summary: { contains: word, mode: 'insensitive' as const } },
+                    { rawContent: { contains: word, mode: 'insensitive' as const } },
+                    { tags: { has: word } },
+                    { topics: { some: { topic: { name: { contains: word, mode: 'insensitive' as const } } } } },
+                    { fieldValues: { some: { textValue: { contains: word, mode: 'insensitive' as const } } } },
+                  ],
+                })),
             }
           : {}),
       },

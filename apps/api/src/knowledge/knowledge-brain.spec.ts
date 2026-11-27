@@ -35,3 +35,16 @@ describe('sourceKeyForUrl（重複偵測）', () => {
   it('不是網址回 null', () => expect(sourceKeyForUrl('hello')).toBeNull());
   it('文字空白不同也算一樣', () => expect(sourceKeyForText('a  b\nc')).toBe(sourceKeyForText(' a b c ')));
 });
+
+import { quoteAround } from './knowledge-ai.service';
+
+describe('quoteAround（問大腦時的原文出處）', () => {
+  it('抓關鍵字附近', () => {
+    const text = '前面很多字'.repeat(30) + '這家咖啡的手沖很好喝' + '後面'.repeat(50);
+    const q = quoteAround(text, '手沖')!;
+    expect(q).toContain('手沖很好喝');
+    expect(q.startsWith('…')).toBe(true);
+  });
+  it('沒有關鍵字給開頭', () => expect(quoteAround('短短一段', undefined)).toBe('短短一段'));
+  it('沒有原文回 null', () => expect(quoteAround(null, 'x')).toBeNull());
+});

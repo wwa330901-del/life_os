@@ -22,6 +22,17 @@ function makeService(opts: { empty?: boolean } = {}) {
       ),
     },
   };
+  (prisma as Record<string, unknown>).knowledgeItem = {
+    findMany: jest.fn(({ where }) =>
+      Promise.resolve(
+        opts.empty
+          ? []
+          : where.eventEndDate
+            ? [{ title: '奈良美智特展', eventEndDate: new Date('2026-10-04T00:00:00Z') }]
+            : [{ title: '巷弄咖啡' }, { title: 'ETF 配息' }],
+      ),
+    ),
+  };
   const calendarEvents = {
     list: jest.fn().mockResolvedValue(opts.empty ? [] : [{ title: '看牙醫', startAt: new Date('2026-10-01T06:30:00Z'), allDay: false }]),
   };
@@ -44,6 +55,9 @@ describe('DailyBriefService.build', () => {
     expect(text).toContain('⏳ 整理房間（過期 1 天）');
     expect(text).toContain('昨天花了 420');
     expect(text).toContain('🟡 餐飲預算已用 85%（剩 900）');
+    expect(text).toContain('🧠 大腦');
+    expect(text).toContain('・奈良美智特展還剩 3 天');
+    expect(text).toMatch(/你存了還沒看：「(巷弄咖啡|ETF 配息)」（還有 1 則沒看）/);
   });
 
   it('sends nothing on an empty day', async () => {

@@ -146,6 +146,9 @@ export class DailyBriefService {
       sections.push(lines.join('\n'));
     }
 
+    const brain = await this.brainSection(userId, now);
+    if (brain) sections.push(brain);
+
     if (personal) {
       const yesterdayKey = taipeiDateKeyToUtcMidnight(taipeiDateKey(new Date(now.getTime() - MS_PER_DAY)));
       const [yesterday, budgetStatus] = await Promise.all([
@@ -166,6 +169,41 @@ export class DailyBriefService {
     const shifted = new Date(now.getTime() + 8 * 60 * 60 * 1000);
     const title = `☀️ 早安！${shifted.getUTCMonth() + 1}/${shifted.getUTCDate()}（${WEEKDAYS[shifted.getUTCDay()]}）`;
     return [title, '', sections.join('\n\n'), '', '（不想收到早報就傳「關閉早報」）'].join('\n');
+  }
+
+  /** 早報「大腦」（2026-11-27）：一週內結束的展覽活動（最多 3 個），加上一則
+   * 存了 2 天以上還沒看的（每天換一則，讓存進去的東西會再出現）。 */
+  private async brainSection(userId: string, now: Date): Promise<string | null> {
+    const today = taipeiDateKeyToUtcMidnight(taipeiDateKey(now));
+    const [ending, unread] = await Promise.all([
+      this.prisma.knowledgeItem.findMany({
+        where: {
+          ownerUserId: userId,
+          status: 'DONE',
+          eventEndDate: { gte: today, lte: new Date(today.getTime() + 7 * MS_PER_DAY) },
+          OR: [{ exhibitionDecisionStatus: null }, { exhibitionDecisionStatus: { not: 'CANCELLED' } }],
+        },
+        select: { title: true, eventEndDate: true },
+        orderBy: { eventEndDate: 'asc' },
+        take: 3,
+      }),
+      this.prisma.knowledgeItem.findMany({
+        where: { ownerUserId: userId, status: 'DONE', readAt: null, createdAt: { lt: new Date(now.getTime() - 2 * MS_PER_DAY) } },
+        select: { title: true },
+        orderBy: { createdAt: 'asc' },
+        take: 30,
+      }),
+    ]);
+    const lines: string[] = [];
+    for (const e of ending) {
+      const left = Math.round((e.eventEndDate!.getTime() - today.getTime()) / MS_PER_DAY);
+      lines.push(`・${e.title ?? '未命名'}${left === 0 ? '今天最後一天' : `還剩 ${left} 天`}`);
+    }
+    if (unread.length > 0) {
+      const pick = unread[Math.floor(today.getTime() / MS_PER_DAY) % unread.length];
+      lines.push(`・你存了還沒看：「${pick.title ?? '未命名'}」${unread.length > 1 ? `（還有 ${unread.length - 1} 則沒看）` : ''}`);
+    }
+    return lines.length ? ['🧠 大腦', ...lines].join('\n') : null;
   }
 
   /** Every 5 minutes: timed todos due within the next hour, once each. */
