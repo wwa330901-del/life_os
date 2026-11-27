@@ -145,6 +145,8 @@ export class LineService {
         if (event.type === 'postback') {
           const data = event.postback?.data ?? '';
           if (link && data.startsWith('todo:')) await this.todos.handleTodoPostback(link, data, replyToken, event.postback?.params?.datetime);
+          // 知識庫「存過了」訊息上的按鈕
+          if (link && data.startsWith('kb:')) await this.knowledge.handleKnowledgePostback(link, data, replyToken);
           // AI 問確認時的「確定」「取消」按鈕：當成使用者打了那句話
           const answer = AI_POSTBACK_TEXT[data];
           if (link && answer) await this.handleTextForLinkedUser(link, answer, replyToken, undefined);

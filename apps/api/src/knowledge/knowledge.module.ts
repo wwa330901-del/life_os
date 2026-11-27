@@ -13,6 +13,8 @@ import { KnowledgeAnalysisPipeline } from './knowledge-analysis-pipeline.service
 import { KnowledgeExhibitionReminderService } from './knowledge-exhibition-reminder.service';
 import { SupabaseStorageService } from './supabase-storage.service';
 import { KnowledgeAiService } from './knowledge-ai.service';
+import { KnowledgeBrainService } from './knowledge-brain.service';
+import { KnowledgeBrainController } from './knowledge-brain.controller';
 import { LineNotifierModule } from '../line-notifier/line-notifier.module';
 import { UsersModule } from '../users/users.module';
 
@@ -22,6 +24,7 @@ import { UsersModule } from '../users/users.module';
     KnowledgeCategoriesController,
     KnowledgeItemsController,
     AiUsageController,
+    KnowledgeBrainController,
   ],
   providers: [
     KnowledgeCategoriesService,
@@ -33,6 +36,7 @@ import { UsersModule } from '../users/users.module';
     KnowledgeExhibitionReminderService,
     SupabaseStorageService,
     KnowledgeAiService,
+    KnowledgeBrainService,
     GeminiContentAnalysisService,
     {
       provide: AI_CONTENT_ANALYSIS_SERVICE,
@@ -46,6 +50,7 @@ import { UsersModule } from '../users/users.module';
     InstagramFetcherService,
     SupabaseStorageService,
     KnowledgeAiService,
+    KnowledgeBrainService,
     GeminiContentAnalysisService,
     // `feature` on AiUsageLog is a plain string specifically so a later,
     // non-知識庫 AI feature could log through the same table — AiAssistant

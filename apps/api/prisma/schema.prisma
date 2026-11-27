@@ -159,6 +159,7 @@ model User {
   appleCalendarConnections   AppleCalendarConnection[]
   knowledgeCategories        KnowledgeCategory[]
   knowledgeItems             KnowledgeItem[]
+  knowledgeTopics            KnowledgeTopic[]
   aiUsageLogs                AiUsageLog[]
   aiToolCalls                AiToolCall[]
   calendarSharesGiven        CalendarShare[]            @relation("CalendarShareOwner")
@@ -1276,12 +1277,28 @@ model KnowledgeItem {
   exhibitionDecisionStatus KnowledgeExhibitionDecisionStatus?
   exhibitionPlannedAt      DateTime?
 
+  /// 知識庫大腦（2026-11-27）。readAt：看過了沒（null＝還沒看）。
+  readAt         DateTime?
+  /// 重複偵測用：連結＝整理過的網址，圖片/影片/文字＝內容的 sha256。
+  sourceKey      String?
+  /// AI 從內容抓出的活動日期（展覽、活動），提醒用。
+  eventStartDate DateTime? @db.Date
+  eventEndDate   DateTime? @db.Date
+  /// 同一則後來補傳的截圖/錄影（Supabase Storage 路徑）。
+  extraFilePaths String[]  @default([])
+
+  topics    KnowledgeItemTopic[]
+  linksFrom KnowledgeItemLink[]  @relation("KnowledgeLinkFrom")
+  linksTo   KnowledgeItemLink[]  @relation("KnowledgeLinkTo")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   fieldValues KnowledgeFieldValue[]
 
   @@index([ownerUserId, categoryId])
+  @@index([ownerUserId, sourceKey])
+  @@index([eventEndDate])
   @@index([status])
 }
 
@@ -1676,4 +1693,42 @@ model Trip {
   updatedAt       DateTime @updatedAt
 
   @@index([userId, startDate])
+}
+
+/// 知識庫大腦的「主題點」（2026-11-27）：像 Obsidian 的大節點，AI 存東西時
+/// 自動挑（優先用已有的），使用者可以改名、合併、刪除。
+model KnowledgeTopic {
+  id          String   @id @default(uuid())
+  name        String
+  createdAt   DateTime @default(now())
+  ownerUserId String
+  owner       User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  items KnowledgeItemTopic[]
+
+  @@unique([ownerUserId, name])
+}
+
+model KnowledgeItemTopic {
+  itemId  String
+  item    KnowledgeItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  topicId String
+  topic   KnowledgeTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, topicId])
+  @@index([topicId])
+}
+
+/// 兩則收藏之間的連線（AI 判斷有關）。存一次方向，查的時候兩邊都算。
+model KnowledgeItemLink {
+  id         String        @id @default(uuid())
+  fromItemId String
+  fromItem   KnowledgeItem @relation("KnowledgeLinkFrom", fields: [fromItemId], references: [id], onDelete: Cascade)
+  toItemId   String
+  toItem     KnowledgeItem @relation("KnowledgeLinkTo", fields: [toItemId], references: [id], onDelete: Cascade)
+  reason     String?
+  createdAt  DateTime      @default(now())
+
+  @@unique([fromItemId, toItemId])
+  @@index([toItemId])
 }

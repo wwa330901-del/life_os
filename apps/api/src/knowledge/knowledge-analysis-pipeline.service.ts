@@ -12,11 +12,12 @@ import { LineNotifierService } from '../line-notifier/line-notifier.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AiUsageService } from './ai-usage.service';
-import { GEMINI_MODEL } from './ai/gemini-content-analysis.service';
+import { analyzeBrainOnly, GEMINI_MODEL } from './ai/gemini-content-analysis.service';
 import { AI_CONTENT_ANALYSIS_SERVICE } from './ai/ai-content-analysis.interface';
 import type { AiContentAnalysisService } from './ai/ai-content-analysis.interface';
 import { AiUsageStatus } from '../../generated/prisma/client.js';
 import { aiUnavailableMessage, geminiUnavailable } from '../ai/ai-errors';
+import { KnowledgeBrainService } from './knowledge-brain.service';
 
 const NO_API_KEY_MESSAGE =
   '你還沒有設定自己的 AI 金鑰，請先到 App 的「AI 設定」貼上你的 Gemini 金鑰才能使用知識庫分析功能（知識庫只用 Gemini，免費的金鑰就可以）。';
@@ -48,6 +49,7 @@ export class KnowledgeAnalysisPipeline {
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
     private readonly aiUsageService: AiUsageService,
+    private readonly brain: KnowledgeBrainService,
     @Inject(AI_CONTENT_ANALYSIS_SERVICE)
     private readonly aiService: AiContentAnalysisService,
   ) {}
@@ -262,6 +264,7 @@ export class KnowledgeAnalysisPipeline {
     const item = await this.itemsService.getByIdInternal(itemId);
     const existingCategories =
       await this.categoriesService.getCategoriesForAi(ownerUserId);
+    const brainContext = await this.brain.aiContext(ownerUserId, itemId);
 
     const startedAt = Date.now();
     const outcome = await this.aiService
@@ -274,6 +277,7 @@ export class KnowledgeAnalysisPipeline {
         image: fetched.image,
         video: fetched.video,
         existingCategories,
+        ...brainContext,
         extraInstruction,
       })
       .catch(async (error: unknown) => {
@@ -300,28 +304,96 @@ export class KnowledgeAnalysisPipeline {
       status: AiUsageStatus.SUCCESS,
     });
 
-    const applyOutcome = await this.itemsService.applyAnalysisResult(
+    await this.itemsService.applyAnalysisResult(
       itemId,
       fetched.extractedText,
       outcome.result,
     );
-    if (applyOutcome.status === 'DONE') {
-      await this.lineNotifier.notifyByUser(
-        ownerUserId,
-        `已建立資料，分類為 ${applyOutcome.categoryName}`,
-      );
-    } else {
-      // 記錄「這個帳號正在等你回覆分類」——沒有這一步，使用者接下來回覆的
-      // 分類名稱只會被當成一般指令解析，永遠對不到這則資料上。
-      await this.prisma.lineAccountLink.updateMany({
-        where: { userId: ownerUserId },
-        data: { pendingKnowledgeItemId: itemId },
-      });
-      await this.lineNotifier.notifyByUser(
-        ownerUserId,
-        `這則內容好像沒有適合的分類，建議新增「${applyOutcome.suggestedCategoryName}」分類。\n回覆「新增」建立，或回覆一個你現有的分類名稱來歸類到那裡。`,
-      );
-    }
+    const linked = await this.brain.applyBrain(itemId, ownerUserId, outcome.result.brain);
+    await this.lineNotifier.notifyByUser(
+      ownerUserId,
+      this.brain.savedMessage(outcome.result.title, linked, outcome.result.brain.eventEndDate),
+    );
+  }
+
+  private organizing = new Set<string>();
+
+  /** 「整理舊收藏」（2026-11-27）：大腦上線前存的東西只有一個舊分類當主題、沒有
+   * 連線。這裡一則一則讓 AI 補主題、找相關的、抓活動日期（只看標題摘要，不重抓
+   * 原文，很便宜）。整理過的記在 SystemAlertLog（kb-organized:<id>），不會重做。
+   * 背景跑，做完 LINE 通知。回傳要整理幾則。 */
+  async organizeOld(userId: string): Promise<{ queued: number }> {
+    if (this.organizing.has(userId)) return { queued: 0 };
+    const user = await this.usersService.findById(userId);
+    if (!user?.geminiApiKey) throw new Error(NO_API_KEY_MESSAGE);
+    const items = await this.prisma.knowledgeItem.findMany({
+      where: { ownerUserId: userId, status: 'DONE' },
+      orderBy: { createdAt: 'asc' },
+      include: { fieldValues: { include: { definition: true, option: true } } },
+    });
+    const done = new Set(
+      (await this.prisma.systemAlertLog.findMany({
+        where: { key: { in: items.map((i) => `kb-organized:${i.id}`) } },
+        select: { key: true },
+      })).map((r) => r.key.slice('kb-organized:'.length)),
+    );
+    const todo = items.filter((i) => !done.has(i.id)).slice(0, 200);
+    if (!todo.length) return { queued: 0 };
+    this.organizing.add(userId);
+    void (async () => {
+      let linked = 0;
+      let ok = 0;
+      try {
+        for (const item of todo) {
+          try {
+            const facts = item.fieldValues
+              .map((v) => {
+                const value = v.textValue ?? v.option?.label ?? v.numberValue ?? v.dateValue?.toISOString().slice(0, 10) ?? v.booleanValue;
+                return value === null || value === undefined ? null : `${v.definition.name}：${value}`;
+              })
+              .filter(Boolean)
+              .join('；');
+            const context = await this.brain.aiContext(userId, item.id);
+            const startedAt = Date.now();
+            const res = await analyzeBrainOnly(
+              user.geminiApiKey!,
+              { title: item.title ?? '未命名', summary: item.summary ?? '', tags: item.tags, facts },
+              context,
+            );
+            await this.aiUsageService.record({
+              userId,
+              feature: 'knowledge',
+              model: GEMINI_MODEL,
+              inputTokens: res.inputTokens,
+              outputTokens: res.outputTokens,
+              durationMs: Date.now() - startedAt,
+              status: AiUsageStatus.SUCCESS,
+            });
+            // 舊的活動日期（從欄位搬過來的）AI 沒抓到就保留。
+            const brain = {
+              ...res.brain,
+              eventStartDate: res.brain.eventStartDate ?? item.eventStartDate?.toISOString().slice(0, 10) ?? null,
+              eventEndDate: res.brain.eventEndDate ?? item.eventEndDate?.toISOString().slice(0, 10) ?? null,
+            };
+            const r = await this.brain.applyBrain(item.id, userId, brain);
+            linked += r.linked;
+            ok += 1;
+            await this.prisma.systemAlertLog.create({ data: { key: `kb-organized:${item.id}` } }).catch(() => undefined);
+          } catch (error) {
+            if (this.unavailable(error)) throw error;
+            this.logger.warn(`整理舊收藏失敗 item=${item.id}: ${this.errorMessage(error)}`);
+          }
+        }
+        await this.lineNotifier.notifyByUser(userId, `🧠 大腦整理好了：${ok} 則舊收藏都接上主題，找到 ${linked} 條關聯。到 App 的知識庫看大腦地圖吧！`);
+      } catch (error) {
+        this.logFailure('整理舊收藏中斷', error);
+        await this.lineNotifier.notifyByUser(userId, `大腦整理到一半停了（已整理 ${ok} 則）：${this.userFacingMessage(error)}
+之後再按一次「整理舊收藏」會從沒整理的繼續。`);
+      } finally {
+        this.organizing.delete(userId);
+      }
+    })();
+    return { queued: todo.length };
   }
 
   private errorMessage(error: unknown): string {

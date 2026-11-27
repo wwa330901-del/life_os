@@ -8,6 +8,8 @@ import { isInstagramUrl, INSTAGRAM_UNSUPPORTED_MESSAGE } from '../knowledge/cont
 import type { LineAccountLink } from '../../generated/prisma/client.js';
 import { LineReplyService } from './line-reply.service';
 import { LEADING_SEPARATORS } from './line-shared';
+import { KnowledgeBrainService } from '../knowledge/knowledge-brain.service';
+import { sourceKeyForBytes, sourceKeyForText, sourceKeyForUrl } from '../knowledge/knowledge-source-key';
 
 /** LINE 收藏：存連結／文字／影片、分類決定、找地點、展覽排進行事曆。 */
 @Injectable()
@@ -20,7 +22,53 @@ export class LineKnowledgeService {
     private readonly knowledgeAnalysisPipeline: KnowledgeAnalysisPipeline,
     private readonly instagramFetcherService: InstagramFetcherService,
     private readonly out: LineReplyService,
+    private readonly brain: KnowledgeBrainService,
   ) {}
+
+  /** 重複偵測（2026-11-27）：存過一樣的就不再存，回「存過了」＋兩個按鈕。 */
+  async replyIfDuplicate(userId: string, sourceKey: string | null, replyToken: string): Promise<boolean> {
+    const dup = await this.brain.findDuplicate(userId, sourceKey);
+    if (!dup) return false;
+    if (dup.status !== 'DONE') {
+      await this.out.reply(replyToken, this.brain.duplicateMessage(dup));
+      return true;
+    }
+    await this.out.replyWithButtons(replyToken, this.brain.duplicateMessage(dup), [
+      { label: '看那一則', data: `kb:show:${dup.id}` },
+      { label: '重新分析那一則', data: `kb:redo:${dup.id}` },
+    ]);
+    return true;
+  }
+
+  /** 「存過了」訊息上的按鈕。 */
+  async handleKnowledgePostback(link: LineAccountLink, data: string, replyToken: string) {
+    const [, action, itemId] = data.split(':');
+    const item = await this.knowledgeItemsService.getByIdInternal(itemId).catch(() => null);
+    if (!item || item.ownerUserId !== link.userId) {
+      await this.out.reply(replyToken, '找不到這則收藏，可能已經刪掉了。');
+      return;
+    }
+    if (action === 'show') {
+      const lines = [`🧠 ${item.title ?? '未命名'}`, item.summary ?? '', item.sourceUrl ?? ''].filter(Boolean);
+      await this.out.reply(replyToken, lines.join('\n\n'));
+      return;
+    }
+    if (action === 'plan') {
+      await this.knowledgeItemsService.setExhibitionDecision(itemId, 'SCHEDULED');
+      await this.prisma.lineAccountLink.update({ where: { id: link.id }, data: { pendingExhibitionScheduleItemId: itemId } });
+      await this.out.reply(replyToken, `好，「${item.title ?? '這個活動'}」要排什麼時候？例如「12/6 14:00」或「明天」。`);
+      return;
+    }
+    if (action === 'skip') {
+      await this.knowledgeItemsService.setExhibitionDecision(itemId, 'CANCELLED');
+      await this.out.reply(replyToken, '好，這個不會再提醒你了（還是留在大腦裡）。');
+      return;
+    }
+    if (action === 'redo') {
+      await this.out.reply(replyToken, '好，重新分析中，好了會再通知你。');
+      void this.knowledgeAnalysisPipeline.reanalyze(itemId, link.userId);
+    }
+  }
 
   extractUrl(text: string): string | null {
     const match = text.match(/https?:\/\/\S+/);
@@ -36,10 +84,13 @@ export class LineKnowledgeService {
       await this.out.reply(replyToken, INSTAGRAM_UNSUPPORTED_MESSAGE);
       return;
     }
+    const sourceKey = sourceKeyForUrl(url);
+    if (await this.replyIfDuplicate(userId, sourceKey, replyToken)) return;
 
     const item = await this.knowledgeItemsService.createPending(userId, {
       sourceUrl: url,
       sourcePlatform: '', // overwritten once the fetcher actually determines it
+      sourceKey,
     });
     await this.out.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
     // Fire-and-forget — must not block the webhook's reply, and the actual
@@ -67,8 +118,11 @@ export class LineKnowledgeService {
       return;
     }
 
+    const sourceKey = sourceKeyForText(content);
+    if (await this.replyIfDuplicate(userId, sourceKey, replyToken)) return;
     const item = await this.knowledgeItemsService.createPending(userId, {
       sourcePlatform: '貼上文字',
+      sourceKey,
     });
     await this.out.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
     void this.knowledgeAnalysisPipeline.processTextSubmission(
@@ -93,8 +147,11 @@ export class LineKnowledgeService {
     if (!messageId) return;
     try {
       const data = await this.out.fetchLineMessageContent(messageId);
+      const sourceKey = sourceKeyForBytes(data);
+      if (await this.replyIfDuplicate(userId, sourceKey, replyToken)) return;
       const item = await this.knowledgeItemsService.createPending(userId, {
         sourcePlatform: '影片',
+        sourceKey,
       });
       await this.out.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
       void this.knowledgeAnalysisPipeline.processVideoSubmission(
@@ -184,18 +241,15 @@ export class LineKnowledgeService {
       await this.out.reply(replyToken, '📅 展覽\n\n（目前沒有記錄中的展覽）');
       return;
     }
-    const lines = ['📅 展覽（依結束日期排序）', ''];
+    const lines = ['📅 展覽、活動（快結束的在前面）', ''];
     for (const item of items) {
-      const endDate = this.knowledgeItemsService.fieldDateValue(
-        item,
-        '結束日期',
-      );
+      const endDate = item.eventEndDate;
       const visited = this.knowledgeItemsService.fieldBooleanValue(
         item,
         '是否已觀展',
       );
       lines.push(
-        `・${item.title ?? '未命名'}${endDate ? `（至 ${endDate.getMonth() + 1}/${endDate.getDate()}）` : ''}${visited ? '（已觀展）' : ''}`,
+        `・${item.title ?? '未命名'}${endDate ? `（至 ${endDate.getUTCMonth() + 1}/${endDate.getUTCDate()}）` : ''}${visited ? '（已觀展）' : ''}`,
       );
     }
     await this.out.reply(replyToken, lines.join('\n'));

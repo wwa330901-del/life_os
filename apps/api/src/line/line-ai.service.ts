@@ -9,6 +9,8 @@ import { UsersService } from '../users/users.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import type { LineAccountLink } from '../../generated/prisma/client.js';
 import { LineReplyService } from './line-reply.service';
+import { LineKnowledgeService } from './line-knowledge.service';
+import { sourceKeyForBytes } from '../knowledge/knowledge-source-key';
 import { CONFIRM_BUTTONS, LEADING_SEPARATORS } from './line-shared';
 
 /** LINE 交給 AI：萬用 AI 對話（含確認按鈕）、「查詢」、照片（收據／一般照片）。 */
@@ -22,6 +24,7 @@ export class LineAiService {
     private readonly aiAgent: AiAgentService,
     private readonly receiptReader: ReceiptReaderService,
     private readonly out: LineReplyService,
+    private readonly lineKnowledge: LineKnowledgeService,
   ) {}
 
   /** LINE image messages carry no URL — the bytes have to be pulled from
@@ -55,8 +58,11 @@ export class LineAiService {
         }
         return;
       }
+      const sourceKey = sourceKeyForBytes(data);
+      if (await this.lineKnowledge.replyIfDuplicate(userId, sourceKey, replyToken)) return;
       const item = await this.knowledgeItemsService.createPending(userId, {
         sourcePlatform: '圖片',
+        sourceKey,
       });
       await this.out.reply(replyToken, '收到，分析中，好了會再傳訊息通知你。');
       void this.knowledgeAnalysisPipeline.processImageSubmission(

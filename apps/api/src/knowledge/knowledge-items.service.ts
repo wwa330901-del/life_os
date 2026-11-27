@@ -64,12 +64,13 @@ export class KnowledgeItemsService {
 
   async createPending(
     ownerUserId: string,
-    params: { sourceUrl?: string; sourcePlatform: string },
+    params: { sourceUrl?: string; sourcePlatform: string; sourceKey?: string | null },
   ) {
     return this.prisma.knowledgeItem.create({
       data: {
         ownerUserId,
         sourceUrl: params.sourceUrl,
+        sourceKey: params.sourceKey ?? null,
         sourcePlatform: params.sourcePlatform,
         status: KnowledgeItemStatus.PENDING,
       },
@@ -133,11 +134,27 @@ export class KnowledgeItemsService {
     itemId: string,
     rawContent: string | undefined,
     result: ContentAnalysisResult,
-  ): Promise<
-    | { status: 'DONE'; categoryName: string }
-    | { status: 'AWAITING_CATEGORY_DECISION'; suggestedCategoryName: string }
-  > {
-    if (result.matched) {
+  ): Promise<{ status: 'DONE'; categoryName: string }> {
+    // 2026-11-27 知識庫大腦：AI 找不到合適分類時不再停下來問使用者，直接照
+    // AI 建議建一個（分類只在背後決定要抓哪些重點欄位，畫面上看的是主題點）。
+    if (!result.matched) {
+      const owner = await this.prisma.knowledgeItem.findUniqueOrThrow({ where: { id: itemId }, select: { ownerUserId: true } });
+      const created = await this.categoriesService.createFromSuggestion(
+        owner.ownerUserId,
+        result.suggestedCategoryName,
+        result.suggestedFields,
+      );
+      result = {
+        matched: true,
+        brain: result.brain,
+        categoryId: created.id,
+        title: result.title,
+        summary: result.summary,
+        tags: result.tags,
+        fieldValues: result.fieldValues,
+      };
+    }
+    {
       const category = await this.prisma.knowledgeCategory.findUniqueOrThrow({
         where: { id: result.categoryId },
       });
@@ -159,23 +176,6 @@ export class KnowledgeItemsService {
       );
       return { status: 'DONE', categoryName: category.name };
     }
-
-    await this.prisma.knowledgeItem.update({
-      where: { id: itemId },
-      data: {
-        title: result.title,
-        summary: result.summary,
-        tags: result.tags,
-        rawContent,
-        suggestedCategoryName: result.suggestedCategoryName,
-        suggestedFields: result.suggestedFields,
-        status: KnowledgeItemStatus.AWAITING_CATEGORY_DECISION,
-      },
-    });
-    return {
-      status: 'AWAITING_CATEGORY_DECISION',
-      suggestedCategoryName: result.suggestedCategoryName,
-    };
   }
 
   /** Called when the user replies to "建議新增 XX 分類" — either "新增" (create
@@ -417,36 +417,19 @@ export class KnowledgeItemsService {
     );
   }
 
-  /** 展覽 LINE query — every visible 展覽資訊 item sorted by 結束日期 ascending
-   * (soonest-ending first), regardless of location. */
+  /** 展覽、活動（2026-11-27 起看 AI 抓的活動日期 eventEndDate，不再限定「展覽資訊」
+   * 分類）：自己的收藏裡還沒結束的，結束日最近的排前面。 */
   async listUpcomingExhibitions(userId: string) {
-    const candidateCategoryIds = await this.categoryIdsVisibleTo(
-      userId,
-      '展覽資訊',
-    );
-    if (candidateCategoryIds.length === 0) return [];
-
-    const items = await this.prisma.knowledgeItem.findMany({
+    const today = new Date(new Date().toISOString().slice(0, 10));
+    return this.prisma.knowledgeItem.findMany({
       where: {
+        ownerUserId: userId,
         status: KnowledgeItemStatus.DONE,
-        categoryId: { in: candidateCategoryIds },
+        OR: [{ eventEndDate: { gte: today } }, { eventEndDate: null, eventStartDate: { gte: today } }],
       },
       include: itemInclude,
+      orderBy: [{ eventEndDate: 'asc' }, { eventStartDate: 'asc' }],
     });
-    const visible = items.filter(
-      (item) =>
-        item.ownerUserId === userId || this.isVisiblePublic(item, userId),
-    );
-
-    const withEndDate = visible
-      .map((item) => ({ item, endDate: this.fieldDateValue(item, '結束日期') }))
-      .filter(
-        (entry): entry is { item: ItemWithRelations; endDate: Date } =>
-          entry.endDate !== null,
-      )
-      .sort((a, b) => a.endDate.getTime() - b.endDate.getTime());
-
-    return withEndDate.map((entry) => entry.item);
   }
 
   fieldTextValue(item: ItemWithRelations, fieldName: string): string | null {

@@ -65,7 +65,8 @@ export class KnowledgeAiService {
         const found = await this.items.listUpcomingExhibitions(userId);
         return found.slice(0, RESULT_MAX).map((item) => ({
           ...this.describe(item),
-          endDate: this.items.fieldDateValue(item, '結束日期')?.toISOString().slice(0, 10) ?? null,
+          startDate: item.eventStartDate?.toISOString().slice(0, 10) ?? null,
+          endDate: item.eventEndDate?.toISOString().slice(0, 10) ?? null,
           visited: this.items.fieldBooleanValue(item, '是否已觀展') ?? false,
         }));
       }
