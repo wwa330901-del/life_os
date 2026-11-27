@@ -19,11 +19,17 @@ class AiUsageTab extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Expanded(child: _SummaryCard(label: '今日', summary: history.today)),
+              Expanded(
+                child: _SummaryCard(label: '今日', summary: history.today),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _SummaryCard(label: '本週', summary: history.thisWeek)),
+              Expanded(
+                child: _SummaryCard(label: '本週', summary: history.thisWeek),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _SummaryCard(label: '本月', summary: history.thisMonth)),
+              Expanded(
+                child: _SummaryCard(label: '本月', summary: history.thisMonth),
+              ),
             ],
           ),
           if (history.featureUsage != null) ...[
@@ -62,11 +68,11 @@ class _SummaryCard extends StatelessWidget {
             Text('${summary.count} 次'),
             Text('\$${summary.costUsd.toStringAsFixed(4)}'),
             for (final p in summary.byProvider.where((p) => p.count > 0))
-              Text('${p.provider}：${p.count} 次 \$${p.costUsd.toStringAsFixed(4)}', style: const TextStyle(fontSize: 12)),
-            Text(
-              '輸入 ${summary.inputTokens} · 輸出 ${summary.outputTokens} tokens',
-              style: const TextStyle(fontSize: 11),
-            ),
+              Text(
+                '${p.provider}：${p.count} 次 \$${p.costUsd.toStringAsFixed(4)}',
+                style: const TextStyle(fontSize: 12),
+              ),
+            Text('輸入 ${summary.inputTokens} · 輸出 ${summary.outputTokens} tokens', style: const TextStyle(fontSize: 11)),
           ],
         ),
       ),

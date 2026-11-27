@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/models/knowledge.dart';
+import 'brain/brain_item_dialog.dart';
 import 'knowledge_item_detail_dialog.dart';
 
 class KnowledgeItemCard extends StatelessWidget {
@@ -16,6 +17,14 @@ class KnowledgeItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: ListTile(
+        leading: isOwn && item.status == KnowledgeItemStatus.done
+            ? Icon(
+                item.readAt == null ? Icons.circle : Icons.circle_outlined,
+                size: 12,
+                color: Theme.of(context).colorScheme.primary,
+              )
+            : null,
+        minLeadingWidth: 12,
         title: Text(item.title ?? (item.status == KnowledgeItemStatus.done ? '未命名' : item.status.label)),
         subtitle: Text(
           [
@@ -38,7 +47,12 @@ class KnowledgeItemCard extends StatelessWidget {
             ),
           ],
         ),
-        onTap: () => showDialog(context: context, builder: (_) => KnowledgeItemDetailDialog(item: item, isOwn: isOwn)),
+        onTap: () => isOwn
+            ? showBrainItem(context, item.id)
+            : showDialog(
+                context: context,
+                builder: (_) => KnowledgeItemDetailDialog(item: item, isOwn: isOwn),
+              ),
       ),
     );
   }

@@ -161,7 +161,15 @@ class KnowledgeItem {
     this.ownerName,
     this.rawContent,
     this.fileUrl,
+    this.readAt,
+    this.eventStartDate,
+    this.eventEndDate,
   });
+
+  /// 知識庫大腦（2026-11-27）：看過的時間（null＝還沒看）、AI 抓的活動日期。
+  final DateTime? readAt;
+  final DateTime? eventStartDate;
+  final DateTime? eventEndDate;
 
   final String id;
   final String ownerUserId;
@@ -207,6 +215,9 @@ class KnowledgeItem {
       createdAt: DateTime.parse(json['createdAt'] as String),
       rawContent: json['rawContent'] as String?,
       fileUrl: json['fileUrl'] as String?,
+      readAt: json['readAt'] is String ? DateTime.parse(json['readAt'] as String) : null,
+      eventStartDate: json['eventStartDate'] is String ? DateTime.parse(json['eventStartDate'] as String) : null,
+      eventEndDate: json['eventEndDate'] is String ? DateTime.parse(json['eventEndDate'] as String) : null,
     );
   }
 

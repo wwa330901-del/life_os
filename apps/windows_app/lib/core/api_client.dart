@@ -16,6 +16,7 @@ import 'models/divination.dart';
 import 'models/home_dashboard.dart';
 import 'models/journal_entry.dart';
 import 'models/knowledge.dart';
+import 'models/knowledge_brain.dart';
 import 'models/life_goal.dart';
 import 'models/finance_plan.dart';
 import 'models/memory.dart';
@@ -621,6 +622,40 @@ class ApiClient {
     await _post('/knowledge/items/$itemId/reanalyze', {
       if (instruction != null && instruction.isNotEmpty) 'instruction': instruction,
     });
+  }
+
+  // ---------- 知識庫大腦（2026-11-27）----------
+
+  Future<BrainOverview> getBrainOverview() async => BrainOverview.fromJson(await _get('/knowledge/brain/overview'));
+
+  Future<BrainGraph> getBrainGraph() async => BrainGraph.fromJson(await _get('/knowledge/brain/graph'));
+
+  Future<BrainConnections> getBrainConnections(String itemId) async =>
+      BrainConnections.fromJson(await _get('/knowledge/brain/items/$itemId/connections'));
+
+  Future<void> setKnowledgeRead(String itemId, bool read) async {
+    await _post('/knowledge/brain/items/$itemId/read', {'read': read});
+  }
+
+  Future<BrainTopicDetail> getBrainTopic(String topicId) async =>
+      BrainTopicDetail.fromJson(await _get('/knowledge/brain/topics/$topicId'));
+
+  Future<void> renameBrainTopic(String topicId, String name) async {
+    await _patchIgnoreBody('/knowledge/brain/topics/$topicId', {'name': name});
+  }
+
+  Future<void> mergeBrainTopic(String topicId, String targetTopicId) async {
+    await _post('/knowledge/brain/topics/$topicId/merge', {'targetTopicId': targetTopicId});
+  }
+
+  Future<void> deleteBrainTopic(String topicId) async {
+    await _delete('/knowledge/brain/topics/$topicId');
+  }
+
+  /// 整理舊收藏（背景跑，做完 LINE 通知）。回傳要整理幾則。
+  Future<int> organizeBrain() async {
+    final body = await _post('/knowledge/brain/organize', {});
+    return (body['queued'] as num?)?.toInt() ?? 0;
   }
 
   Future<bool> hasGeminiApiKey() async {

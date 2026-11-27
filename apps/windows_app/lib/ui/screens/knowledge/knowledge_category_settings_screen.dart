@@ -191,11 +191,7 @@ class _CategoryCard extends ConsumerWidget {
                       ),
                     );
                     if (confirmed != true || !context.mounted) return;
-                    await _run(
-                      context,
-                      ref,
-                      () => ref.read(apiClientProvider).deleteKnowledgeCategory(category.id),
-                    );
+                    await _run(context, ref, () => ref.read(apiClientProvider).deleteKnowledgeCategory(category.id));
                   },
                 ),
               ],
@@ -224,9 +220,8 @@ class _CategoryCard extends ConsumerWidget {
                     onDeleted: () => _run(
                       context,
                       ref,
-                      () => ref
-                          .read(apiClientProvider)
-                          .removeKnowledgeField(categoryId: category.id, fieldId: field.id),
+                      () =>
+                          ref.read(apiClientProvider).removeKnowledgeField(categoryId: category.id, fieldId: field.id),
                     ),
                   ),
                 ActionChip(
@@ -384,8 +379,7 @@ class _FieldDialogState extends State<_FieldDialog> {
               initialValue: _type,
               decoration: const InputDecoration(labelText: '型態'),
               items: [
-                for (final type in KnowledgeFieldType.values)
-                  DropdownMenuItem(value: type, child: Text(type.label)),
+                for (final type in KnowledgeFieldType.values) DropdownMenuItem(value: type, child: Text(type.label)),
               ],
               onChanged: (value) => setState(() => _type = value ?? _type),
             ),

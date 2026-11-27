@@ -70,7 +70,8 @@ class _PrivateKnowledgeTabState extends ConsumerState<PrivateKnowledgeTab> {
                     onChanged: (value) => setState(() => _categoryId = value),
                   ),
                   loading: () => const LinearProgressIndicator(),
-                  error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(knowledgeCategoriesProvider)),
+                  error: (error, _) =>
+                      ErrorPanel(error: error, onRetry: () => ref.invalidate(knowledgeCategoriesProvider)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -112,7 +113,8 @@ class _PrivateKnowledgeTabState extends ConsumerState<PrivateKnowledgeTab> {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(knowledgeItemsProvider(_query))),
+            error: (error, _) =>
+                ErrorPanel(error: error, onRetry: () => ref.invalidate(knowledgeItemsProvider(_query))),
           ),
         ),
       ],

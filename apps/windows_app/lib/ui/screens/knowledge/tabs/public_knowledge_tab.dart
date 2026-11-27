@@ -70,7 +70,8 @@ class _PublicKnowledgeTabState extends ConsumerState<PublicKnowledgeTab> {
                     onChanged: (value) => setState(() => _categoryId = value),
                   ),
                   loading: () => const LinearProgressIndicator(),
-                  error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(publicKnowledgeCategoriesProvider)),
+                  error: (error, _) =>
+                      ErrorPanel(error: error, onRetry: () => ref.invalidate(publicKnowledgeCategoriesProvider)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -106,7 +107,8 @@ class _PublicKnowledgeTabState extends ConsumerState<PublicKnowledgeTab> {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => ErrorPanel(error: error, onRetry: () => ref.invalidate(publicKnowledgeItemsProvider(_query))),
+            error: (error, _) =>
+                ErrorPanel(error: error, onRetry: () => ref.invalidate(publicKnowledgeItemsProvider(_query))),
           ),
         ),
       ],

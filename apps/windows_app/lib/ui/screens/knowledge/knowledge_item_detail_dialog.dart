@@ -66,9 +66,7 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
       ),
     );
     try {
-      await ref
-          .read(apiClientProvider)
-          .reanalyzeKnowledgeItem(item.id, instruction: controller.text.trim());
+      await ref.read(apiClientProvider).reanalyzeKnowledgeItem(item.id, instruction: controller.text.trim());
       ref.invalidate(knowledgeItemDetailProvider(item.id));
       ref.invalidate(knowledgeItemsProvider);
       if (context.mounted) {
@@ -123,10 +121,7 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
         title: const Text('指定分類'),
         children: [
           for (final category in categories)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(dialogContext).pop(category),
-              child: Text(category.name),
-            ),
+            SimpleDialogOption(onPressed: () => Navigator.of(dialogContext).pop(category), child: Text(category.name)),
         ],
       ),
     );
@@ -199,16 +194,8 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('關閉')),
-        if (isOwn)
-          TextButton(
-            onPressed: () => _reanalyze(context, ref),
-            child: const Text('重新分析'),
-          ),
-        if (isOwn)
-          TextButton(
-            onPressed: () => _pickCategory(context, ref),
-            child: const Text('指定分類'),
-          ),
+        if (isOwn) TextButton(onPressed: () => _reanalyze(context, ref), child: const Text('重新分析')),
+        if (isOwn) TextButton(onPressed: () => _pickCategory(context, ref), child: const Text('指定分類')),
         if (isOwn)
           TextButton(
             onPressed: () => _run(
@@ -231,12 +218,7 @@ class KnowledgeItemDetailDialog extends ConsumerWidget {
           ),
         if (isOwn)
           TextButton(
-            onPressed: () => _run(
-              context,
-              ref,
-              () => ref.read(apiClientProvider).deleteKnowledgeItem(item.id),
-              '已刪除。',
-            ),
+            onPressed: () => _run(context, ref, () => ref.read(apiClientProvider).deleteKnowledgeItem(item.id), '已刪除。'),
             child: const Text('刪除'),
           ),
       ],
@@ -280,8 +262,7 @@ class _SourceContent extends StatelessWidget {
         child: Image.network(
           item.fileUrl!,
           fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) =>
-              Text('圖片載入失敗', style: TextStyle(color: scheme.error)),
+          errorBuilder: (context, error, stackTrace) => Text('圖片載入失敗', style: TextStyle(color: scheme.error)),
         ),
       );
     }

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/knowledge.dart';
+import '../core/models/knowledge_brain.dart';
 import 'auth_provider.dart';
 
 /// The caller's own knowledge categories (私人區), including their own
@@ -106,3 +107,28 @@ final knowledgeItemDetailProvider = FutureProvider.autoDispose.family<KnowledgeI
   return ref.read(apiClientProvider).getKnowledgeItem(itemId);
 });
 
+
+// ---------- 知識庫大腦（2026-11-27）----------
+
+final brainOverviewProvider = FutureProvider.autoDispose<BrainOverview>((ref) {
+  return ref.read(apiClientProvider).getBrainOverview();
+});
+
+final brainGraphProvider = FutureProvider.autoDispose<BrainGraph>((ref) {
+  return ref.read(apiClientProvider).getBrainGraph();
+});
+
+final brainConnectionsProvider = FutureProvider.autoDispose.family<BrainConnections, String>((ref, itemId) {
+  return ref.read(apiClientProvider).getBrainConnections(itemId);
+});
+
+final brainTopicProvider = FutureProvider.autoDispose.family<BrainTopicDetail, String>((ref, topicId) {
+  return ref.read(apiClientProvider).getBrainTopic(topicId);
+});
+
+/// 大腦有變動（看過、刪除、改主題）後，首頁、地圖、列表一起重新讀。
+void refreshBrain(WidgetRef ref) {
+  ref.invalidate(brainOverviewProvider);
+  ref.invalidate(brainGraphProvider);
+  ref.invalidate(knowledgeItemsProvider);
+}
