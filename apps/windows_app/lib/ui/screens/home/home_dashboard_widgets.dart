@@ -5,6 +5,7 @@ import '../../../core/models/home_dashboard.dart';
 import '../../../core/models/knowledge.dart';
 import '../finance/widgets/finance_format.dart';
 import 'home_stats_widgets.dart';
+import 'brain_random_card.dart';
 
 /// One card per configured+visible widget type — `HomePickerDashboard`
 /// (in space_picker_screen.dart) looks up the right builder by type string
@@ -13,6 +14,8 @@ import 'home_stats_widgets.dart';
 /// hasn't updated to yet... though in practice this app auto-updates).
 Widget? buildHomeWidget(BuildContext context, String type, HomeDashboard dashboard) {
   switch (type) {
+    case 'brainRandom':
+      return const BrainRandomCard();
     case 'personalFinance':
       return _PersonalFinanceCard(data: dashboard.personalFinance);
     case 'todayFinance':

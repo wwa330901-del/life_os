@@ -114,6 +114,11 @@ final brainOverviewProvider = FutureProvider.autoDispose<BrainOverview>((ref) {
   return ref.read(apiClientProvider).getBrainOverview();
 });
 
+/// 首頁「從大腦翻出來的」：autoDispose，每次回到首頁重新抽一次。
+final brainRandomProvider = FutureProvider.autoDispose<List<BrainRandomItem>>((ref) {
+  return ref.read(apiClientProvider).getBrainRandom();
+});
+
 final brainGraphProvider = FutureProvider.autoDispose<BrainGraph>((ref) {
   return ref.read(apiClientProvider).getBrainGraph();
 });

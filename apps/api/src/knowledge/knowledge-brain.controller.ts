@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload';
@@ -28,6 +28,11 @@ export class KnowledgeBrainController {
   @Get('overview')
   overview(@CurrentUser() user: AuthenticatedUser) {
     return this.brain.overview(user.id);
+  }
+
+  @Get('random')
+  random(@CurrentUser() user: AuthenticatedUser, @Query('count') count?: string) {
+    return this.brain.random(user.id, count ? Number(count) || 3 : 3);
   }
 
   @Get('graph')

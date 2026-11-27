@@ -44,6 +44,7 @@ class HomeWidgetConfig {
 /// screen that lists widgets (dashboard itself, the customize dialog)
 /// needs the same mapping.
 String homeWidgetLabel(String type) => switch (type) {
+  'brainRandom' => '從大腦翻出來的（每次隨機）',
   'personalFinance' => '個人財務狀況',
   'todayFinance' => '本日支出及收入',
   'todayTodos' => '本日代辦事項',

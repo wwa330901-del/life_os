@@ -190,3 +190,37 @@ DateTime? _date(Object? value) => value is String ? DateTime.parse(value) : null
 
 List<T> _list<T>(Object? value, T Function(Map<String, dynamic>) fromJson) =>
     (value as List<dynamic>? ?? []).map((e) => fromJson(e as Map<String, dynamic>)).toList();
+
+/// 首頁「從大腦翻出來的」一則。
+class BrainRandomItem {
+  const BrainRandomItem({
+    required this.id,
+    required this.title,
+    this.summary,
+    this.sourcePlatform,
+    required this.read,
+    required this.topics,
+    this.imageUrl,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String title;
+  final String? summary;
+  final String? sourcePlatform;
+  final bool read;
+  final List<String> topics;
+  final String? imageUrl;
+  final DateTime createdAt;
+
+  factory BrainRandomItem.fromJson(Map<String, dynamic> json) => BrainRandomItem(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    summary: json['summary'] as String?,
+    sourcePlatform: json['sourcePlatform'] as String?,
+    read: json['read'] as bool? ?? true,
+    topics: (json['topics'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
+    imageUrl: json['imageUrl'] as String?,
+    createdAt: DateTime.parse(json['createdAt'] as String),
+  );
+}

@@ -72,6 +72,7 @@ FakeBackend _brainBackend() => loggedInBackend()
   });
 
 void main() {
+  _randomCase();
   testWidgets('大腦：首頁看到展覽和還沒看的 → 打開一則先看分析、自動標看過 → 看原文', (tester) async {
     final backend = _brainBackend();
     await pumpApp(tester, backend, token: 't1');
@@ -123,5 +124,31 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('整張圖放進畫面'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+}
+
+void _randomCase() {
+  testWidgets('首頁：從大腦隨機翻 3 則，點了打開那一則，換一批會再抽', (tester) async {
+    final backend = _brainBackend()
+      ..on('GET /home/layout', [
+        {'type': 'brainRandom', 'visible': true},
+      ])
+      ..on('GET /knowledge/brain/random', [
+        {'id': 'i2', 'title': '巷弄咖啡', 'summary': '美術館旁的老屋咖啡', 'sourcePlatform': '圖片', 'read': false, 'topics': ['台南', '咖啡'], 'imageUrl': null, 'createdAt': '2026-11-25T02:00:00.000Z'},
+        {'id': 'i3', 'title': '牛肉湯', 'summary': null, 'sourcePlatform': '網頁文章', 'read': true, 'topics': ['台南'], 'imageUrl': null, 'createdAt': '2026-10-01T02:00:00.000Z'},
+      ]);
+    await pumpApp(tester, backend, token: 't1');
+
+    expect(find.text('🧠 從大腦翻出來的'), findsOneWidget);
+    expect(find.text('巷弄咖啡'), findsOneWidget);
+    expect(find.text('11/25 存的 · 還沒看 · 台南、咖啡'), findsOneWidget);
+
+    await tester.tap(find.text('換一批'));
+    await tester.pumpAndSettle();
+    expect(backend.requests.where((r) => r.path == '/knowledge/brain/random').length, 2);
+
+    await tester.tap(find.text('巷弄咖啡'));
+    await tester.pumpAndSettle();
+    expect(find.text('AI 分析'), findsOneWidget);
   });
 }

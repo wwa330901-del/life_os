@@ -628,6 +628,11 @@ class ApiClient {
 
   Future<BrainOverview> getBrainOverview() async => BrainOverview.fromJson(await _get('/knowledge/brain/overview'));
 
+  Future<List<BrainRandomItem>> getBrainRandom({int count = 3}) async {
+    final body = await _getList('/knowledge/brain/random?count=$count');
+    return body.map((e) => BrainRandomItem.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   Future<BrainGraph> getBrainGraph() async => BrainGraph.fromJson(await _get('/knowledge/brain/graph'));
 
   Future<BrainConnections> getBrainConnections(String itemId) async =>

@@ -18,6 +18,8 @@ import { FinanceHealthService } from '../finance/finance-health.service';
  * it's never silently hidden just because it didn't exist when the user
  * last customized their layout. */
 const DEFAULT_WIDGET_TYPES = [
+  // 2026-11-27：存了不打開就沒用——首頁最上面隨機翻幾則大腦裡的東西。
+  'brainRandom',
   'personalFinance',
   'todayFinance',
   'todayTodos',
@@ -65,7 +67,10 @@ export class HomeService {
       type,
       visible: true,
     }));
-    return [...saved, ...missingDefaults];
+    // 新加的「從大腦翻出來的」放最上面（使用者要每次打開首頁就看到），其他新的放最後。
+    const front = missingDefaults.filter((w) => w.type === 'brainRandom');
+    const back = missingDefaults.filter((w) => w.type !== 'brainRandom');
+    return [...front, ...saved, ...back];
   }
 
   async setLayout(userId: string, dto: UpdateHomeLayoutDto): Promise<void> {

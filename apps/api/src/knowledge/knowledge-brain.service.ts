@@ -4,6 +4,7 @@ import { KnowledgeItemStatus } from '../../generated/prisma/client.js';
 import type { BrainAnalysis } from './ai/ai-content-analysis.interface';
 import { sourceKeyForUrl } from './knowledge-source-key';
 import { taipeiDateKey, taipeiDateKeyToUtcMidnight } from '../common/taipei-date';
+import { SupabaseStorageService } from './supabase-storage.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -14,7 +15,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export class KnowledgeBrainService {
   private readonly logger = new Logger(KnowledgeBrainService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: SupabaseStorageService,
+  ) {}
 
   /** 舊資料只有網址沒有鑰匙的，開機時補上（重複偵測才抓得到舊的）。 */
   async onApplicationBootstrap() {
@@ -189,6 +193,62 @@ export class KnowledgeBrainService {
       unreadCount,
       topTopics: topTopics.map((t) => ({ id: t.id, name: t.name, count: t._count.items })),
     };
+  }
+
+  // ---------- 首頁隨機翻一則 ----------
+
+  /** 首頁「從大腦翻出來的」（2026-11-27）：每次隨機挑幾則，讓存了沒打開的東西
+   * 會自己跑出來。至少一則是還沒看的（有的話），其他從全部隨機挑；有截圖的附縮圖。 */
+  async random(userId: string, count = 3) {
+    const n = Math.min(Math.max(count, 1), 6);
+    const rows = await this.prisma.knowledgeItem.findMany({
+      where: { ownerUserId: userId, status: KnowledgeItemStatus.DONE },
+      select: { id: true, readAt: true },
+      take: 3000,
+    });
+    const shuffle = <T>(a: T[]) => {
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
+    const unread = shuffle(rows.filter((r) => !r.readAt));
+    const picked = new Set<string>(unread.slice(0, 1).map((r) => r.id));
+    for (const r of shuffle(rows)) {
+      if (picked.size >= n) break;
+      picked.add(r.id);
+    }
+    const items = await this.prisma.knowledgeItem.findMany({
+      where: { id: { in: [...picked] } },
+      select: {
+        id: true,
+        title: true,
+        summary: true,
+        sourcePlatform: true,
+        sourceFilePath: true,
+        readAt: true,
+        createdAt: true,
+        topics: { select: { topic: { select: { name: true } } } },
+      },
+    });
+    const order = [...picked];
+    items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    return Promise.all(
+      items.map(async (i) => ({
+        id: i.id,
+        title: i.title ?? '未命名',
+        summary: i.summary,
+        sourcePlatform: i.sourcePlatform,
+        read: i.readAt !== null,
+        createdAt: i.createdAt,
+        topics: i.topics.map((t) => t.topic.name),
+        imageUrl:
+          i.sourceFilePath && !i.sourceFilePath.endsWith('.mp4')
+            ? await this.storage.getSignedUrl(i.sourceFilePath).catch(() => null)
+            : null,
+      })),
+    );
   }
 
   // ---------- 大腦地圖 ----------
