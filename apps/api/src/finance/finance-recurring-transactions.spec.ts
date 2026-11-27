@@ -61,3 +61,29 @@ describe('recurringMonthStatus', () => {
     expect(recurringMonthStatus({ year: 2026, month: 11, day: 10 }, 5, 'NONE', '2026-12').nextDate).toBe('2027-01-05');
   });
 });
+
+import { dueTriggerDate } from './finance-recurring-schedule';
+
+describe('dueTriggerDate（錯過了要補）', () => {
+  it('扣款日當天到期', () => {
+    expect(dueTriggerDate('2026-11-25', 25, 'NONE', null, '2026-10-01')?.toISOString().slice(0, 10)).toBe('2026-11-25');
+  });
+  it('伺服器睡著錯過了，兩天後還是會補（日期記扣款日）', () => {
+    expect(dueTriggerDate('2026-11-27', 25, 'NONE', '2026-10', '2026-10-01')?.toISOString().slice(0, 10)).toBe('2026-11-25');
+  });
+  it('還沒到扣款日不跑', () => {
+    expect(dueTriggerDate('2026-11-24', 25, 'NONE', '2026-10', '2026-10-01')).toBeNull();
+  });
+  it('這個月已經跑過不再跑', () => {
+    expect(dueTriggerDate('2026-11-27', 25, 'NONE', '2026-11', '2026-10-01')).toBeNull();
+  });
+  it('扣款日之後才建立的，這個月不補', () => {
+    expect(dueTriggerDate('2026-11-27', 5, 'NONE', null, '2026-11-20')).toBeNull();
+  });
+  it('扣款日當天建立的，當天就跑', () => {
+    expect(dueTriggerDate('2026-11-25', 25, 'NONE', null, '2026-11-25')).not.toBeNull();
+  });
+  it('從沒跑過（null）也會跑', () => {
+    expect(dueTriggerDate('2026-12-01', 1, 'NONE', null, '2026-11-01')).not.toBeNull();
+  });
+});

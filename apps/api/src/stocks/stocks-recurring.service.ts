@@ -4,7 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StocksAccessService } from './stocks-access.service';
 import { StocksHoldingsService } from './stocks-holdings.service';
 import { LineNotifierService } from '../line-notifier/line-notifier.service';
-import { effectiveTriggerDate } from '../finance/finance-recurring-schedule';
+import { dueTriggerDate, effectiveTriggerDate } from '../finance/finance-recurring-schedule';
+import { taipeiDateKey, taipeiHour } from '../common/taipei-date';
 import { utcDateOnly } from './stocks-settlement.service';
 import {
   FinanceCategoriesService,
@@ -123,37 +124,50 @@ export class StocksRecurringService {
    * "on or after" the trigger date instead of "exactly on it" — so a missed
    * day self-heals on the very next day's run instead of silently skipping
    * the whole month. */
-  @Cron(CronExpression.EVERY_DAY_AT_9AM, { timeZone: 'Asia/Taipei' })
+  // 2026-11-27：原本只在早上 9 點跑一次，Render 免費方案睡著就沒跑到。
+  // 改成每小時＋開機都檢查（9 點前不跑），扣款日之後才建立的計畫這個月不補。
+  private running = false;
+
+  async onApplicationBootstrap() {
+    setTimeout(() => void this.sendDueReminders(), 45_000);
+  }
+
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: 'Asia/Taipei' })
   async sendDueReminders() {
     const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const today = now.getDate();
+    if (taipeiHour(now) < 9 || this.running) return;
+    this.running = true;
+    try {
+      const todayKey = taipeiDateKey(now);
+      const currentMonth = todayKey.slice(0, 7);
 
-    const due = await this.prisma.stockRecurringInvestment.findMany({
-      where: {
-        active: true,
-        lastTriggeredMonth: { not: currentMonth },
-        monthlyAmount: { not: null },
-        awaitingReply: false,
-      },
-    });
+      const due = await this.prisma.stockRecurringInvestment.findMany({
+        where: {
+          active: true,
+          OR: [{ lastTriggeredMonth: null }, { lastTriggeredMonth: { not: currentMonth } }],
+          monthlyAmount: { not: null },
+          awaitingReply: false,
+        },
+      });
 
-    for (const plan of due) {
-      const triggerDate = effectiveTriggerDate(
-        now.getFullYear(),
-        now.getMonth(),
-        plan.dayOfMonth,
-        lastDayOfMonth,
-        plan.holidayAdjustment,
-      );
-      if (triggerDate.getUTCDate() > today) continue;
+      for (const plan of due) {
+        const triggerDate = dueTriggerDate(
+          todayKey,
+          plan.dayOfMonth,
+          plan.holidayAdjustment,
+          plan.lastTriggeredMonth,
+          taipeiDateKey(plan.createdAt),
+        );
+        if (!triggerDate) continue;
 
-      try {
-        await this.createPendingAndNotify(plan, triggerDate, currentMonth);
-      } catch (error) {
-        this.logger.error(`定期定額 ${plan.id} 提醒失敗`, error);
+        try {
+          await this.createPendingAndNotify(plan, triggerDate, currentMonth);
+        } catch (error) {
+          this.logger.error(`定期定額 ${plan.id} 提醒失敗`, error);
+        }
       }
+    } finally {
+      this.running = false;
     }
   }
 
@@ -178,15 +192,16 @@ export class StocksRecurringService {
     }
 
     const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const todayKey = taipeiDateKey(now);
+    const currentMonth = todayKey.slice(0, 7);
     if (plan.lastTriggeredMonth === currentMonth) {
       throw new BadRequestException('這個月已經處理過了。');
     }
-    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const today = now.getDate();
+    const [year, month, today] = todayKey.split('-').map(Number);
+    const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const triggerDate = effectiveTriggerDate(
-      now.getFullYear(),
-      now.getMonth(),
+      year,
+      month - 1,
       plan.dayOfMonth,
       lastDayOfMonth,
       plan.holidayAdjustment,

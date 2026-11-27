@@ -88,3 +88,8 @@ export function utcDateKey(date: Date): string {
   const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+/** 台北現在幾點（0–23）。 */
+export function taipeiHour(date: Date): number {
+  return new Date(date.getTime() + TAIPEI_OFFSET_MS).getUTCHours();
+}

@@ -69,3 +69,28 @@ export function recurringMonthStatus(
   const stillAhead = !firedThisMonth && thisMonth.getUTCDate() >= today.day;
   return { firedThisMonth, thisMonthDate: key(thisMonth), nextDate: key(stillAhead ? thisMonth : following) };
 }
+
+/** 這個月該不該補跑（定期交易、定期定額共用，2026-11-27）。
+ * 伺服器是 Render 免費方案，沒人用會睡著，早上 9 點的排程常常沒跑到；
+ * 所以改成「扣款日當天或之後、這個月還沒跑過」都算到期，醒來就補。
+ * 但計畫是在這個月扣款日「之後」才建立的，這個月不算（不然 11/27 新增一筆
+ * 每月 5 號的，會馬上補記 11/5）——從下個月開始。
+ * todayKey / createdKey 都是台北日期 "YYYY-MM-DD"。回傳這個月的扣款日，或 null（不用跑）。 */
+export function dueTriggerDate(
+  todayKey: string,
+  dayOfMonth: number,
+  adjustment: Adjustment,
+  lastTriggeredMonth: string | null,
+  createdKey: string,
+): Date | null {
+  const [year, month, day] = todayKey.split('-').map(Number);
+  const monthKey = todayKey.slice(0, 7);
+  if (lastTriggeredMonth === monthKey) return null;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const trigger = effectiveTriggerDate(year, month - 1, dayOfMonth, lastDay, adjustment);
+  const triggerKey = trigger.toISOString().slice(0, 10);
+  // 假日往前調可能跨到上個月，那就當作這個月 1 號已到。
+  if (triggerKey.slice(0, 7) === monthKey && trigger.getUTCDate() > day) return null;
+  if (createdKey > triggerKey) return null;
+  return trigger;
+}

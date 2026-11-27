@@ -1,0 +1,25 @@
+name: Wake server
+
+# Render 免費方案沒人用會睡著，睡著時排程（定期交易、定期定額…）不會跑。
+# 每天台北 09:05 叫醒一次，伺服器一開機就會補跑到期的定期交易（2026-11-27）。
+
+on:
+  schedule:
+    - cron: "5 1 * * *" # 台北時間 09:05
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 60 https://life-os-api-yhh2.onrender.com/version; then exit 0; fi
+            sleep 20
+          done
+          exit 1

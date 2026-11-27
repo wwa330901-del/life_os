@@ -10,8 +10,8 @@ import {
   FinanceRecurringHolidayAdjustment,
   FinanceTransactionType,
 } from '../../generated/prisma/client.js';
-import { effectiveTriggerDate, recurringMonthStatus } from './finance-recurring-schedule';
-import { taipeiDateKey } from '../common/taipei-date';
+import { dueTriggerDate, recurringMonthStatus } from './finance-recurring-schedule';
+import { taipeiDateKey, taipeiHour } from '../common/taipei-date';
 import { CreateFinanceRecurringTransactionDto } from './dto/create-finance-recurring-transaction.dto';
 import { UpdateFinanceRecurringTransactionDto } from './dto/update-finance-recurring-transaction.dto';
 
@@ -140,41 +140,62 @@ export class FinanceRecurringTransactionsService {
    * daily rather than checking "is today the day" once a month so a
    * missed run (e.g. Render's free tier asleep) still catches up the next
    * time it wakes, as long as that's still within the same month. */
-  @Cron(CronExpression.EVERY_DAY_AT_9AM, { timeZone: 'Asia/Taipei' })
+  // 2026-11-27：原本只在早上 9 點跑、而且只認「剛好扣款日當天」，伺服器睡著
+  // 就整個月漏掉（使用者 11/25 的沒記）。改成每小時＋開機都檢查，扣款日
+  // 當天或之後還沒跑過就補（見 dueTriggerDate），補記的日期用扣款日。
+  // 早上 9 點前不跑，維持原本「9 點記帳、發 LINE」的習慣。
+  async onApplicationBootstrap() {
+    setTimeout(() => void this.processDueRecurringTransactions(), 30_000);
+  }
+
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: 'Asia/Taipei' })
   async processDueRecurringTransactions() {
     const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const today = now.getDate();
+    if (taipeiHour(now) < 9) return;
+    const todayKey = taipeiDateKey(now);
+    const currentMonth = todayKey.slice(0, 7);
 
-    const due = await this.prisma.financeRecurringTransaction.findMany({
-      where: { active: true, lastTriggeredMonth: { not: currentMonth } },
+    const candidates = await this.prisma.financeRecurringTransaction.findMany({
+      where: {
+        active: true,
+        OR: [{ lastTriggeredMonth: null }, { lastTriggeredMonth: { not: currentMonth } }],
+      },
       include: { account: true, toAccount: true, category: true },
     });
 
-    for (const r of due) {
-      const triggerDate = effectiveTriggerDate(
-        now.getFullYear(),
-        now.getMonth(),
+    for (const r of candidates) {
+      const triggerDate = dueTriggerDate(
+        todayKey,
         r.dayOfMonth,
-        lastDayOfMonth,
         r.holidayAdjustment,
+        r.lastTriggeredMonth,
+        taipeiDateKey(r.createdAt),
       );
-      if (triggerDate.getUTCDate() !== today) continue;
+      if (!triggerDate) continue;
+
+      // 先搶下「這個月已處理」，開機檢查跟每小時排程同時跑也不會記兩筆。
+      const claimed = await this.prisma.financeRecurringTransaction.updateMany({
+        where: { id: r.id, OR: [{ lastTriggeredMonth: null }, { lastTriggeredMonth: { not: currentMonth } }] },
+        data: { lastTriggeredMonth: currentMonth },
+      });
+      if (claimed.count === 0) continue;
 
       try {
-        await this.fire(r, currentMonth);
+        await this.fire(r, triggerDate);
       } catch (error) {
         this.logger.error(`定期交易 ${r.id} 處理失敗`, error);
+        await this.prisma.financeRecurringTransaction
+          .update({ where: { id: r.id }, data: { lastTriggeredMonth: r.lastTriggeredMonth } })
+          .catch(() => undefined);
       }
     }
   }
 
-  private async fire(r: RecurringWithRelations, currentMonth: string) {
+  private async fire(r: RecurringWithRelations, triggerDate: Date) {
     const label = r.note ?? this.describe(r);
 
     if (r.amount != null) {
-      const recordedAt = new Date();
+      const recordedAt = triggerDate;
       await this.prisma.financeTransaction.create({
         data: {
           spaceId: r.spaceId,
@@ -188,26 +209,24 @@ export class FinanceRecurringTransactionsService {
         },
       });
       const balance = await this.accounts.balanceOf(r.spaceId, r.accountId).catch(() => null);
-      await this.lineNotifier.notifyBySpace(
-        r.spaceId,
-        recurringRecordedMessage({
-          label,
-          type: r.type,
-          amount: r.amount,
-          accountName: r.account.name,
-          toAccountName: r.toAccount?.name,
-          date: recordedAt,
-          balance,
-        }),
-      );
+      // 已經記好了：LINE 發不出去只記 log，不要讓外面把「這個月已處理」退回去又記一筆。
+      await this.lineNotifier
+        .notifyBySpace(
+          r.spaceId,
+          recurringRecordedMessage({
+            label,
+            type: r.type,
+            amount: r.amount,
+            accountName: r.account.name,
+            toAccountName: r.toAccount?.name,
+            date: recordedAt,
+            balance,
+          }),
+        )
+        .catch((error) => this.logger.error(`定期交易 ${r.id} 已記帳但 LINE 通知失敗`, error));
     } else {
       await this.lineNotifier.notifyBySpace(r.spaceId, `🔔 定期提醒：該處理「${label}」了，記得到元序記一筆。`);
     }
-
-    await this.prisma.financeRecurringTransaction.update({
-      where: { id: r.id },
-      data: { lastTriggeredMonth: currentMonth },
-    });
   }
 
   private describe(r: RecurringWithRelations): string {
